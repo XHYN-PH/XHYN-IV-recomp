@@ -1,7 +1,6 @@
 package com.libertyrecomp;
 
 import android.util.Log;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -11,91 +10,96 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * "Play (Debug Log)": the game process records its own logcat - the runtime,
- * the Vulkan driver, SDL and the crash buffer - into
- * files/debug_logs/debug-DATE.log, so a player can attach one file to an
- * issue. Apps can read only their own logs, which is exactly what is wanted.
- *
- * <p>logcat runs as a child of the game process and would outlive a crash,
- * so a leftover writer is ended before the next game start and whenever the
- * launcher comes back; the file is size-capped either way.</p>
- */
+/** Creates a real session file before starting SDL, even if logcat is denied. */
 final class DebugLog {
-
-    private static final String TAG = "LibertyDebugLog";
-    static final String DIRECTORY = "debug_logs";
-    private static final int KEEP = 5;
-    /** logcat -r is in kilobytes; with -n 1 at most twice this on disk. */
-    private static final String ROTATE_KB = "8192";
-
+    private static final String TAG="LibertyDebugLog";
+    static final String DIRECTORY="debug_logs";
+    private static DebugLogSink sink;
+    private static Process capture;
+    private static AtomicBoolean stopped;
     private DebugLog() {}
-
-    static File directory(File dataRoot) {
-        return new File(dataRoot, DIRECTORY);
+    static File directory(File root){return new File(root,DIRECTORY);}
+    static File start(File root,File fallback) {
+        return start(root,fallback,new String[]{"/system/bin/logcat","-v","threadtime","-b","main",
+                    "-b","system","-b","crash","-T",
+                    new SimpleDateFormat("MM-dd HH:mm:ss.SSS",Locale.ROOT).format(new Date())});
     }
-
-    /** Starts recording; returns the log file, or null if logcat could not start. */
-    static File start(File dataRoot) {
-        stopLeftovers(dataRoot);
-        File dir = directory(dataRoot);
-        if (!dir.isDirectory() && !dir.mkdirs()) {
-            Log.e(TAG, "cannot create " + dir);
-            return null;
-        }
-        prune(dir);
-        String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
-        File file = new File(dir, "debug-" + stamp + ".log");
-        try {
-            new ProcessBuilder("logcat", "-v", "threadtime", "-b", "main,system,crash", "-T", "500",
-                    "-f", file.getAbsolutePath(), "-r", ROTATE_KB, "-n", "1")
-                    .redirectErrorStream(true)
-                    .start();
-            Log.i(TAG, "recording the game log to " + file);
-            return file;
-        } catch (IOException e) {
-            Log.e(TAG, "logcat could not start", e);
-            return null;
-        }
-    }
-
-    /** Ends logcat writers into debug_logs left over from an earlier session. */
-    static void stopLeftovers(File dataRoot) {
-        String marker = new File(dataRoot, DIRECTORY).getAbsolutePath();
-        File[] processes = new File("/proc").listFiles();
-        if (processes == null) return;
-        for (File process : processes) {
-            String name = process.getName();
-            if (name.isEmpty() || !Character.isDigit(name.charAt(0))) continue;
-            String commandLine = read(new File(process, "cmdline"));
-            if (!commandLine.startsWith("logcat") || !commandLine.contains(marker)) continue;
+    static synchronized File start(File root,File fallback,String[] command) {
+        stop();stopLeftovers(root);
+        // Keep only the new session, including its runtime log, captures and
+        // launch report. Both storage roots can contain an earlier session.
+        try{DebugLogArchive.clear(root,fallback);}catch(IOException error){Log.w(TAG,"Some old diagnostics could not be removed",error);}
+        String stamp=new SimpleDateFormat("yyyyMMdd-HHmmss-SSS",Locale.ROOT).format(new Date());
+        String header="XHYN IV debug session "+stamp+"\npid="+android.os.Process.myPid()+"\n";
+        for(File base:new File[]{root,fallback}) {
             try {
-                android.os.Process.sendSignal(Integer.parseInt(name), android.os.Process.SIGNAL_KILL);
-                Log.i(TAG, "ended leftover log writer " + name);
-            } catch (RuntimeException ignored) {
+                sink=new DebugLogSink(new File(directory(base),"debug-"+stamp+".log"),8*1024*1024,header);
+                prune(directory(base));break;
+            } catch(IOException error) { Log.e(TAG,"Cannot create session log in "+base,error); }
+        }
+        if(sink==null) return null;
+        final DebugLogSink session=sink;
+        final AtomicBoolean finished=new AtomicBoolean(false);stopped=finished;
+        try {
+            capture=new ProcessBuilder(command).redirectErrorStream(true).start();
+            final Process child=capture;
+            Thread reader=new Thread(()-> {
+                try(InputStream input=child.getInputStream()) {
+                    byte[] bytes=new byte[8192];int count;
+                    while((count=input.read(bytes))!=-1 && !finished.get()) session.append(bytes,count);
+                    byte[] end=("\nlogcat stopped (exit "+child.waitFor()+")\n").getBytes(StandardCharsets.UTF_8);
+                    if(!finished.get()) session.append(end,end.length);
+                } catch(IOException error) { if(!finished.get())append(session,"\nLogcat read failed: "+error+"\n"); }
+                catch(InterruptedException error) { Thread.currentThread().interrupt(); }
+                finally { child.destroy(); }
+            },"DebugLogCapture");
+            reader.setDaemon(true);reader.start();
+        } catch(IOException error) { append(session,"logcat could not start: "+error+"\n"); }
+        return session.file;
+    }
+    static synchronized void note(String text) { if(sink!=null) append(sink,text+"\n"); }
+    private static void append(DebugLogSink target,String text) {
+        try {byte[] bytes=text.getBytes(StandardCharsets.UTF_8);target.append(bytes,bytes.length);}
+        catch(IOException error) {Log.e(TAG,"Writing session log failed",error);}
+    }
+    static synchronized void stop() {
+        if(stopped!=null) {stopped.set(true);stopped=null;}
+        if(capture!=null) {capture.destroy();capture=null;}
+        if(sink!=null) {try{sink.close();}catch(IOException ignored){}sink=null;}
+    }
+    static void stopLeftovers(File root) {
+        String marker=directory(root).getAbsolutePath();
+        File[] processes=new File("/proc").listFiles();if(processes==null)return;
+        for(File process:processes) {
+            String name=process.getName();if(name.isEmpty() || !Character.isDigit(name.charAt(0)))continue;
+            String command=read(new File(process,"cmdline"));
+            if(command.startsWith("logcat") && command.contains(marker))
+                try{android.os.Process.sendSignal(Integer.parseInt(name),android.os.Process.SIGNAL_KILL);}
+                catch(RuntimeException ignored){}
+        }
+        // A pipe capture from a crashed game has no reader. This same-UID
+        // message makes a waiting child exit on its broken stdout pipe.
+        Log.i(TAG,"Debug capture cleanup");
+    }
+    private static void prune(File directory) {
+        File[] files=directory.listFiles((d,n)->n.startsWith("debug-") && n.endsWith(".log") && !n.contains(".runtime"));
+        if(files==null || files.length<=5)return;Arrays.sort(files);
+        for(int i=0;i<files.length-5;++i){
+            final String prefix=files[i].getName();File[] related=directory.listFiles((d,n)->n.equals(prefix) || n.equals(prefix+".1") || n.startsWith(prefix+".runtime"));
+            if(related!=null)for(File file:related) {
+                if(file.isDirectory())try(java.util.stream.Stream<java.nio.file.Path> paths=java.nio.file.Files.walk(file.toPath())) {
+                    for(java.nio.file.Path path:paths.sorted(java.util.Comparator.reverseOrder()).toArray(java.nio.file.Path[]::new))java.nio.file.Files.deleteIfExists(path);
+                }catch(IOException error){Log.w(TAG,"Could not remove an old session profile",error);}
+                else file.delete();
             }
         }
     }
-
-    private static void prune(File dir) {
-        File[] files = dir.listFiles((d, n) -> n.startsWith("debug-"));
-        if (files == null || files.length < KEEP) return;
-        Arrays.sort(files);
-        for (int i = 0; i <= files.length - KEEP; ++i) {
-            //noinspection ResultOfMethodCallIgnored
-            files[i].delete();
-        }
-    }
-
     private static String read(File file) {
-        try (InputStream in = new FileInputStream(file)) {
-            byte[] buffer = new byte[4096];
-            int length = in.read(buffer);
-            if (length <= 0) return "";
-            return new String(buffer, 0, length, StandardCharsets.UTF_8).replace('\0', ' ');
-        } catch (IOException e) {
-            return "";
-        }
+        try(InputStream input=new FileInputStream(file)) {
+            byte[] bytes=new byte[4096];int count=input.read(bytes);
+            return count>0 ? new String(bytes,0,count,StandardCharsets.UTF_8).replace('\0',' ') : "";
+        }catch(IOException ignored){return "";}
     }
 }

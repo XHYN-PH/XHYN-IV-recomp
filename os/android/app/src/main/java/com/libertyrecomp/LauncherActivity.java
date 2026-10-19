@@ -70,6 +70,10 @@ public class LauncherActivity extends Activity {
 
     private static final String TAG = "LibertyLauncher";
     private static final int REQUEST_DRIVER_ZIP = 1;
+    private static final int REQUEST_DEBUG_EXPORT = 30;
+    private static final int REQUEST_SAVE_EXPORT=31,REQUEST_SAVE_IMPORT=32;
+    private String mLogSession;
+    private int mDebugMode;
     private static final String GAME_PROCESS_SUFFIX = ":game";
     /** Largest driver package accepted, unpacked. */
     private static final long MAX_DRIVER_BYTES = 256L * 1024 * 1024;
@@ -87,7 +91,7 @@ public class LauncherActivity extends Activity {
     private File mDataRoot;
     private RadioGroup mDrivers;
     private TextView mDriverNote;
-    private android.widget.ImageButton mPlay;
+    private Button mPlay;
     private Button mRemove;
     private final List<String> mDriverModes = new ArrayList<>();
     private final Handler mMain = new Handler(Looper.getMainLooper());
@@ -96,6 +100,7 @@ public class LauncherActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if(savedInstanceState!=null)mLogSession=savedInstanceState.getString("log_session");
         // The app icon over a running game: some home screens start a second
         // launcher on top of the task instead of bringing it forward. Step
         // aside so the game underneath comes back.
@@ -107,6 +112,11 @@ public class LauncherActivity extends Activity {
         }
         File external = getExternalFilesDir(null);
         mDataRoot = external != null ? external : getFilesDir();
+        if(!gameRunning()){
+            migrateTouchPreferences();migratePerformanceGraphics();
+            android.content.SharedPreferences ui=getSharedPreferences("interface",Context.MODE_PRIVATE);
+            if(!ui.getBoolean("radar_top_v6",false))try{MobileConfig.migrateRadarMargin(MobileConfig.file(mDataRoot));ui.edit().putBoolean("radar_top_v6",true).apply();}catch(IOException e){Log.w(TAG,"Minimap preference migration deferred",e);}
+        }
         setContentView(buildLayout());
         hideSystemBars();
         mPlay.requestFocus();
@@ -204,137 +214,171 @@ public class LauncherActivity extends Activity {
     private TextView mStatus;
     private TextView mLastLaunch;
 
+    private View mDriverPanel,mFilesPanel;
     private View buildLayout() {
-        int pad = dp(20);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.HORIZONTAL);
-        root.setBackgroundColor(color(R.color.picker_bg));
-        root.setPadding(pad, pad, pad, pad);
+        android.widget.FrameLayout canvas=new android.widget.FrameLayout(this);
+        LauncherArtView artwork=new LauncherArtView(this);canvas.addView(artwork,new android.widget.FrameLayout.LayoutParams(-1,-1));
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(24),dp(14),dp(24),dp(14));canvas.addView(root,new android.widget.FrameLayout.LayoutParams(-1,-1));
+        LinearLayout details=new LinearLayout(this);details.setOrientation(LinearLayout.VERTICAL);details.setGravity(Gravity.BOTTOM);
+        details.addView(buildCrashCard(),matchWrap(dp(6)));
+        mLastLaunch=ModernUi.text(this,"",13,0xffffb7a3);details.addView(mLastLaunch,matchWrap(dp(4)));
+        mStatus=ModernUi.text(this,"Checking game files…",14,Color.BLACK);details.addView(mStatus,matchWrap(dp(8)));
+        TextView brand=ModernUi.text(this,"XHYN IV",38,Color.BLACK);brand.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));
+        details.addView(brand,matchWrap(dp(5)));
+        root.addView(details,new LinearLayout.LayoutParams(-1,0,1));
+        android.widget.HorizontalScrollView navigation=new android.widget.HorizontalScrollView(this);
+        navigation.setHorizontalScrollBarEnabled(false);
+        LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER_VERTICAL);
+        mPlay=ModernUi.button(this,"PLAY",true);mPlay.setOnClickListener(v->play(false));
+        actions.addView(mPlay,new LinearLayout.LayoutParams(dp(140),dp(54)));
+        addNavigation(actions,"Game files",this::showFilesPanel);
+        addNavigation(actions,"Settings",this::showSettings);
+        navigation.addView(actions);root.addView(navigation,matchWrap(dp(14)));
+        navigation.addOnLayoutChangeListener((v,left,top,right,bottom,oldLeft,oldTop,oldRight,oldBottom)->artwork.setNavigationTop(top));
+        LinearLayout footer=new LinearLayout(this);footer.setGravity(Gravity.CENTER_VERTICAL);
+        footer.addView(ModernUi.text(this,versionLine(),11,ModernUi.MUTED),new LinearLayout.LayoutParams(-2,-2));
+        LinearLayout links=new LinearLayout(this);links.setOrientation(LinearLayout.HORIZONTAL);links.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
+        addFooterLink(links,"XHYN · GitHub ↗","https://github.com/XHYN-PH/XHYN-IV-recomp");
+        addFooterLink(links,"YouTube ↗","https://youtube.com/@xhyn_ph");
+        addFooterLink(links,"Telegram ↗","https://t.me/xhynports");
+        android.widget.HorizontalScrollView linkStrip=new android.widget.HorizontalScrollView(this);linkStrip.setHorizontalScrollBarEnabled(false);linkStrip.setFillViewport(true);linkStrip.addView(links);
+        // Keep every link on one line even in a small multi-window viewport.
+        footer.addView(linkStrip,new LinearLayout.LayoutParams(0,-2,1));
+        root.addView(footer,matchWrap(dp(6)));
+        buildSecondaryPanels();return canvas;
+    }
+    private void addFooterLink(LinearLayout links,String label,String url){
+        TextView link=ModernUi.text(this,label,12,ModernUi.ACCENT);link.setPadding(dp(10),dp(7),dp(3),dp(7));link.setMinHeight(dp(32));link.setGravity(Gravity.CENTER);link.setSingleLine(true);
+        link.setContentDescription(label+", "+url);
+        link.setFocusable(true);link.setOnClickListener(v->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception ignored){toast(url);}});links.addView(link);
+    }
+    private void addNavigation(LinearLayout row,String title,Runnable run) {
+        Button b=ModernUi.button(this,title,false);b.setOnClickListener(v->run.run());
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,dp(48));lp.leftMargin=dp(8);row.addView(b,lp);
+    }
+    private void buildSecondaryPanels() {
+        LinearLayout drivers=new LinearLayout(this);drivers.setOrientation(LinearLayout.VERTICAL);
+        drivers.addView(ModernUi.text(this,"Applies next time you play.",13,ModernUi.MUTED));
+        mDrivers=new RadioGroup(this);mDrivers.setOnCheckedChangeListener((group,id)->onDriverChecked(id));drivers.addView(mDrivers);
+        mDriverNote=ModernUi.text(this,"",13,ModernUi.MUTED);drivers.addView(mDriverNote);
+        ModernUi.action(this,drivers,"Import driver ZIP",this::pickDriverZip);
+        mRemove=ModernUi.button(this,"Remove selected imported driver",false);mRemove.setOnClickListener(v->removeSelectedDriver());drivers.addView(mRemove,matchWrap(dp(10)));
+        mDriverPanel=drivers;
+        LinearLayout files=new LinearLayout(this);files.setOrientation(LinearLayout.VERTICAL);files.addView(buildInstallCard());
+        ModernUi.action(this,files,"Save data",this::showSaveData);
+        mRightScroll=new ScrollView(this);mRightScroll.setFillViewport(true);mRightScroll.addView(files);mFilesPanel=mRightScroll;
+    }
+    private void showDriverPanel(){showPanel("Graphics driver",mDriverPanel);}
+    private void showFilesPanel(){showPanel("Game files & saves",mFilesPanel);}
+    private void showPanel(String title,View panel){
+        if(panel.getParent() instanceof ViewGroup)((ViewGroup)panel.getParent()).removeView(panel);
+        ModernUi.dialog(this,title,panel).show();
+    }
+    private void showSettings(){
+        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
+        ModernUi.action(this,panel,"Graphics & performance",this::showPerformanceTestSettings);
+        ModernUi.action(this,panel,"Controls",this::showTouchSettings);
+        ModernUi.action(this,panel,"Graphics driver",this::showDriverPanel);
+        ModernUi.action(this,panel,"Logs & troubleshooting",this::showLogs);
+        ModernUi.dialog(this,"Settings",panel).show();
+    }
+    private void showLogs(){
+        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.addView(ModernUi.text(this,"Play with logs records a report you can share after a problem. Old logs are cleared when a new game session starts.",14,ModernUi.MUTED));
+        ModernUi.action(this,panel,"Play with logs",()->{mDebugMode=0;play(true);});
+        ModernUi.action(this,panel,"Share latest log",()->exportLatestLog());
+        ModernUi.action(this,panel,"Delete saved logs",()->{
+            if(gameRunning()){toast("Quit the game before deleting its log.");return;}
+            new Thread(()->{String result;try{DebugLogArchive.clear(mDataRoot,getFilesDir());result="Logs deleted.";}catch(IOException e){result="Could not delete logs: "+e.getMessage();}
+                String message=result;mMain.post(()->toast(message));},"DeleteLogs").start();
+        });
+        LinearLayout advanced=new LinearLayout(this);advanced.setOrientation(LinearLayout.VERTICAL);advanced.setVisibility(View.GONE);
+        ModernUi.action(this,panel,"Advanced troubleshooting",()->advanced.setVisibility(advanced.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));
+        advanced.addView(ModernUi.text(this,"Use this when asked for a deeper report. Short timing and shadow captures are available from the in-game menu. Captures temporarily add overhead.",13,ModernUi.MUTED));
+        ModernUi.action(this,advanced,"Play with detailed diagnostics",()->{mDebugMode=3;play(true);});
+        panel.addView(advanced);ModernUi.dialog(this,"Logs",panel).show();
+    }
+    private void exportLatestLog(){
+        String[] sessions=DebugLogArchive.sessions(mDataRoot,getFilesDir());
+        if(sessions.length==0){toast("Use Play with logs first.");return;}
+        mLogSession=sessions[0];Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);save.addCategory(Intent.CATEGORY_OPENABLE);
+        save.setType("application/zip");save.putExtra(Intent.EXTRA_TITLE,"XHYN-IV-"+mLogSession+".zip");
+        try{startActivityForResult(save,REQUEST_DEBUG_EXPORT);}catch(Exception e){toast("No file picker is available.");}
+    }
 
-        // Left: banner, status, Play.
-        LinearLayout left = new LinearLayout(this);
-        left.setOrientation(LinearLayout.VERTICAL);
-        left.setGravity(Gravity.CENTER_HORIZONTAL);
-        ImageView banner = new ImageView(this);
-        banner.setImageResource(R.drawable.launcher_banner);
-        banner.setAdjustViewBounds(true);
-        banner.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        // On wide panels (20:9, 21:9) the column is wider, the banner grows
-        // taller and pushes the rest off screen: keep it to a quarter of the
-        // height; adjustViewBounds keeps the aspect ratio.
-        banner.setMaxHeight(getResources().getDisplayMetrics().heightPixels / 4);
-        left.addView(banner, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        TextView version = text(versionLine(), 13, R.color.picker_muted);
-        version.setGravity(Gravity.CENTER);
-        left.addView(version, matchWrap(dp(6)));
-
-        mStatus = text("", 15, R.color.picker_text);
-        mStatus.setGravity(Gravity.CENTER);
-        left.addView(mStatus, matchWrap(dp(14)));
-
-        left.addView(buildCrashCard(), matchWrap(dp(12)));
-
-        mLastLaunch = text("", 13, R.color.picker_error);
-        mLastLaunch.setGravity(Gravity.CENTER);
-        mLastLaunch.setMaxLines(4);
-        mLastLaunch.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        left.addView(mLastLaunch, matchWrap(dp(8)));
-
-        // "Play" in the logo's typeface, drawn into play_label.png (the font
-        // itself is not redistributable, so it does not ship in the APK).
-        mPlay = new android.widget.ImageButton(this);
-        mPlay.setImageResource(R.drawable.play_label);
-        mPlay.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        mPlay.setPadding(dp(14), dp(18), dp(14), dp(18));
-        mPlay.setBackground(focusBackground(0xFFE6E6E6));
-        mPlay.setContentDescription("Play");
-        mPlay.setFocusable(true);
-        mPlay.setOnClickListener(v -> play(false));
-        LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(dp(260), dp(72));
-        playParams.topMargin = dp(18);
-        left.addView(mPlay, playParams);
-
-        Button debugPlay = button("Play (Debug Log)", false);
-        debugPlay.setOnClickListener(v -> play(true));
-        LinearLayout.LayoutParams debugParams = new LinearLayout.LayoutParams(dp(260), dp(44));
-        debugParams.topMargin = dp(10);
-        left.addView(debugPlay, debugParams);
-
-        Button perfTest = button("Performance test settings", false);
-        perfTest.setOnClickListener(v -> showPerformanceTestSettings());
-        LinearLayout.LayoutParams perfParams = new LinearLayout.LayoutParams(dp(260), dp(44));
-        perfParams.topMargin = dp(10);
-        left.addView(perfTest, perfParams);
-
-        TextView debugNote = text("The debug log is saved to Android/data/" + getPackageName()
-                + "/files/" + DebugLog.DIRECTORY + "/. Attach the newest one when you open an issue "
-                + "on GitHub.", 11, R.color.picker_muted);
-        debugNote.setGravity(Gravity.CENTER);
-        left.addView(debugNote, matchWrap(dp(6)));
-
-        TextView hint = text("A: select   B: back   Start: play", 12, R.color.picker_muted);
-        hint.setGravity(Gravity.CENTER);
-        left.addView(hint, matchWrap(dp(10)));
-
-        left.addView(buildGithubFooter(), matchWrap(dp(16)));
-
-        ScrollView leftScroll = new ScrollView(this);
-        leftScroll.addView(left);
-        // Focusing Play scrolls the column down to it; start at the banner.
-        leftScroll.post(() -> leftScroll.scrollTo(0, 0));
-        root.addView(leftScroll, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.MATCH_PARENT, 1.15f));
-
-        // Right: driver choice.
-        LinearLayout right = new LinearLayout(this);
-        right.setOrientation(LinearLayout.VERTICAL);
-        right.setPadding(dp(16), dp(12), dp(16), dp(12));
-        right.setBackground(rounded(color(R.color.picker_card), dp(10)));
-
-        TextView title = text("Vulkan driver", 18, R.color.picker_text);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        right.addView(title);
-        right.addView(text("Applied the next time you press Play.", 12, R.color.picker_muted),
-                matchWrap(dp(2)));
-
-        mDrivers = new RadioGroup(this);
-        mDrivers.setOnCheckedChangeListener((group, id) -> onDriverChecked(id));
-        right.addView(mDrivers, matchWrap(dp(8)));
-
-        mDriverNote = text("", 12, R.color.picker_muted);
-        right.addView(mDriverNote, matchWrap(dp(6)));
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button importZip = button("Import driver (.zip)", false);
-        importZip.setOnClickListener(v -> pickDriverZip());
-        actions.addView(importZip, new LinearLayout.LayoutParams(0, dp(48), 1f));
-        mRemove = button("Remove", false);
-        mRemove.setOnClickListener(v -> removeSelectedDriver());
-        LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(dp(120), dp(48));
-        removeParams.leftMargin = dp(10);
-        actions.addView(mRemove, removeParams);
-        right.addView(actions, matchWrap(dp(12)));
-
-        right.addView(text("Turnip packages for AdrenoTools (a zip with a .so and meta.json) "
-                + "work here. The game needs Vulkan 1.2; if a driver cannot start, the game "
-                + "falls back to the device's own driver.", 12, R.color.picker_muted),
-                matchWrap(dp(10)));
-
-        LinearLayout column = new LinearLayout(this);
-        column.setOrientation(LinearLayout.VERTICAL);
-        column.addView(buildInstallCard());
-        column.addView(right, matchWrap(dp(14)));
-        ScrollView rightScroll = new ScrollView(this);
-        mRightScroll = rightScroll;
-        rightScroll.addView(column);
-        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-        rightParams.leftMargin = dp(20);
-        root.addView(rightScroll, rightParams);
-        return root;
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putString("log_session",mLogSession);super.onSaveInstanceState(state);
+    }
+    private boolean gameRunning() {
+        ActivityManager manager=(ActivityManager)getSystemService(Context.ACTIVITY_SERVICE);
+        if(manager==null)return false;
+        java.util.List<ActivityManager.RunningAppProcessInfo> processes=manager.getRunningAppProcesses();
+        if(processes!=null)for(ActivityManager.RunningAppProcessInfo info:processes)
+            if((getPackageName()+GAME_PROCESS_SUFFIX).equals(info.processName))return true;
+        return false;
+    }
+    private void migrateTouchPreferences() {
+        android.content.SharedPreferences old=getSharedPreferences("touch",Context.MODE_PRIVATE);
+        if(old.getBoolean("toml_settings_v4",false))return;
+        try {
+            java.util.Map<String,String> saved=MobileConfig.read(MobileConfig.file(mDataRoot)),changes=new java.util.LinkedHashMap<>();
+            if(old.contains("camera")&&!saved.containsKey("gta4_touch_camera"))changes.put("gta4_touch_camera",old.getString("camera","swipe"));
+            String[][] names={{"scale","gta4_touch_gamepad_scale"},{"opacity","gta4_touch_gamepad_opacity"},{"sensitivity","gta4_touch_swipe_sensitivity"}};
+            for(String[] pair:names)if(old.contains(pair[0])&&!saved.containsKey(pair[1])) {
+                float value=old.getFloat(pair[0],1f);if(Float.isFinite(value)&&value>0)changes.put(pair[1],Float.toString(value));
+            }
+            if(!changes.isEmpty())MobileConfig.update(MobileConfig.file(mDataRoot),changes);
+            old.edit().putBoolean("toml_settings_v4",true).apply();
+        }catch(IOException|RuntimeException error){Log.w(TAG,"Touch preference migration failed",error);}
+    }
+    private void showTouchSettings() {
+        if(gameRunning()){toast("Open Touch controls from the in-game menu while playing.");return;}
+        MobileSettingsUi.touch(this,mDataRoot,null);
+    }
+    private void showSaveData() {
+        if(mBusy)return;
+        if(gameRunning()){toast("Quit the game before managing save data.");return;}
+        new android.app.AlertDialog.Builder(this).setTitle("Save data")
+            .setItems(new String[]{"Export saves","Import saves","Delete save data"},(dialog,which)->{
+                if(which==2) {
+                    new android.app.AlertDialog.Builder(this).setTitle("Delete save data?")
+                        .setMessage("This removes local saves and player profiles, including the previous import backup. Game files and graphics settings are kept. Export your saves first if you want to keep them.")
+                        .setNegativeButton("Cancel",null).setPositiveButton("Delete",(d,w)->{
+                            if(gameRunning()){toast("Quit the game first.");return;}
+                            setBusy(true,"Deleting save data...");
+                            new Thread(()->{
+                                String result;
+                                try{File root=SaveData.root(mDataRoot);SaveData.deleteTree(root);SaveData.deleteTree(new File(root.getParentFile(),"saves-before-import"));result="Save data deleted.";}
+                                catch(IOException error){result="Delete failed: "+error.getMessage();}
+                                final String message=result;mMain.post(()->{setBusy(false,null);toast(message);});
+                            },"DeleteSaves").start();
+                        }).show();return;
+                }
+                if(which==1) {
+                    new android.app.AlertDialog.Builder(this).setTitle("Import saves?")
+                        .setMessage("Choose a save ZIP exported by XHYN IV. Current saves are kept in a local backup before replacement. Any previous import backup is replaced. Quit the game first.")
+                        .setNegativeButton("Cancel",null).setPositiveButton("Choose ZIP",(d,w)->pickSaveDocument(false)).show();
+                }else pickSaveDocument(true);
+            }).show();
+    }
+    private void pickSaveDocument(boolean export) {
+        Intent intent=new Intent(export?Intent.ACTION_CREATE_DOCUMENT:Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/zip");
+        if(export)intent.putExtra(Intent.EXTRA_TITLE,"XHYN-IV-saves.zip");
+        try{startActivityForResult(intent,export?REQUEST_SAVE_EXPORT:REQUEST_SAVE_IMPORT);}
+        catch(Exception error){toast("No file picker is available.");}
+    }
+    private android.widget.SeekBar touchSlider(LinearLayout panel,String name,int min,int max,float value) {
+        TextView label=new TextView(this);panel.addView(label);
+        android.widget.SeekBar slider=new android.widget.SeekBar(this);slider.setMax(max-min);
+        slider.setProgress(Math.max(0,Math.min(max-min,Math.round(value*100)-min)));
+        label.setText(name+": "+(slider.getProgress()+min)+"%");
+        slider.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(android.widget.SeekBar bar,int progress,boolean user) { label.setText(name+": "+(progress+min)+"%"); }
+            public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+            public void onStopTrackingTouch(android.widget.SeekBar bar) {}
+        });panel.addView(slider);return slider;
     }
 
     private String versionLine() {
@@ -372,10 +416,10 @@ public class LauncherActivity extends Activity {
                 else update = true;
             }
             if (disc && update) {
-                mStatus.setText("Game files found in install/. Press Install on the right.");
+                mStatus.setText("Game files found in install/. Open Game files and press Install.");
             } else {
                 mStatus.setText("Game not installed. Choose the disc image and Title Update 8 "
-                        + "on the right and press Install.");
+                        + "in Game files and press Install.");
             }
         }
         String result = null;
@@ -779,8 +823,13 @@ public class LauncherActivity extends Activity {
         mDrivers.clearCheck();
         mDrivers.removeAllViews();
         mDriverModes.clear();
-        addDriver(DriverBridge.TURNIP, "Turnip 26.3.0-R6 (bundled)",
-                "Recommended for Adreno 6xx/7xx");
+        String renderer=GpuInfo.renderer();
+        addDriver(DriverBridge.AUTO,"Automatic (recommended)","Turnip for supported Adreno GPUs; system driver otherwise");
+        for(BundledDrivers.Bundle bundle:BundledDrivers.ALL.values()) {
+            if(DriverPolicy.supports(bundle.mode,renderer,Build.VERSION.SDK_INT))
+                addDriver(bundle.mode,bundle.label,bundle.mode.equals("turnip") ? "For Adreno 6xx/7xx" :
+                    "Optional community driver; compatibility needs device testing");
+        }
         addDriver(DriverBridge.SYSTEM, "System driver",
                 "The device's own Vulkan driver (needs Vulkan 1.2)");
         File[] packages = customRoot().listFiles();
@@ -837,18 +886,19 @@ public class LauncherActivity extends Activity {
         boolean custom = mode.startsWith(DriverBridge.CUSTOM_PREFIX);
         mRemove.setEnabled(custom);
         mRemove.setAlpha(custom ? 1f : 0.4f);
-        mDriverNote.setText("driver.txt: " + mode);
+        mDriverNote.setText(GpuInfo.renderer().isEmpty() ? "GPU could not be identified; use System or import a compatible driver." : GpuInfo.renderer());
     }
 
     private String currentDriverMode() {
         String line = readFirstLine(new File(mDataRoot, "driver.txt"));
-        if (line == null) return DriverBridge.TURNIP;
+        if (line == null) return DriverBridge.AUTO;
         String lower = line.toLowerCase(Locale.ROOT);
+        if (lower.equals(DriverBridge.AUTO) || BundledDrivers.ALL.containsKey(lower)) return lower;
         if (lower.equals(DriverBridge.SYSTEM)) return DriverBridge.SYSTEM;
         if (lower.startsWith(DriverBridge.CUSTOM_PREFIX)) {
             return DriverBridge.CUSTOM_PREFIX + line.substring(DriverBridge.CUSTOM_PREFIX.length()).trim();
         }
-        return DriverBridge.TURNIP;
+        return DriverBridge.AUTO;
     }
 
     private void writeDriverMode(String mode) {
@@ -867,9 +917,9 @@ public class LauncherActivity extends Activity {
         if (!mode.startsWith(DriverBridge.CUSTOM_PREFIX)) return;
         File dir = new File(customRoot(), mode.substring(DriverBridge.CUSTOM_PREFIX.length()));
         deleteRecursively(dir);
-        writeDriverMode(DriverBridge.TURNIP);
+        writeDriverMode(DriverBridge.AUTO);
         refreshDrivers();
-        toast("Driver removed. Using the bundled Turnip.");
+        toast("Driver removed. Using automatic selection.");
     }
 
     @SuppressWarnings("deprecation")
@@ -890,6 +940,38 @@ public class LauncherActivity extends Activity {
     @SuppressWarnings("deprecation")
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if(requestCode==REQUEST_SAVE_EXPORT||requestCode==REQUEST_SAVE_IMPORT) {
+            if(resultCode!=RESULT_OK||data==null||data.getData()==null)return;
+            if(gameRunning()){toast("Quit the game before managing saves.");return;}
+            final Uri uri=data.getData();setBusy(true,requestCode==REQUEST_SAVE_EXPORT?"Exporting saves...":"Importing saves...");
+            new Thread(()->{
+                String result;
+                try {
+                    File root=SaveData.root(mDataRoot);
+                    if(requestCode==REQUEST_SAVE_EXPORT)try(java.io.OutputStream out=getContentResolver().openOutputStream(uri)) {
+                        if(out==null)throw new IOException("Cannot open export file");SaveData.exportZip(root,out);
+                    }else try(java.io.InputStream in=getContentResolver().openInputStream(uri)) {
+                        if(in==null)throw new IOException("Cannot open save ZIP");SaveData.importZip(root,in);
+                    }
+                    result=requestCode==REQUEST_SAVE_EXPORT?"Save data exported.":"Save data imported. Previous saves were kept locally.";
+                }catch(IOException|RuntimeException error){result="Save operation failed: "+error.getMessage();}
+                final String message=result;mMain.post(()->{setBusy(false,null);toast(message);});
+            },"ManageSaves").start();return;
+        }
+        if(requestCode==REQUEST_DEBUG_EXPORT) {
+            if(resultCode==RESULT_OK && data!=null && data.getData()!=null) {
+                final Uri uri=data.getData();setBusy(true,"Exporting logs...");
+                new Thread(()->{
+                    String result;
+                    try(java.io.OutputStream output=getContentResolver().openOutputStream(uri)) {
+                        if(output==null)throw new IOException("Cannot open the selected file");
+                        DebugLogArchive.write(output,mDataRoot,getFilesDir(),mLogSession);result="Debug logs exported.";
+                    }catch(IOException|RuntimeException error){result="Log export failed: "+error.getMessage();}
+                    final String message=result;mMain.post(()->{setBusy(false,null);toast(message);});
+                },"ExportDebugLogs").start();
+            }
+            return;
+        }
         if (requestCode >= REQUEST_SOURCE && requestCode < REQUEST_SOURCE + SOURCE_LABELS.length) {
             if (resultCode == RESULT_OK && data != null) {
                 onSourcePicked(requestCode - REQUEST_SOURCE, data.getData());
@@ -1042,106 +1124,33 @@ public class LauncherActivity extends Activity {
         return getSharedPreferences(PERF_PREFERENCES, Context.MODE_PRIVATE);
     }
 
+    private void migratePerformanceGraphics(){
+        android.content.SharedPreferences prefs=perfTestPreferences();if(prefs.getBoolean("graphics_unified",false))return;
+        try{java.util.Map<String,String> saved=MobileConfig.read(MobileConfig.file(mDataRoot));java.util.Map<String,String> changes=new java.util.LinkedHashMap<>();
+            if(prefs.getBoolean(PERF_HALF_DRAW_DISTANCE,false)){changes.put("gta4_draw_distance_scale","0.5");changes.put("gta4_dynamic_draw_distance","false");}
+            if(prefs.getBoolean(PERF_SHADOWS_OFF,false))changes.put("gta4_native_shadow_interval","0");
+            if(prefs.contains(PERF_WATER_REFLECTIONS)&&!saved.containsKey("gta4_native_water_reflection_interval"))changes.put("gta4_native_water_reflection_interval",Integer.toString(prefs.getInt(PERF_WATER_REFLECTIONS,1)));
+            if(prefs.contains(PERF_OTHER_REFLECTIONS)&&!saved.containsKey("gta4_native_environment_reflection_interval"))changes.put("gta4_native_environment_reflection_interval",Integer.toString(prefs.getInt(PERF_OTHER_REFLECTIONS,1)));
+            if(!changes.isEmpty())MobileConfig.update(MobileConfig.file(mDataRoot),changes);
+            prefs.edit().putBoolean("graphics_unified",true).remove(PERF_HALF_DRAW_DISTANCE).remove(PERF_SHADOWS_OFF).remove(PERF_WATER_REFLECTIONS).remove(PERF_OTHER_REFLECTIONS).apply();
+        }catch(IOException e){Log.w(TAG,"Graphics preference migration deferred",e);}
+    }
     private void showPerformanceTestSettings() {
-        android.content.SharedPreferences perf = perfTestPreferences();
-        android.app.Dialog dialog = new android.app.Dialog(this);
-        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(14), dp(18), dp(14));
-        card.setBackground(rounded(color(R.color.picker_card), dp(10)));
-
-        TextView title = text("Performance test settings", 18, R.color.picker_text);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        card.addView(title);
-        card.addView(text("WARNING!!! For lower-end devices and endorsed ONLY for testing. SHIT "
-                + "WILL BREAK, and by shit I mean almost all visuals. If you have stable 30fps "
-                + "please don't touch it, or your game will look like a potato, and a very ugly one "
-                + "a that with tons of other visual bugs and crashes. Issues made with any of these "
-                + "settings probably will be skipped on Github. You have been warned, have fun then:",
-                12, R.color.picker_error), matchWrap(dp(4)));
-
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-
-        android.widget.CheckBox drawDistance = styledCheck("Draw distance 0.5",
-                "Fixed half draw distance; the dynamic draw distance is turned off.",
-                perf.getBoolean(PERF_HALF_DRAW_DISTANCE, false));
-        panel.addView(drawDistance, matchWrap(dp(10)));
-        android.widget.CheckBox shadows = styledCheck("Sun shadows off",
-                "Nothing casts a sun shadow; the shadow map is not drawn.",
-                perf.getBoolean(PERF_SHADOWS_OFF, false));
-        panel.addView(shadows, matchWrap(dp(4)));
-        android.widget.CheckBox turbo = styledCheck("GPU turbo",
-                "Keeps the Adreno GPU at its highest clock. More heat and battery use.",
-                perf.getBoolean(PERF_GPU_TURBO, false));
-        panel.addView(turbo, matchWrap(dp(4)));
-        android.widget.CheckBox sustained = styledCheck("Sustained performance mode",
-                "Asks Android for steady clocks the device can hold without throttling "
-                        + "(where supported). Cooler, but the peak speed may be lower.",
-                perf.getBoolean(PERF_SUSTAINED, false));
-        panel.addView(sustained, matchWrap(dp(4)));
-        android.widget.CheckBox thermalGuard = styledCheck("Thermal guard",
-                "Lowers the draw distance before the device starts throttling and restores it "
-                        + "after it has cooled down.",
-                perf.getBoolean(PERF_THERMAL_GUARD, false));
-        panel.addView(thermalGuard, matchWrap(dp(4)));
-        android.widget.CheckBox safeMode = styledCheck("Safe mode (for bug reports)",
-                "Turns off the port's speed shortcuts and gameplay tweaks. Slower. If a bug is "
-                        + "gone in safe mode, mention it in your issue.",
-                perf.getBoolean(PERF_SAFE_MODE, false));
-        panel.addView(safeMode, matchWrap(dp(4)));
-
-        RadioGroup water = intervalChoice(panel, "Water reflections",
-                perf.getInt(PERF_WATER_REFLECTIONS, 1), 1000);
-        RadioGroup other = intervalChoice(panel, "Other reflections (cars, windows)",
-                perf.getInt(PERF_OTHER_REFLECTIONS, 1), 2000);
-        panel.addView(text("Off: the surface shows a plain colour instead of a reflection.",
-                12, R.color.picker_muted), matchWrap(dp(4)));
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(panel);
-        card.addView(scroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setOrientation(LinearLayout.HORIZONTAL);
-        buttons.setGravity(Gravity.END);
-        Button cancel = button("Cancel", false);
-        Button save = button("Save", true);
-        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(dp(120), dp(44));
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(dp(120), dp(44));
-        saveParams.leftMargin = dp(10);
-        buttons.addView(cancel, cancelParams);
-        buttons.addView(save, saveParams);
-        card.addView(buttons, matchWrap(dp(12)));
-
-        cancel.setOnClickListener(v -> dialog.dismiss());
-        save.setOnClickListener(v -> {
-            perf.edit()
-                    .putBoolean(PERF_HALF_DRAW_DISTANCE, drawDistance.isChecked())
-                    .putBoolean(PERF_SHADOWS_OFF, shadows.isChecked())
-                    .putBoolean(PERF_GPU_TURBO, turbo.isChecked())
-                    .putBoolean(PERF_SUSTAINED, sustained.isChecked())
-                    .putBoolean(PERF_THERMAL_GUARD, thermalGuard.isChecked())
-                    .putBoolean(PERF_SAFE_MODE, safeMode.isChecked())
-                    .putInt(PERF_WATER_REFLECTIONS, checkedInterval(water, 1000))
-                    .putInt(PERF_OTHER_REFLECTIONS, checkedInterval(other, 2000))
-                    .apply();
-            dialog.dismiss();
+        android.content.SharedPreferences perf=perfTestPreferences();
+        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.addView(ModernUi.text(this,"Graphics and optional phone performance controls. Compare the same route when testing changes.",14,ModernUi.MUTED));
+        ModernUi.action(this,panel,"Graphics settings",()->{
+            if(gameRunning()){toast("Use Graphics from the in-game menu while playing.");return;}MobileSettingsUi.graphics(this,mDataRoot,null);
         });
-
-        dialog.setContentView(card);
-        android.view.Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-            window.setLayout(Math.min(dp(560), (int) (metrics.widthPixels * 0.9f)),
-                    (int) (metrics.heightPixels * 0.9f));
-        }
-        dialog.show();
-        save.requestFocus();
+        LinearLayout advanced=new LinearLayout(this);advanced.setOrientation(LinearLayout.VERTICAL);advanced.setVisibility(View.GONE);
+        ModernUi.action(this,panel,"Advanced phone options",()->advanced.setVisibility(advanced.getVisibility()==View.GONE?View.VISIBLE:View.GONE));
+        android.widget.CheckBox sustained=styledCheck("Sustained performance","Ask Android for steadier long-session performance, where supported.",perf.getBoolean(PERF_SUSTAINED,false));advanced.addView(sustained,matchWrap(dp(12)));
+        android.widget.CheckBox guard=styledCheck("Thermal guard","Temporarily reduce draw distance and back off optional GPU turbo when thermal pressure rises.",perf.getBoolean(PERF_THERMAL_GUARD,false));advanced.addView(guard,matchWrap(dp(6)));
+        android.widget.CheckBox turbo=styledCheck("Prefer peak GPU speed","Adreno only. Higher heat and battery use; may reduce sustained performance.",perf.getBoolean(PERF_GPU_TURBO,false));turbo.setEnabled(DriverPolicy.supports("turnip",GpuInfo.renderer(),Build.VERSION.SDK_INT));advanced.addView(turbo,matchWrap(dp(8)));
+        android.widget.CheckBox safe=styledCheck("Compatibility mode","Disable optional speed shortcuts for troubleshooting.",perf.getBoolean(PERF_SAFE_MODE,false));advanced.addView(safe,matchWrap(dp(6)));panel.addView(advanced);
+        Runnable save=()->perf.edit().putBoolean(PERF_SUSTAINED,sustained.isChecked()).putBoolean(PERF_THERMAL_GUARD,guard.isChecked()).putBoolean(PERF_GPU_TURBO,turbo.isChecked()).putBoolean(PERF_SAFE_MODE,safe.isChecked()).apply();
+        final android.app.AlertDialog[] dialog={null};
+        dialog[0]=ModernUi.dialog(this,"Graphics & performance",panel,"Save changes",()->{save.run();dialog[0].dismiss();});dialog[0].show();
     }
 
     /** A check box in the launcher's style: label, muted note, gamepad focus outline. */
@@ -1202,7 +1211,7 @@ public class LauncherActivity extends Activity {
             return;
         }
         if (mInstallerReady && !mInstalled) {
-            toast("Install the game first (Game panel on the right).");
+            toast("Open Game files and install the game first.");
             return;
         }
         setBusy(true, "Starting...");
@@ -1211,23 +1220,26 @@ public class LauncherActivity extends Activity {
             // started with; end it so this launch uses the current choice.
             stopGameProcess();
             DebugLog.stopLeftovers(mDataRoot);
+            try{DebugLogArchive.clear(mDataRoot,getFilesDir());}catch(IOException e){Log.w(TAG,"Old logs could not be fully removed",e);}
             mMain.post(() -> {
                 setBusy(false, null);
-                Intent intent = new Intent(this, LibertyActivity.class);
-                if (debugLog) intent.putExtra(LibertyActivity.EXTRA_DEBUG_LOG, true);
+                Intent intent=new Intent(this,LibertyActivity.class);
+                intent.putExtra(LibertyActivity.EXTRA_GPU_RENDERER,GpuInfo.renderer());
+                android.content.SharedPreferences touch=getSharedPreferences("touch",Context.MODE_PRIVATE);
+                intent.putExtra(LibertyActivity.EXTRA_TURNIP_SYSMEM,touch.getBoolean("turnip_sysmem",
+                    DriverPolicy.supports("turnip",GpuInfo.renderer(),Build.VERSION.SDK_INT)));
+                if (debugLog) {
+                    intent.putExtra(LibertyActivity.EXTRA_DEBUG_LOG,true);
+                    intent.putExtra(LibertyActivity.EXTRA_INPUT_TRACE,mDebugMode==1);
+                    intent.putExtra(LibertyActivity.EXTRA_BENCHMARK,mDebugMode==2);
+                    intent.putExtra(LibertyActivity.EXTRA_RENDERER_CAPTURE,mDebugMode==3);
+                }
                 android.content.SharedPreferences perf = perfTestPreferences();
-                intent.putExtra(LibertyActivity.EXTRA_SHADOWS_OFF, perf.getBoolean(PERF_SHADOWS_OFF, false));
-                intent.putExtra(LibertyActivity.EXTRA_HALF_DRAW_DISTANCE,
-                        perf.getBoolean(PERF_HALF_DRAW_DISTANCE, false));
                 intent.putExtra(LibertyActivity.EXTRA_GPU_TURBO, perf.getBoolean(PERF_GPU_TURBO, false));
                 intent.putExtra(LibertyActivity.EXTRA_SUSTAINED, perf.getBoolean(PERF_SUSTAINED, false));
                 intent.putExtra(LibertyActivity.EXTRA_THERMAL_GUARD,
                         perf.getBoolean(PERF_THERMAL_GUARD, false));
                 intent.putExtra(LibertyActivity.EXTRA_SAFE_MODE, perf.getBoolean(PERF_SAFE_MODE, false));
-                intent.putExtra(LibertyActivity.EXTRA_WATER_REFLECTION_INTERVAL,
-                        perf.getInt(PERF_WATER_REFLECTIONS, 1));
-                intent.putExtra(LibertyActivity.EXTRA_OTHER_REFLECTION_INTERVAL,
-                        perf.getInt(PERF_OTHER_REFLECTIONS, 1));
                 startActivity(intent);
             });
         }, "LaunchGame").start();
@@ -1327,28 +1339,13 @@ public class LauncherActivity extends Activity {
     }
 
     private Button button(String label, boolean primary) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setAllCaps(false);
-        button.setTextColor(primary ? Color.BLACK : color(R.color.picker_text));
-        button.setTypeface(Typeface.DEFAULT_BOLD);
-        button.setBackground(focusBackground(primary ? 0xFFE6E6E6 : 0xFF30363D));
-        button.setFocusable(true);
-        return button;
+        return ModernUi.button(this,label,primary);
     }
-
-    /** A rounded fill with a bright outline while focused, for gamepad navigation. */
     private StateListDrawable focusBackground(int fill) {
-        GradientDrawable normal = rounded(fill, dp(8));
-        GradientDrawable focused = rounded(fill, dp(8));
-        focused.setStroke(dp(3), 0xFF3FA9F5);
-        GradientDrawable pressed = rounded(fill == Color.TRANSPARENT ? 0x33FFFFFF : fill, dp(8));
-        pressed.setStroke(dp(3), 0xFFFFFFFF);
-        StateListDrawable states = new StateListDrawable();
-        states.addState(new int[] {android.R.attr.state_pressed}, pressed);
-        states.addState(new int[] {android.R.attr.state_focused}, focused);
-        states.addState(new int[] {}, normal);
-        return states;
+        StateListDrawable states=new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed},rounded(0x554d4533,dp(3)));
+        states.addState(new int[]{android.R.attr.state_focused},rounded(0x554d4533,dp(3)));
+        states.addState(new int[]{},rounded(fill,dp(3)));return states;
     }
 
     private static GradientDrawable rounded(int fill, int radius) {
