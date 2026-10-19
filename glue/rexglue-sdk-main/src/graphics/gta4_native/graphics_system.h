@@ -11,6 +11,10 @@
 #include "native_owned_commands.h"
 #include "native_snapshot_resource.h"
 
+#include <rex/graphics/gta4_native/converted_texture_disk_cache.h>
+#include <fstream>
+#include <rex/graphics/gta4_native/mobile_frame_stats.h>
+#include <rex/graphics/gta4_native/immutable_snapshot.h>
 #include <array>
 #include <chrono>
 #include <atomic>
@@ -52,6 +56,7 @@
 #include "native_image_reuse.h"
 #include "native_resource_reclaimer.h"
 #include "native_texture_eviction_index.h"
+#include <rex/graphics/gta4_native/mobile_render_policy.h>
 #include <memory_resource>
 #include "stateful_constant_state.h"
 #include "native_buffer_arena.h"
@@ -1519,6 +1524,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   // Index count RecordIndexedPrimitive uses instead of the command's own when
   // consecutive equivalent draws are recorded as one (0: none).
   uint32_t indexed_merge_count_override_ = 0;
+  void BindNativeIndexBuffer(VkCommandBuffer command_buffer,VkBuffer buffer,VkDeviceSize offset,VkIndexType type);
   void BindNativeVertexBuffer(VkCommandBuffer command_buffer, uint32_t binding, VkBuffer buffer,
                               VkDeviceSize offset);
   bool InitializeShaderCache();
@@ -2144,6 +2150,11 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   void FinishPresent(NativeCommand& command, const PresentCommand& present);
   void SignalGuestFrameComplete(uint32_t device, uint32_t frame);
   void UpdateDynamicDrawDistance();
+  MobileFrameStats mobile_frame_stats_;
+  BenchmarkFrameStats benchmark_frame_stats_;
+  uint32_t benchmark_trigger_=0;
+  uint64_t benchmark_start_ns_=0,benchmark_last_csv_ns_=0;
+  std::ofstream benchmark_file_;
   NativeGpuCounters gpu_counters_;
   NativePipelineStats pipeline_stats_;
   bool pipeline_stats_attempted_ = false;
@@ -2153,6 +2164,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   double dynamic_draw_distance_published_ = 1.0;
   double dynamic_draw_distance_interval_ms_ = 33.3;
   uint64_t dynamic_draw_distance_last_tick_ = 0;
+  uint32_t dynamic_draw_distance_cap_=UINT32_MAX,dynamic_draw_distance_valid_windows_=0;
   // One-second windows of presented frames; the controller steps once per window.
   uint32_t dynamic_draw_distance_window_frames_ = 0;
   double dynamic_draw_distance_window_ms_ = 0.0;
@@ -2202,6 +2214,9 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   NativeLightingLineageLedger semantic_light_setup_lineage_;
   std::unordered_map<uint32_t, EnvironmentalDataV2> environmental_data_by_device_;
   std::unordered_map<uint32_t, uint64_t> environmental_data_hash_by_device_;
+  std::unordered_map<uint32_t,ImmutableSnapshot<EnvironmentalDataV2>> environmental_snapshots_;
+  std::once_flag converted_disk_cache_once_;
+  std::unique_ptr<ConvertedTextureDiskCache> converted_disk_cache_;
   std::unordered_map<uint32_t, NativeDeviceConstantState> device_constant_states_;
   std::vector<uint8_t> shader_cache_data_;
   std::vector<std::unique_ptr<NativeShader>> shader_resources_;
@@ -2706,6 +2721,8 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   uint64_t native_pipeline_unreported_compile_ticks_ = 0;
   uint64_t native_pipeline_unreported_wait_ticks_ = 0;
   uint64_t native_pipeline_unreported_creates_ = 0;
+  uint64_t pipeline_diagnostic_compile_ticks_=0,pipeline_diagnostic_wait_ticks_=0;
+  uint32_t pipeline_diagnostic_creates_=0,pipeline_diagnostic_slow_logs_=0;
   uint32_t diagnostic_submitted_frame_ = 0;
   uint64_t diagnostic_draw_id_ = 0;
   size_t diagnostic_command_index_ = SIZE_MAX;
@@ -2775,6 +2792,9 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   std::vector<NativeSampler> native_samplers_;
   std::unordered_map<VkFormat, VkFormatProperties> native_format_properties_;
   FrameGenerationMap<uint64_t, NativeTextureImage*> prepared_texture_images_;
+  struct TexturePreparationScratch;
+  std::unique_ptr<TexturePreparationScratch> texture_preparation_scratch_;
+  uint64_t texture_retention_preserved_=0;
   std::unordered_map<NativeSamplerCacheKey, size_t, NativeSamplerCacheKeyHash>
       native_sampler_indices_;
   std::string active_texture_filtering_;
@@ -2782,6 +2802,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   std::string active_anisotropic_filtering_;
   bool anisotropic_filtering_trace_pending_ = true;
   std::unordered_map<uint64_t, std::unique_ptr<NativeTextureImage>> native_texture_images_;
+  std::unordered_map<VkFormat,VkFormatProperties> native_texture_format_properties_;
   std::map<uint64_t, std::vector<std::unique_ptr<NativeTextureImage>>> retired_texture_images_;
   size_t retired_texture_image_count_ = 0;
   std::unordered_set<uint64_t> protected_texture_generations_;
@@ -2792,6 +2813,10 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   uint32_t active_texture_frame_ = 0;
   uint64_t next_texture_use_serial_ = 1;
   std::array<VkDeviceSize, VK_MAX_MEMORY_HEAPS> accounted_texture_bytes_{};
+  struct MobileEvictionCandidate { NativeTextureLruKey key{}; uint32_t memory_heap=UINT32_MAX; VkDeviceSize allocation_size=0; };
+  std::vector<MobileEvictionCandidate> texture_eviction_candidates_;
+  std::vector<std::pair<uint32_t,uint64_t>> texture_eviction_payloads_;
+  std::vector<std::unique_ptr<NativeTextureImage>> texture_eviction_retired_;
   NativeTextureEvictionIndex texture_eviction_scan_;
   size_t texture_eviction_remaining_ = 0;
   NativeTextureHeapBudgets texture_budget_snapshot_;
@@ -2813,6 +2838,11 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   std::atomic<bool> buffer_fast_path_disabled_{false};
   NativePeriodicWorkSchedule buffer_cache_poll_schedule_{kNativeBufferCachePollPhaseFrames};
   bool buffer_cache_reclamation_pending_ = false;
+  std::array<uint64_t,4096> recently_evicted_texture_generations_{};
+  uint64_t texture_recent_reuploads_=0,texture_evictions_last_window_=0;
+  MobileTextureReuseSample<4096> texture_content_reuse_;
+  uint64_t texture_content_reuploads_=0,texture_reupload_age_sum_=0;
+  std::array<uint64_t,3> texture_eviction_reasons_{};
   uint64_t texture_image_eviction_count_ = 0;
   uint64_t texture_image_evicted_bytes_ = 0;
   uint64_t texture_allocation_retry_count_ = 0;

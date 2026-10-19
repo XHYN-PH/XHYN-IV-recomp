@@ -206,7 +206,7 @@ inline std::optional<std::vector<uint32_t>> AddNativeColorOutputEpilogue(
   const uint32_t float_type = m.Type(spv::Op::OpTypeFloat, {32});
   const uint32_t vec4_type = m.Type(spv::Op::OpTypeVector, {float_type, 4});
   const uint32_t float_zero = m.Constant(float_type, {0});
-  const uint32_t index_two = m.Constant(uint_type, {2});
+  uint32_t shared_member_index=2;
   const uint32_t push_ulong_ptr = m.Type(spv::Op::OpTypePointer,
       {uint32_t(spv::StorageClass::PushConstant), ulong_type});
   const uint32_t physical_vec4_ptr = m.Type(spv::Op::OpTypePointer,
@@ -229,15 +229,41 @@ inline std::optional<std::vector<uint32_t>> AddNativeColorOutputEpilogue(
     if (ptr.size() != 4 || ptr[3] >= bound) return fail("invalid-push-pointer");
     const uint32_t structure_id = ptr[3];
     const auto& structure = definitions[structure_id];
-    if (structure.size() < 5 || (structure[0] & 0xFFFF) != U(spv::Op::OpTypeStruct) ||
-        structure[4] != ulong_type) return fail("incompatible-shared-address-member");
-    bool offset_ok = false;
-    for (const auto& w : m.instructions)
-      if (w.size() == 5 && (w[0] & 0xFFFF) == U(spv::Op::OpMemberDecorate) &&
-          w[1] == structure_id && w[2] == 2 && w[3] == uint32_t(spv::Decoration::Offset))
-        offset_ok = w[4] == 16;
-    if (!offset_ok) return fail("incompatible-shared-address-offset");
+    if (structure.size()<3 || (structure[0]&0xFFFF)!=U(spv::Op::OpTypeStruct))
+      return fail("incompatible-shared-address-member");
+    const size_t members=structure.size()-2;
+    std::vector<uint32_t> offsets(members,UINT32_MAX);
+    for(const auto& w:m.instructions)if(w.size()==5&&(w[0]&0xFFFF)==U(spv::Op::OpMemberDecorate)&&
+        w[1]==structure_id&&w[2]<members&&w[3]==uint32_t(spv::Decoration::Offset)) {
+      if(offsets[w[2]]!=UINT32_MAX)return fail("duplicate-push-member-offset");
+      offsets[w[2]]=w[4];
+    }
+    bool found_shared=false;
+    for(size_t i=0;i<members;++i)if(offsets[i]==16) {
+      if(found_shared||structure[i+2]!=ulong_type)return fail("incompatible-shared-address-member");
+      found_shared=true;shared_member_index=uint32_t(i);
+    }
+    // Optimization removes unused members and renumbers indices, preserving
+    // byte offsets. The motion-blur override keeps offsets 8 and 16, so find
+    // the shared address by its ABI offset rather than an assumed index 2.
+    if(!found_shared) {
+      if(members>2)return fail("incompatible-shared-address-offset");
+      for(size_t i=0;i<members;++i) {
+        if(structure[i+2]!=ulong_type||(offsets[i]!=0&&offsets[i]!=8))
+          return fail("incompatible-native-address-prefix");
+        if(i&&offsets[i]==offsets[0])return fail("overlapping-native-address-prefix");
+      }
+      for(const auto& w:m.instructions)if(w.size()==4&&(w[0]&0xFFFF)==U(spv::Op::OpTypePointer)&&
+          w[3]==structure_id&&w[2]!=uint32_t(spv::StorageClass::PushConstant))return fail("shared-native-prefix-type");
+      shared_member_index=uint32_t(members);
+      for(auto& w:m.instructions)if(w.size()==structure.size()&&(w[0]&0xFFFF)==U(spv::Op::OpTypeStruct)&&w[1]==structure_id) {
+        w.push_back(ulong_type);w[0]=(uint32_t(w.size())<<16)|U(spv::Op::OpTypeStruct);break;
+      }
+      Emit(annotations,spv::Op::OpMemberDecorate,{structure_id,shared_member_index,uint32_t(spv::Decoration::Offset),16});
+    }
+
   }
+  const uint32_t shared_index=m.Constant(uint_type,{shared_member_index});
   const uint32_t wrapper = m.Id();
   const uint32_t function_type = m.Type(spv::Op::OpTypeFunction, {void_type});
   Words function;
@@ -247,7 +273,7 @@ inline std::optional<std::vector<uint32_t>> AddNativeColorOutputEpilogue(
   Emit(function, spv::Op::OpFunctionCall, {void_type, m.Id(), original_entry});
   const uint32_t address_pointer = m.Id(), address = m.Id();
   Emit(function, spv::Op::OpAccessChain,
-       {push_ulong_ptr, address_pointer, push_variable, index_two});
+       {push_ulong_ptr, address_pointer, push_variable, shared_index});
   Emit(function, spv::Op::OpLoad, {ulong_type, address, address_pointer});
   for (const auto& output : outputs) {
     const uint32_t n = output.components, ty = output.type;
