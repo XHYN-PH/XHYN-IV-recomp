@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <optional>
+#include <initializer_list>
 #include <string_view>
 
 namespace rex::graphics::gta4_native {
@@ -15,12 +16,13 @@ constexpr std::optional<Fsr1Scale> Fsr1QualityScale(std::string_view quality) {
   return std::nullopt;
 }
 enum class Fsr1Selection : uint8_t {
-  kNative, kEnabled, kSupersampling, kHdrInputUnsupported, kBelowRenderFloor, kInvalidQuality
+  kNative, kEnabled, kSupersampling, kHdrInputUnsupported, kBelowRenderFloor, kInvalidQuality,
+  kAdjustedQuality
 };
 struct Fsr1RenderExtent {
   uint32_t width, height;
   Fsr1Selection selection = Fsr1Selection::kNative;
-  constexpr bool active() const { return selection == Fsr1Selection::kEnabled; }
+  constexpr bool active() const { return selection == Fsr1Selection::kEnabled || selection == Fsr1Selection::kAdjustedQuality; }
 };
 constexpr Fsr1RenderExtent SelectFsr1RenderExtent(uint32_t display_width, uint32_t display_height,
     bool requested, std::string_view quality, bool supersampling, bool hdr,
@@ -39,6 +41,15 @@ constexpr Fsr1RenderExtent SelectFsr1RenderExtent(uint32_t display_width, uint32
   const uint32_t width = divide(display_width), height = divide(display_height);
   // Preserve the title's validated minimum scene size, not just the API limit.
   if (width < 640 || height < 360) {
+    // Try the next compatible spatial preset on wide displays while keeping
+    // the title's validated scene minimum and the selected output aspect.
+    for (auto compatible : {std::string_view("balanced"),std::string_view("quality"),std::string_view("ultra_quality")}) {
+      const auto safer=Fsr1QualityScale(compatible);
+      if (uint64_t(safer->numerator)*scale->denominator >= uint64_t(scale->numerator)*safer->denominator) continue;
+      const auto candidate=[&](uint32_t value){return uint32_t((uint64_t(value)*safer->denominator+safer->numerator/2)/safer->numerator);};
+      const uint32_t w=candidate(display_width),h=candidate(display_height);
+      if(w>=640&&h>=360){result.width=w;result.height=h;result.selection=Fsr1Selection::kAdjustedQuality;return result;}
+    }
     result.selection = Fsr1Selection::kBelowRenderFloor; return result;
   }
   result.width = width; result.height = height; result.selection = Fsr1Selection::kEnabled;
