@@ -94,7 +94,7 @@ std::string LoaderPath() {
 
 std::string Failure(const std::string& why) {
   __android_log_print(ANDROID_LOG_ERROR, kTag, "%s", why.c_str());
-  return "{\"ok\":false,\"mode\":" + Quote(g_custom ? "turnip" : "system") +
+  return "{\"ok\":false,\"mode\":" + Quote(g_custom ? "custom" : "system") +
          ",\"error\":" + Quote(why) + ",\"loader_path\":" + Quote(LoaderPath()) + "}";
 }
 
@@ -201,7 +201,8 @@ bool VerifyInstance(VkInstance instance, uint32_t requested_api,
   const auto enumerate = Get<PFN_vkEnumeratePhysicalDevices>(instance, "vkEnumeratePhysicalDevices");
   const auto properties = Get<PFN_vkGetPhysicalDeviceProperties>(instance, "vkGetPhysicalDeviceProperties");
   const auto properties2 = Get<PFN_vkGetPhysicalDeviceProperties2>(instance, "vkGetPhysicalDeviceProperties2");
-  if (!enumerate || !properties) {
+  const auto features = Get<PFN_vkGetPhysicalDeviceFeatures>(instance,"vkGetPhysicalDeviceFeatures");
+  if (!enumerate || !properties || !features) {
     error = "Selected loader is missing physical-device query functions";
     return false;
   }
@@ -223,6 +224,8 @@ bool VerifyInstance(VkInstance instance, uint32_t requested_api,
     return false;
   }
   devices_json = "[";
+  bool any_compatible=false;
+  std::string last_missing;
   for (uint32_t i = 0; i < count; ++i) {
     VkPhysicalDeviceProperties basic{};
     properties(devices[i], &basic);
@@ -267,6 +270,15 @@ bool VerifyInstance(VkInstance instance, uint32_t requested_api,
         return false;
       }
     }
+    VkPhysicalDeviceFeatures supported{};features(devices[i],&supported);
+    std::string missing;
+    const auto require=[&](bool available,const char* name) {
+      if(!available) { if(!missing.empty()) missing+=", ";missing+=name; }
+    };
+    require(basic.apiVersion>=VK_API_VERSION_1_2,"Vulkan 1.2");
+    require(supported.shaderInt64,"shaderInt64");require(supported.depthClamp,"depthClamp");
+    require(supported.sampleRateShading,"sampleRateShading");require(supported.independentBlend,"independentBlend");
+    any_compatible|=missing.empty();last_missing=std::string(basic.deviceName)+": missing "+missing;
     if (i) devices_json += ",";
     devices_json += "{\"name\":" + Quote(basic.deviceName) +
                     ",\"api_version\":" + std::to_string(basic.apiVersion) +
@@ -275,9 +287,12 @@ bool VerifyInstance(VkInstance instance, uint32_t requested_api,
                     ",\"device_id\":" + std::to_string(basic.deviceID) +
                     ",\"driver_id\":" + std::to_string(driver.driverID) +
                     ",\"driver_name\":" + Quote(driver.driverName) +
+                    ",\"required_features\":" + (missing.empty() ? "true" : "false") +
+                    ",\"missing_features\":" + Quote(missing) +
                     ",\"driver_info\":" + Quote(driver.driverInfo) + "}";
   }
   devices_json += "]";
+  if(!any_compatible) { error="Driver does not expose the required game features: "+last_missing;return false; }
   return true;
 }
 
@@ -428,7 +443,7 @@ EXPORT jstring JNICALL Java_com_libertyrecomp_DriverBridge_nativeInit(
   if (!error.empty()) {
     g_status = Failure(error);
   } else {
-    g_status = "{\"ok\":true,\"mode\":" + Quote(g_custom ? "turnip" : "system") +
+    g_status = "{\"ok\":true,\"mode\":" + Quote(g_custom ? "custom" : "system") +
         ",\"error\":\"\",\"fallback_from\":" + Quote(fallback_from) +
         ",\"loader_path\":" + Quote(LoaderPath()) +
         ",\"devices\":" + devices + "}";
@@ -461,7 +476,7 @@ EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
   const uint32_t count = g_game_instances.fetch_add(1, std::memory_order_relaxed) + 1;
   if (count <= 8) __android_log_print(ANDROID_LOG_INFO, kTag,
       "Game Vulkan instance %u verified: mode=%s loader=%s devices=%s", count,
-      g_custom ? "turnip" : "system", LoaderPath().c_str(), devices.c_str());
+      g_custom ? "custom" : "system", LoaderPath().c_str(), devices.c_str());
   return VK_SUCCESS;
 }
 
