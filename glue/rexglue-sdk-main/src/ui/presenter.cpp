@@ -28,6 +28,8 @@
 #include <ffx_api/ffx_upscale.h>
 #endif
 
+REXCVAR_DEFINE_BOOL(present_timing_stats,false,"UI/Presenter","Low-frequency refresh and publication handoff timing in debug sessions");
+
 REXCVAR_DEFINE_BOOL(host_present_from_non_ui_thread, true, "UI/Presenter",
                     "Allow presentation from non-UI thread");
 
@@ -611,6 +613,8 @@ bool Presenter::RefreshGuestOutput(
     uint32_t display_aspect_ratio_y,
     std::function<bool(GuestOutputRefreshContext& context)> refresher,
     GuestOutputProvenance provenance) {
+  const bool measure=REXCVAR_GET(present_timing_stats)&&rex::diagnostics::IsEnabled(rex::diagnostics::Category::kLogging);
+  const uint64_t refresh_begin=measure?FramePacerNowNs():0;
   GuestOutputProperties& writable_properties =
       guest_output_properties_[guest_output_mailbox_writable_];
   writable_properties.frontbuffer_width = frontbuffer_width;
@@ -869,16 +873,24 @@ bool Presenter::RefreshGuestOutput(
         paint_result_name(paint_result));
   }
   }
+  const uint64_t before_handoff=measure?FramePacerNowNs():0;
   if (is_active && provenance.producer_backpressure && (provenance.frame_rate_limit || paired_presentation) &&
       std::this_thread::get_id() != ui_thread_id_ &&
       paint_result != PaintResult::kGpuLostResponsible &&
       paint_result != PaintResult::kGpuLostExternally) {
-    const uint64_t begin = FramePacerNowNs();
+    const bool trace_presenter=rex::diagnostics::IsEnabled(rex::diagnostics::Category::kPresenter);
+    const uint64_t begin = trace_presenter?FramePacerNowNs():0;
     const bool accepted = frame_publication_gate_.Wait(publication_serial);
     if (rex::diagnostics::IsEnabled(rex::diagnostics::Category::kPresenter)) {
       REXLOG_INFO("FramePacer point=handoff serial={} frame={} released={} wait-ns={}",
                   publication_serial, provenance.submitted_frame, accepted, FramePacerNowNs()-begin);
     }
+  }
+  if(measure){
+    const uint64_t end=FramePacerNowNs();
+    struct Timing{uint64_t start=0,count=0,refresh=0,handoff=0,total_max=0;};thread_local Timing timing;
+    if(!timing.start)timing.start=end;++timing.count;timing.refresh+=before_handoff-refresh_begin;timing.handoff+=end-before_handoff;timing.total_max=std::max(timing.total_max,end-refresh_begin);
+    if(end-timing.start>=2'000'000'000ull){REXLOG_INFO("present-timing: samples={} refresh_wall_avg_ms={:.2f} handoff_wait_avg_ms={:.2f} total_max_ms={:.2f} cap={} (wall timings include recording/driver waits; not GPU time)",timing.count,double(timing.refresh)/timing.count/1e6,double(timing.handoff)/timing.count/1e6,double(timing.total_max)/1e6,provenance.frame_rate_limit);timing={end};}
   }
   // Handle GPU loss when not in the middle of the function anymore, and
   // lifecycle management from the GPU loss callback is fine on the UI thread.
