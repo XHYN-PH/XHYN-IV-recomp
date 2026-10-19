@@ -76,6 +76,8 @@ X_STATUS InputSystem::Setup() {
 }
 
 void InputSystem::Shutdown() {
+  WriteTouchGamepadRumble(0,0,0);
+  SetTouchGamepadRumbleProvider(nullptr);
   drivers_.clear();
 }
 
@@ -122,6 +124,11 @@ X_RESULT InputSystem::GetCapabilities(uint32_t user_index, uint32_t flags,
       out_caps->gamepad.buttons = 0xFFFF;
       out_caps->gamepad.left_trigger = 255;
       out_caps->gamepad.right_trigger = 255;
+      if(TouchGamepadRumbleAvailable(user_index)){
+        out_caps->flags=X_INPUT_CAPS_FFB_SUPPORTED;
+        out_caps->vibration.left_motor_speed=0xFFFF;
+        out_caps->vibration.right_motor_speed=0xFFFF;
+      }
     }
     return X_ERROR_SUCCESS;
   }
@@ -299,17 +306,20 @@ bool InputSystem::TryGetLastState(uint32_t user_index, X_INPUT_STATE* out_state)
 
 X_RESULT InputSystem::SetState(uint32_t user_index, X_INPUT_VIBRATION* vibration) {
   SCOPE_profile_cpu_f("hid");
+  if(!vibration)return X_ERROR_BAD_ARGUMENTS;
 
   X_RESULT first_failure = X_ERROR_DEVICE_NOT_CONNECTED;
   for (auto& driver : drivers_) {
     X_RESULT result = driver->SetState(user_index, vibration);
     if (result == X_ERROR_SUCCESS) {
+      WriteTouchGamepadRumble(user_index,0,0);
       return result;
     }
     if (result != X_ERROR_DEVICE_NOT_CONNECTED && first_failure == X_ERROR_DEVICE_NOT_CONNECTED) {
       first_failure = result;
     }
   }
+  if(WriteTouchGamepadRumble(user_index,vibration->left_motor_speed,vibration->right_motor_speed))return X_ERROR_SUCCESS;
   return first_failure;
 }
 
