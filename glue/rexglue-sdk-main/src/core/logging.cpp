@@ -235,7 +235,9 @@ void InitLogging(const LogConfig& config) {
                                           : std::filesystem::path(config.log_dir);
     resolved_path = NextSequentialLogPath(log_dir, config.app_name).string();
   }
-  if (!resolved_path.empty()) {
+  // Android normal play uses a nonempty CLI sentinel so a string parser
+  // cannot consume the following option. Never rotate a device-file sink.
+  if (!resolved_path.empty() && resolved_path != "/dev/null") {
     auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
         resolved_path, static_cast<size_t>(REXCVAR_GET(log_max_file_size_mb)) * 1024 * 1024,
         static_cast<size_t>(REXCVAR_GET(log_max_files)), false);
