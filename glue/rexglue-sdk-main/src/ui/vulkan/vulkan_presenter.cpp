@@ -696,6 +696,10 @@ VulkanPresenter::ConnectOrReconnectPaintingToSurfaceFromUIThread(Surface& new_su
                                                                  uint32_t new_surface_height,
                                                                  bool was_paintable,
                                                                  bool& is_vsync_implicit_out) {
+#if REX_PLATFORM_ANDROID
+  android_surface_ = nullptr;
+#endif
+
   generated_frame_presentation_enabled_.store(false, std::memory_order_release);
   const VulkanInstance* const vulkan_instance = vulkan_device_->vulkan_instance();
   const VulkanInstance::Functions& ifn = vulkan_instance->functions();
@@ -1088,10 +1092,18 @@ VulkanPresenter::ConnectOrReconnectPaintingToSurfaceFromUIThread(Surface& new_su
   is_vsync_implicit_out = paint_context_.swapchain_is_fifo;
   generated_frame_presentation_enabled_.store(paint_context_.swapchain_is_fifo,
                                                std::memory_order_release);
+#if REX_PLATFORM_ANDROID
+  if (new_surface.GetType() == Surface::kTypeIndex_AndroidNativeWindow)
+    android_surface_ = &static_cast<const AndroidNativeWindowSurface&>(new_surface);
+#endif
   return SurfacePaintConnectResult::kSuccess;
 }
 
 void VulkanPresenter::DisconnectPaintingFromSurfaceFromUIThreadImpl() {
+#if REX_PLATFORM_ANDROID
+  if (android_surface_) android_surface_->SetFrameRateHint(0);
+  android_surface_ = nullptr;
+#endif
   generated_frame_presentation_enabled_.store(false, std::memory_order_release);
   paint_context_.DestroySwapchainAndVulkanSurface();
   pending_generated_frame_.reset();
@@ -2919,6 +2931,12 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
   }
 
   const auto& pacing = pacing_attempt();
+#if REX_PLATFORM_ANDROID
+  // Use the requested cap too: a current 60 Hz minimum must not prevent the
+  // first 120 Hz vote. The pacer still owns the actual submission cadence.
+  if (android_surface_) android_surface_->SetFrameRateHint(
+      std::max(pacing.fps, guest_output_properties.provenance.frame_rate_limit));
+#endif
   const uint64_t queue_host_ns = FramePacerNowNs();
   VkPresentTimeGOOGLE present_time{};
   VkPresentTimesInfoGOOGLE present_times{VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE};
