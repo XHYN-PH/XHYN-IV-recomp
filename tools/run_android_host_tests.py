@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Run the Android CPU/input regressions under ASan and UBSan on Linux."""
+from pathlib import Path
+import os
+import subprocess
+
+ROOT = Path(__file__).resolve().parents[1]
+os.chdir(ROOT)
+SDK = ROOT / "glue/rexglue-sdk-main"
+OUT = ROOT / "out/host-tests"
+OUT.mkdir(parents=True, exist_ok=True)
+includes = [SDK / p for p in ("src", "include", "gta4-recomp/src", "thirdparty/fmt/include",
+    "thirdparty/spdlog/include", "thirdparty/simde", "thirdparty/xxHash",
+    "thirdparty/cli11/include", "thirdparty/tomlplusplus/include", "thirdparty/imgui",
+    "thirdparty/sdl3/include")]
+flags = ["-std=c++23", "-O0", "-g1", "-pthread", "-msse4.1", "-fsanitize=address,undefined",
+    "-fno-omit-frame-pointer", "-ffunction-sections", "-fdata-sections", "-DFMT_HEADER_ONLY",
+    "-DSPDLOG_FMT_EXTERNAL", *["-I" + str(p) for p in includes]]
+
+
+def obj(path):
+    path = ROOT / path
+    output = OUT / (str(path.relative_to(ROOT)).replace("/", "_") + ".o")
+    dep = output.with_suffix(".d")
+    dependencies = [path]
+    if dep.exists():
+        dependencies += [Path(p) for p in dep.read_text().replace("\\\n", " ").split(":", 1)[1].split()]
+    if not output.exists() or any(not p.exists() or p.stat().st_mtime > output.stat().st_mtime
+                                  for p in dependencies):
+        # The factory in this TU mentions physical backends not linked by
+        # this host harness. Keep ASan/UBSan, but avoid unused factory RTTI
+        # relocations from vptr instrumentation preventing section collection.
+        extra = ["-fno-sanitize=vptr"] if path.name == "input_system.cpp" else []
+        subprocess.run(["g++", *flags, *extra, "-MMD", "-MF", str(dep), "-c", str(path), "-o", str(output)], check=True)
+    return str(output)
+
+
+common = ["glue/rexglue-sdk-main/src/core/cvar.cpp", "glue/rexglue-sdk-main/src/core/platform/env_posix.cpp"]
+native = ["tools/test_android_refinements.cpp", "tools/android_host_test_support.cpp", *common,
+          "glue/rexglue-sdk-main/src/core/memory.cpp",
+          "glue/rexglue-sdk-main/src/graphics/pipeline/texture/conversion.cpp"]
+touch = ["tools/test_android_touch.cpp", *common,
+    "glue/rexglue-sdk-main/src/input/absolute_pointer.cpp",
+    "glue/rexglue-sdk-main/src/input/input_system.cpp",
+    "glue/rexglue-sdk-main/gta4-recomp/src/input/liberty_touch_overlay.cpp",
+    "glue/rexglue-sdk-main/gta4-recomp/src/input/gamepad_touch_overlay.cpp",
+    *["glue/rexglue-sdk-main/thirdparty/imgui/" + name + ".cpp" for name in
+      ("imgui", "imgui_draw", "imgui_tables", "imgui_widgets")]]
+for name, files in (("android-refinements", native), ("android-touch", touch),
+                    ("android-shader-compat", ["tools/test_android_shader_compat.cpp"]),
+                    ("android-mobile", ["tools/test_android_mobile.cpp"]),
+                    ("android-launch", ["tools/test_android_launch.cpp","glue/rexglue-sdk-main/src/core/diagnostics_policy.cpp",*common])):
+    objects = [obj(p) for p in files]
+    executable = OUT / name
+    subprocess.run(["g++", *flags, *objects, "-Wl,--gc-sections", "-o", str(executable)], check=True)
+    data = "production-shaders" if name == "android-shader-compat" else "mobile-cache" if name=="android-mobile" else "touch-home"
+    subprocess.run([str(executable), str(OUT / data)], check=True,
+                   env={**os.environ, "ASAN_OPTIONS": "detect_leaks=0"})
