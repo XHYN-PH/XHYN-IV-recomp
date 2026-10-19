@@ -288,25 +288,22 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
   // Gaps (no guest frame ready, silence played) counted and logged every
   // 10 s with the queue depth, so stutter reports can tell a starved guest
   // producer from an output-side problem.
-  static uint32_t silent_fills = 0;
-  static uint32_t filled = 0;
-  static auto next_report = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
   while (additional_amount > 0) {
-    static uint32_t sdl_callback_count = 0;
     std::unique_lock<std::mutex> guard(driver->frames_mutex_);
-    if (const auto now = std::chrono::steady_clock::now(); now >= next_report) {
-      if (silent_fills) {
+    if (const auto now = std::chrono::steady_clock::now(); now >= driver->next_starvation_report_) {
+      if (driver->silent_fills_) {
         REXAPU_WARN("audio: {} of {} blocks were silence (no guest frame ready), {} queued",
-                    silent_fills, silent_fills + filled, driver->frames_queued_.size());
+                    driver->silent_fills_, driver->silent_fills_ + driver->filled_blocks_, driver->frames_queued_.size());
       }
-      silent_fills = filled = 0;
-      next_report = now + std::chrono::seconds(10);
+      driver->silent_fills_ = driver->filled_blocks_ = 0;
+      driver->next_starvation_report_ = now + std::chrono::seconds(10);
     }
     if (driver->frames_queued_.empty()) {
-      ++silent_fills;
-      if (sdl_callback_count < 10) {
+      ++driver->silent_fills_;
+      if (driver->callback_log_count_ < 10) {
         REXAPU_DEBUG("SDLCallback: no frames queued (silence)");
-        sdl_callback_count++;
+        driver->callback_log_count_++;
       }
       std::memset(data, 0, len);
       if (!SDL_PutAudioStreamData(stream, data, len)) {
@@ -315,7 +312,7 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
       }
       additional_amount -= len;
     } else {
-      ++filled;
+      ++driver->filled_blocks_;
       auto buffer = driver->frames_queued_.front();
       driver->frames_queued_.pop();
       if (REXCVAR_GET(audio_mute)) {
