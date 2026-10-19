@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <mutex>
 #include <queue>
 #include <stack>
@@ -55,6 +56,8 @@ class SDLAudioDriver : public AudioDriver {
   std::queue<float*> frames_queued_ = {};
   std::stack<float*> frames_unused_ = {};
   std::mutex frames_mutex_ = {};
+  uint32_t silent_fills_=0,filled_blocks_=0,callback_log_count_=0;
+  std::chrono::steady_clock::time_point next_starvation_report_=std::chrono::steady_clock::now()+std::chrono::seconds(10);
 };
 
 }  // namespace rex::audio::sdl
