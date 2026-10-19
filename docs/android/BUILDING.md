@@ -1,12 +1,56 @@
 # Building the Android APK
 
-The Android build has only been done on **Windows with Git Bash**. The scripts use `cygpath` and
-Windows host tools (`dxc.exe`, `glslangValidator.exe`). Building on Linux or macOS needs small
-changes to `os/android/scripts/env.sh`, `build_native.sh` and `setup_host_tools.sh`.
+The XHYN release APK is built on Linux. The original Windows/Git Bash scripts are also retained below. The Linux release packager requires a private signing key; keys and passwords must stay outside the repository.
 
 The generated C++ for the game is checked in, as it is upstream, so building needs no game files.
 
-## Prerequisites
+## Linux release build
+
+Use Android NDK r29 (`29.0.14206865`), SDK platform 35, build-tools 35.0.0, JDK 17, Python 3.10+, CMake 3.31.6 and Ninja. Install host builds of DXC and glslang, and preserve executable permissions and NDK symlinks when extracting tool archives. The release toolchain used DXC 1.9.2609 and glslang 16.6.0.
+
+Set `ANDROID_SDK_ROOT`, `ANDROID_NDK_HOME`, `JAVA_HOME` and `PATH` for your installation. Set `DXC_BIN`, `DXC_LIB` and `GLSLANG_VALIDATOR` to your host shader tools. Run these commands from the repository root:
+
+```bash
+python3 tools/setup_repo.py
+
+cmake -S . -B out/build/android-arm64-release -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared \
+  -DLIBERTY_RECOMP_TARGET_PLATFORM=android \
+  -DLIBERTY_RECOMP_ANDROID_RUNTIME_ASSETS=ON -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_CXX_SCAN_FOR_MODULES=OFF \
+  '-DCMAKE_C_FLAGS=-march=armv8-a -moutline-atomics -fno-emulated-tls' \
+  '-DCMAKE_CXX_FLAGS=-march=armv8-a -moutline-atomics -fno-emulated-tls' \
+  -DREXGLUE_ENABLE_TRACY=OFF -DREXGLUE_ENABLE_PERF_COUNTERS=OFF \
+  -DGTA4_NATIVE_DXC_EXECUTABLE="$DXC_BIN" \
+  -DGTA4_NATIVE_DXC_LIBRARY_PATH="$DXC_LIB" \
+  -DGTA4_NATIVE_GLSLANG_VALIDATOR="$GLSLANG_VALIDATOR" \
+  -DGTA4_NATIVE_SPIRV_VAL="$ANDROID_NDK_HOME/shader-tools/linux-x86_64/spirv-val"
+cmake --build out/build/android-arm64-release --target LibertyRecomp liberty_install --parallel 4
+
+cmake -S os/android/native -B out/build/android-driver-proxy -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 \
+  -DANDROID_STL=c++_static -DCMAKE_BUILD_TYPE=Release
+cmake --build out/build/android-driver-proxy --parallel 4
+
+python3 os/android/scripts/package_release.py \
+  --keystore /private/xhyn-release.p12 \
+  --password-file /private/password.txt \
+  --output out/XHYN-IV.apk
+```
+
+Adjust build parallelism to available RAM. This compiles large generated sources and may take a long time. The packager stages and strips the native libraries, compiles Java/resources, checks native dependencies, aligns the APK for 16 KiB pages and signs it. The default key alias is `xhyn`; use `--alias` for a different alias.
+
+Generate and protect your own signing key for personal builds. A build signed with a different key cannot update an installed XHYN release. Export saves before replacing an installation; uninstalling removes its data. Never commit a keystore, password file or signing credentials.
+
+The release uses generic ARMv8-A with outlined atomics and ThinLTO. The PGO helper is available for developers, but this release does not claim a trained PGO profile.
+
+## Windows / Git Bash scripts
+
+The following is the original workflow. The helper scripts use Windows host shader tools and Gradle debug signing. Do not use their automatically generated debug key for published updates.
+
+### Prerequisites
 
 | Tool | Version used |
 |---|---|
@@ -22,7 +66,7 @@ The generated C++ for the game is checked in, as it is upstream, so building nee
 `C:\Program Files\Android\Android Studio\jbr`. Override `ANDROID_HOME`, `ANDROID_NDK`, `NDK_VER` or
 `JAVA_HOME` if yours are elsewhere.
 
-## Steps
+### Steps
 
 All commands run in Git Bash from the repository root.
 
@@ -61,9 +105,8 @@ Notes:
   folder).
 - `-DLIBERTY_ANDROID_PGO=generate` / `=<profile.profdata>` in `build_native.sh`'s configure step
   enables profile-guided optimization (see [PORTING.md](PORTING.md#1-building-for-android)).
-- APKs built on different machines are signed with different debug keys. A device then has to
-  uninstall the old build before installing the new one, which deletes the game and saves (see
-  [INSTALL.md](INSTALL.md#upgrading-to-a-newer-version)).
+- APKs built on different machines are signed with different debug keys. Export saves before replacing an installation. Uninstalling deletes game and save data (see
+  [INSTALL.md](INSTALL.md#updating-and-saves)).
 
 ## Development helpers
 
