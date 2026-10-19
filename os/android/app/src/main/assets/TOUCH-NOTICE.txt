@@ -1,0 +1,10 @@
+The Liberty mobile touch layout and touch-icons assets were adapted from
+prollynotzjay/LibertyRecompAndroidMaliVer, commit
+8d5b9bf90950035c42c775aeda3f977026b03d28.
+https://github.com/prollynotzjay/LibertyRecompAndroidMaliVer
+
+Original LibertyRecompAndroid:
+https://github.com/vaduur/LibertyRecompAndroid
+
+This fork retains the original project license and authorship notices.
+See COPYING in the corresponding source distribution.
