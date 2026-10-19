@@ -10,6 +10,8 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <chrono>
+#include <thread>
 #include <string>
 #include <memory>
 #include <mutex>
@@ -292,11 +294,16 @@ class VulkanDevice {
   // for a failure.
   VkResult WaitForFences(uint32_t fence_count, const VkFence* fences, VkBool32 wait_all) const {
     for (;;) {
+      const auto began=std::chrono::steady_clock::now();
       const VkResult result = functions_.vkWaitForFences(device_, fence_count, fences, wait_all,
                                                          UINT64_C(1000000000));
       if (result != VK_TIMEOUT) {
         return result;
       }
+      // A broken early-timeout implementation must not turn this blocking
+      // wait into a hot spin. Keep fence ownership until actual completion.
+      const auto elapsed=std::chrono::steady_clock::now()-began;
+      if(elapsed<std::chrono::milliseconds(1))std::this_thread::sleep_for(std::chrono::milliseconds(1)-elapsed);
     }
   }
 
