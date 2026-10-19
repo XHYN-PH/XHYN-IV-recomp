@@ -9,6 +9,7 @@
 
 #include "input/context_touch_settings.h"
 #include "input/gamepad_touch_overlay.h"
+#include "input/liberty_touch_overlay.h"
 
 namespace gta4::input {
 
@@ -62,6 +63,9 @@ bool ContextTouchOverlay::ResolveIcon(void* context, std::string_view id, Contex
 
 void ContextTouchOverlay::OnDraw(ImGuiIO& io) {
   (void)FlushContextTouchSettings();
+  RefreshGamepadTouchLayout();
+  SetLibertyIconResolver(icon_resolver_ ? icon_resolver_ : ResolveIcon,
+                         icon_resolver_ ? icon_context_ : this);
   if (GamepadTouchLayoutSelected()) {
     repaint_needed_ = UpdateAndDrawGamepadTouchOverlay(
         ImGui::GetForegroundDrawList(), ImGui::GetFont(), ImGui::GetFontSize(), io.DisplaySize.x,
