@@ -59,6 +59,7 @@ set(GTA4_APP_SOURCES
     src/input/context_touch_activity_layout.cpp
     src/input/context_touch_overlay.cpp
     src/input/gamepad_touch_overlay.cpp
+    src/input/liberty_touch_overlay.cpp
     src/gta4_touch_guest_hooks.cpp
     src/network/community_multiplayer.cpp
     src/network/gta4_voice_audio.cpp
@@ -171,6 +172,7 @@ if(APPLE AND LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "desktop")
     )
 
     target_include_directories(LibertyRecomp PRIVATE
+        "${LIBERTY_RECOMP_WORKSPACE_ROOT}/thirdparty/json/single_include"
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/generated
         ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/crypto
@@ -330,6 +332,7 @@ elseif(ANDROID)
         "$<$<CONFIG:Release,RelWithDebInfo>:-O0>")
 
     target_include_directories(LibertyRecomp PRIVATE
+        "${LIBERTY_RECOMP_WORKSPACE_ROOT}/thirdparty/json/single_include"
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/generated
         ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/crypto
