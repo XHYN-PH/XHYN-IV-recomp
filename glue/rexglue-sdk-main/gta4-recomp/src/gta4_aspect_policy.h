@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -109,19 +110,31 @@ inline Transform RadarLayout(Extent output) noexcept {
 // Move the complete authored radar composition vertically. The original
 // bottom margin becomes its top margin; X, scale and relative layer geometry
 // remain unchanged. Insets are normalized to the displayed guest rectangle.
+inline Rect RadarVisibleBounds(Rect viewport,Rect local={0,0,1,1}) noexcept {
+  if(!std::isfinite(local.left)||!std::isfinite(local.top)||!std::isfinite(local.right)||!std::isfinite(local.bottom)||
+     local.left<0||local.top<0||local.right>1||local.bottom>1||local.right<=local.left||local.bottom<=local.top)return viewport;
+  const double w=viewport.right-viewport.left,h=viewport.bottom-viewport.top;
+  return {viewport.left+w*local.left,viewport.top+h*local.top,viewport.left+w*local.right,viewport.top+h*local.bottom};
+}
 inline Transform TopLeftRadarViewport(Rect authored, double safe_top = 0.0,
-                                     double safe_bottom = 1.0, Transform transform = {}) noexcept {
+                                     double safe_bottom = 1.0, Transform transform = {}, double margin_fraction = std::numeric_limits<double>::quiet_NaN(),
+                                     Rect visible_local={0,0,1,1}) noexcept {
   if (!std::isfinite(authored.left) || !std::isfinite(authored.top) ||
       !std::isfinite(authored.right) || !std::isfinite(authored.bottom) ||
       authored.right <= authored.left || authored.bottom <= authored.top ||
       !std::isfinite(safe_top) || !std::isfinite(safe_bottom)) return transform;
   safe_top = std::clamp(safe_top, 0.0, 1.0);
   safe_bottom = std::clamp(safe_bottom, safe_top, 1.0);
-  const auto bounds = transform.Map(authored);
+  // A HUD camera can include empty padding around the actual map quad. Align
+  // its visible composition, while moving the complete viewport and layers.
+  const auto bounds = RadarVisibleBounds(transform.Map(authored),visible_local);
   const double height = bounds.bottom - bounds.top;
   const double available = safe_bottom - safe_top;
   if (height > available || height <= 0.0) return transform;
-  const double margin = std::clamp(1.0 - bounds.bottom, 0.0, available - height);
+  // An omitted margin mirrors the original lower margin. Explicit negative
+  // offsets move upward beyond the safe area, without resizing any radar layer.
+  const double requested_margin = std::isfinite(margin_fraction) ? margin_fraction * available : 1.0 - bounds.bottom;
+  const double margin = std::clamp(requested_margin, -0.20 * available, available - height);
   transform.oy += safe_top + margin - bounds.top;
   return transform;
 }
@@ -146,9 +159,11 @@ inline std::optional<Rect> TouchHelpArea(Rect radar, Rect safe, Point origin,
   const double pixels = std::min(output.width, output.height) * 0.016;
   const double gx = pixels / output.width, gy = pixels / output.height;
   const double left = std::max(safe.left + gx, radar.right + gx);
-  // Lower the tutorial slightly beside the radar, scaling with the short edge.
+  // Anchor to the displayed radar, including its custom vertical offset.
+  // The authored text origin stays near the bottom even after the radar moves;
+  // retaining that origin would reject every candidate beside a top minimap.
   const double drop = std::min(output.width, output.height) * 0.05 / output.height;
-  const double top = std::max(safe.top + gy, origin.y) + drop;
+  const double top = std::max(safe.top + gy, radar.top + drop);
   const double height = std::max(radar.bottom - radar.top, gy * 8.0);
   std::optional<Rect> best;
   const auto consider = [&](double x, double y) {

@@ -35,6 +35,7 @@ struct Entry {
 };
 
 inline constexpr auto kRegistry = std::to_array<Entry>({
+    {"gta4_safe_mode", Kind::kSetting, "", "safe-mode control"},
     // --- Renderer shortcuts that can change the image when they are wrong ---
     {"gta4_native_fold_depth_clears", Kind::kShortcut, "false", "depth clears as load-op clears (LRZ)"},
     {"gta4_native_drop_inert_blending", Kind::kShortcut, "false", "no-op blending dropped (LRZ)"},
@@ -42,6 +43,10 @@ inline constexpr auto kRegistry = std::to_array<Entry>({
     {"gta4_native_worker_constant_ring", Kind::kShortcut, "false", "draw constants written by the worker"},
     {"gta4_native_upload_memo_first", Kind::kShortcut, "false", "buffers bound from their memoized GPU copy"},
     {"gta4_native_shared_key_memo", Kind::kShortcut, "false", "shared constants reused from the previous draw"},
+    {"gta4_native_converted_texture_disk_cache",Kind::kShortcut,"false","optional bounded CPU texture disk cache"},
+    {"gta4_native_pipeline_replay_budget_ms",Kind::kArchitecture,"","learned pipeline scheduling budget"},
+    {"gta4_native_parallel_texture_decode", Kind::kShortcut, "false", "bounded parallel texture conversion"},
+    {"gta4_native_detailed_counters", Kind::kDiagnostic, "", "optional per-draw diagnostics"},
     {"gta4_native_gpu_detile", Kind::kShortcut, "false", "textures untiled on the GPU"},
     {"gta4_native_ubo_shared_constants", Kind::kShortcut, "false", "shared constants through a uniform buffer"},
     {"gta4_native_sampled_stage_biases", Kind::kShortcut, "false", "LOD biases only for sampled stages"},

@@ -1,3 +1,4 @@
+#include "android/android_power_policy.h"
 #include "gta4_app.h"
 #include "gta4_hack_registry.h"
 #include "gta4_present_mode_policy.h"
@@ -217,6 +218,8 @@ REXCVAR_DEFINE_STRING(gta4_temporal_upscaler_quality, "quality", "GTA IV/Graphic
                       "FSR 3.1/DLSS preset; dimensions come from the active provider")
     .allowed({"native", "quality", "balanced", "performance", "ultra_performance"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+REXCVAR_DEFINE_STRING(gta4_effective_upscaling, "", "GTA IV/Diagnostics",
+                      "Actual renderer input, output and spatial scaling status");
 REXCVAR_DEFINE_STRING(gta4_fsr1_quality, "quality", "GTA IV/Graphics/Upscaling",
                       "FSR 1 preset: ultra_quality, quality, balanced, or performance")
     .allowed({"ultra_quality", "quality", "balanced", "performance"})
@@ -586,7 +589,7 @@ void ApplyPresentationMode() {
   const auto configured = rex::cvar::GetFlagByName("gta4_present_mode");
   const auto policy = gta4::presentation::ResolveMode(configured == "auto" ? "vsync" : configured);
   if (!policy.explicit_mode) return;
-  SetStartupFlag("vsync", policy.vsync ? "true" : "false");
+  if(rex::cvar::GetFlagInfo("vsync"))SetStartupFlag("vsync", policy.vsync ? "true" : "false");
   SetStartupFlag("vulkan_prefer_present_mode_fifo", policy.prefer_fifo ? "true" : "false");
   SetStartupFlag("vulkan_allow_present_mode_immediate", policy.immediate ? "true" : "false");
   SetStartupFlag("vulkan_allow_present_mode_mailbox", policy.mailbox ? "true" : "false");
@@ -840,8 +843,7 @@ void ApplyGpuTurbo(bool turbo) {
   if (fd < 0) return;
   const int result = ioctl(fd, _IOW(0x09, 0x32, KgslSetProperty), &property);
   close(fd);
-  __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp", "gpu-turbo: %s (%s)",
-                      turbo ? "on" : "off", result == 0 ? "applied" : "refused");
+  REXLOG_INFO("gpu-turbo: {} ({})",turbo?"on":"off",result==0?"applied":"refused");
 }
 
 // Handhelds throttle the GPU on junction temperature, and the frame rate then
@@ -850,7 +852,7 @@ void ApplyGpuTurbo(bool turbo) {
 // heating up rather than the game.
 void StartThermalLog() {
   std::thread([] {
-    bool turbo = REXCVAR_GET(android_gpu_turbo);
+    bool turbo = REXCVAR_GET(android_gpu_turbo)&&!gta4::android_power::thermal_pressure.load(std::memory_order_relaxed);
     ApplyGpuTurbo(turbo);
     const auto read = [](const char* path) {
       std::ifstream file(path);
@@ -860,8 +862,9 @@ void StartThermalLog() {
     };
     for (;;) {
       std::this_thread::sleep_for(std::chrono::seconds(5));
-      if (REXCVAR_GET(android_gpu_turbo) != turbo) {
-        turbo = !turbo;
+      const bool requested=REXCVAR_GET(android_gpu_turbo)&&!gta4::android_power::thermal_pressure.load(std::memory_order_relaxed);
+      if (requested != turbo) {
+        turbo = requested;
         ApplyGpuTurbo(turbo);
       }
       if (!REXCVAR_GET(android_thermal_log)) continue;
@@ -894,25 +897,20 @@ void StartThermalLog() {
 // limited to the big cores; the rest keep every core.
 void StartHotThreadPinning() {
   std::thread([] {
-    std::vector<uint64_t> max_frequency;
-    for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
-      std::ifstream file("/sys/devices/system/cpu/cpu" + std::to_string(cpu) +
-                         "/cpufreq/cpuinfo_max_freq");
-      uint64_t frequency = 0;
-      if (!(file >> frequency)) break;
-      max_frequency.push_back(frequency);
+    cpu_set_t all{},big{};
+    if(sched_getaffinity(0,sizeof(all),&all)!=0)return;
+    std::vector<std::pair<int,uint64_t>> capacities;
+    for(int cpu=0;cpu<CPU_SETSIZE;++cpu) {
+      if(!CPU_ISSET(cpu,&all))continue;
+      uint64_t capacity=0;
+      std::ifstream capacity_file("/sys/devices/system/cpu/cpu"+std::to_string(cpu)+"/cpu_capacity");capacity_file>>capacity;
+      if(!capacity) {std::ifstream frequency_file("/sys/devices/system/cpu/cpu"+std::to_string(cpu)+"/cpufreq/cpuinfo_max_freq");frequency_file>>capacity;}
+      if(capacity)capacities.emplace_back(cpu,capacity);
     }
-    if (max_frequency.empty()) return;
-    const uint64_t slowest = *std::min_element(max_frequency.begin(), max_frequency.end());
-    cpu_set_t big{}, all{};
-    size_t big_count = 0;
-    for (size_t cpu = 0; cpu < max_frequency.size(); ++cpu) {
-      CPU_SET(cpu, &all);
-      if (max_frequency[cpu] > slowest) {
-        CPU_SET(cpu, &big);
-        ++big_count;
-      }
-    }
+    if(capacities.size()<3)return;
+    const auto slowest=std::min_element(capacities.begin(),capacities.end(),[](auto a,auto b){return a.second<b.second;})->second;
+    size_t big_count=0;
+    for(const auto& [cpu,capacity]:capacities)if(capacity>slowest){CPU_SET(cpu,&big);++big_count;}
     if (!big_count) return;  // No big.LITTLE.
 
     // CPU ticks (100 Hz) per second a thread needs to be pinned, or to stay.
@@ -1021,6 +1019,8 @@ void StartLiveCvarWatcher(std::filesystem::path path) {
 
 void GTA4App::OnPostSetup() {
 #if REX_PLATFORM_ANDROID
+  extern void AndroidRegisterMobileSettingsCallbacks();
+  AndroidRegisterMobileSettingsCallbacks();
   StartLiveCvarWatcher(rex::filesystem::GetUserFolder() / "live_cvars.txt");
   StartHotThreadPinning();
   StartThermalLog();

@@ -12,6 +12,7 @@
 #include "gta4_sony_feedback.h"
 #include "input/context_touch_controls.h"
 #include "input/context_touch_context.h"
+#include "input/liberty_touch_overlay.h"
 #include "input/user_music_player.h"
 
 #include <rex/cvar.h>
@@ -1420,7 +1421,15 @@ void ResetMouseConversion() {
 InputEpoch CaptureEpoch(const PPCContext& entry_context, uint8_t* base,
                         uint32_t caller, bool helicopter_controls) {
   NativeInputState state{};
-  const bool native_valid = rex::input::mnk::ConsumeNativeInputState(&state);
+  const bool physical_native_valid = rex::input::mnk::ConsumeNativeInputState(&state);
+  auto touch_look=gta4::input::ConsumeTouchLook();
+  if(GTA4_TouchTitleInputOwned())touch_look={};
+  if(!physical_native_valid)state={};
+  if(touch_look.active) {
+    state.mouse_dx+=touch_look.x;state.mouse_dy+=touch_look.y;
+    state.mouse_has_motion|=touch_look.x!=0||touch_look.y!=0;
+  }
+  const bool native_valid=physical_native_valid||touch_look.active;
   const bool touch_active = rex::input::TouchControlsActive() && !GTA4_TouchTitleInputOwned();
   if (!native_valid) state = {};
   const uint32_t input_user = native_valid ? state.user_index : 0;
