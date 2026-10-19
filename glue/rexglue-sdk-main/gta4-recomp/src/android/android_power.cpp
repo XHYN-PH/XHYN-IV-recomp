@@ -38,14 +38,17 @@
 #include <android/log.h>
 
 #include <rex/cvar.h>
+#include <rex/logging.h>
+#include "android_power_policy.h"
+#include <cctype>
+#include <cmath>
 
 REXCVAR_DEFINE_BOOL(android_perf_hint, true, "GTA IV/Performance",
                     "Report each frame's work to Android's performance hint API so the CPU "
                     "clocks follow the frame budget instead of running at the maximum");
-REXCVAR_DEFINE_DOUBLE(android_perf_hint_target_ms, 30.0, "GTA IV/Performance",
-                      "Work time per frame the performance hint asks for (a margin below the "
-                      "33.3 ms of 30 FPS)")
-    .range(8.0, 33.0);
+REXCVAR_DEFINE_DOUBLE(android_perf_hint_target_ms, 0.0, "GTA IV/Performance",
+                      "Target work time in milliseconds; 0 follows the selected frame limit")
+    .range(0.0, 100.0);
 REXCVAR_DEFINE_BOOL(android_thermal_guard, false, "GTA IV/Performance",
                     "Lower the draw distance when Android forecasts thermal throttling and "
                     "restore it after the device has cooled down");
@@ -59,6 +62,7 @@ REXCVAR_DEFINE_DOUBLE(android_thermal_guard_cool_c, 68.0, "GTA IV/Performance",
     .range(40.0, 100.0);
 
 REXCVAR_DECLARE(double, gta4_draw_distance_scale);
+REXCVAR_DECLARE(uint32_t, gta4_frame_limit);
 
 namespace {
 
@@ -75,6 +79,7 @@ struct Api {
   void (*close_session)(APerformanceHintSession*) = nullptr;
   AThermalManager* (*thermal_acquire)() = nullptr;
   float (*thermal_headroom)(AThermalManager*, int) = nullptr;
+  int (*thermal_status)(AThermalManager*) = nullptr;
 };
 
 Api LoadApi() {
@@ -91,6 +96,7 @@ Api LoadApi() {
   find(api.close_session, "APerformanceHint_closeSession");
   find(api.thermal_acquire, "AThermal_acquireManager");
   find(api.thermal_headroom, "AThermal_getThermalHeadroom");
+  find(api.thermal_status, "AThermal_getCurrentThermalStatus");
   return api;
 }
 
@@ -102,14 +108,40 @@ int64_t ThreadCpuNanoseconds(pid_t tid) {
   return int64_t(time.tv_sec) * 1000000000 + time.tv_nsec;
 }
 
-// The busiest threads over the last interval, by CPU time.
-// Adreno GPU temperature in degrees C (kgsl reports millidegrees); NaN if absent.
+// Android thermal APIs are primary. GPU-zone paths are cached and do not
+// confuse CPU/battery temperatures with GPU temperature.
 float GpuTemperature() {
+  static const std::vector<std::string> paths = [] {
+    std::vector<std::string> result{"/sys/class/kgsl/kgsl-3d0/temp"};
+    if (DIR* directory = opendir("/sys/class/thermal")) {
+      while (dirent* entry = readdir(directory)) {
+        if (std::string(entry->d_name).rfind("thermal_zone", 0) != 0) continue;
+        const std::string zone = std::string("/sys/class/thermal/") + entry->d_name;
+        if (FILE* file = std::fopen((zone + "/type").c_str(), "r")) {
+          char type[128]{};
+          if (std::fgets(type, sizeof(type), file)) {
+            std::string name(type);
+            std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+            if (name.find("gpu") != name.npos || name.find("mali") != name.npos || name.find("g3d") != name.npos)
+              result.push_back(zone + "/temp");
+          }
+          std::fclose(file);
+        }
+      }
+      closedir(directory);
+    }
+    return result;
+  }();
   float value = __builtin_nanf("");
-  if (FILE* file = std::fopen("/sys/class/kgsl/kgsl-3d0/temp", "r")) {
-    long raw = 0;
-    if (std::fscanf(file, "%ld", &raw) == 1) value = raw > 1000 ? float(raw) / 1000.0f : float(raw);
-    std::fclose(file);
+  for (const auto& path : paths) {
+    if (FILE* file = std::fopen(path.c_str(), "r")) {
+      long raw = 0;
+      if (std::fscanf(file, "%ld", &raw) == 1) {
+        const float celsius = raw > 1000 ? float(raw)/1000.0f : float(raw);
+        if (celsius > 0 && celsius < 150) value = std::isfinite(value) ? std::max(value,celsius) : celsius;
+      }
+      std::fclose(file);
+    }
   }
   return value;
 }
@@ -148,13 +180,11 @@ void PowerLoop() {
   // AThermal_acquireManager is API 30, AThermal_getThermalHeadroom API 31:
   // Android 11 has the manager without the headroom (issue #58).
   AThermalManager* thermal =
-      api.thermal_acquire && api.thermal_headroom ? api.thermal_acquire() : nullptr;
+      api.thermal_acquire ? api.thermal_acquire() : nullptr;
   APerformanceHintManager* manager = hints ? api.get_manager() : nullptr;
-  __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp", "power: performance hints %s, thermal headroom %s",
-                      manager ? "available" : "unavailable", thermal ? "available" : "unavailable");
+  REXLOG_INFO("power: performance hints {}, thermal manager {}",manager?"available":"unavailable",thermal?"available":"unavailable");
 
   using Clock = std::chrono::steady_clock;
-  constexpr auto kPeriod = std::chrono::microseconds(33333);
   constexpr auto kRankInterval = std::chrono::seconds(2);
   APerformanceHintSession* session = nullptr;
   std::vector<pid_t> threads;
@@ -162,19 +192,22 @@ void PowerLoop() {
   std::unordered_map<pid_t, int64_t> rank_times;
   int64_t target_ns = 0;
   auto next_rank = Clock::now();
-  auto next_tick = Clock::now() + kPeriod;
+  auto next_tick = Clock::now();
   auto next_log = Clock::now() + std::chrono::seconds(10);
   float headroom = __builtin_nanf("");
   float gpu_temperature = __builtin_nanf("");
-  double guard_saved_scale = 0.0;  // the draw distance the guard lowered; 0 = not lowered
+  gta4::android_power::ThermalDrawDistance thermal_distance;
+  gta4::android_power::ThermalRecoveryHold recovery_hold;
   double reported_sum_ms = 0.0;
   uint32_t reported = 0;
 
   for (;;) {
     std::this_thread::sleep_until(next_tick);
     const auto now = Clock::now();
-    next_tick += kPeriod;
-    if (next_tick < now) next_tick = now + kPeriod;  // fell behind (suspended): resynchronize
+    const auto period = std::chrono::nanoseconds(manager && REXCVAR_GET(android_perf_hint)
+        ? gta4::android_power::FrameBudgetNanoseconds(REXCVAR_GET(gta4_frame_limit)) : 250'000'000ll);
+    next_tick += period;
+    if (next_tick < now) next_tick = now + period;  // fell behind (suspended): resynchronize
 
     const bool enabled = manager && REXCVAR_GET(android_perf_hint);
     if (!enabled && session) {
@@ -185,52 +218,44 @@ void PowerLoop() {
     if (now >= next_rank) {
       next_rank = now + kRankInterval;
       const std::vector<pid_t> busiest = BusiestThreads(rank_times, 4);
-      if (enabled && busiest != threads) {
+      if (enabled && (!session || busiest != threads)) {
         if (session) api.close_session(session);
         session = nullptr;
         threads = busiest;
         thread_times.assign(threads.size(), -1);
         if (!threads.empty()) {
           std::vector<int32_t> ids(threads.begin(), threads.end());
-          target_ns = int64_t(REXCVAR_GET(android_perf_hint_target_ms) * 1e6);
+          target_ns = gta4::android_power::HintTargetNanoseconds(REXCVAR_GET(gta4_frame_limit), REXCVAR_GET(android_perf_hint_target_ms));
           session = api.create_session(manager, ids.data(), ids.size(), target_ns);
         }
       }
-      headroom = thermal ? api.thermal_headroom(thermal, 10) : __builtin_nanf("");  // 10 s ahead
+      headroom = thermal && api.thermal_headroom ? api.thermal_headroom(thermal, 10) : __builtin_nanf("");  // 10 s ahead
       gpu_temperature = GpuTemperature();
       bool hot = false, cool = false;
       if (headroom == headroom) {
         hot = headroom >= 0.95f;
         cool = headroom <= 0.75f;
+      } else if (thermal && api.thermal_status && api.thermal_status(thermal) >= 0) {
+        const int status = api.thermal_status(thermal);
+        hot = status >= 3;
+        cool = status <= 1;
       } else if (gpu_temperature == gpu_temperature) {
         hot = gpu_temperature >= REXCVAR_GET(android_thermal_guard_hot_c);
         cool = gpu_temperature <= REXCVAR_GET(android_thermal_guard_cool_c);
       }
-      {
-        if (REXCVAR_GET(android_thermal_guard) && (hot || cool || guard_saved_scale)) {
-          if (!guard_saved_scale && hot) {
-            guard_saved_scale = REXCVAR_GET(gta4_draw_distance_scale);
-            const double lowered = std::max(0.5, guard_saved_scale * 0.7);
-            rex::cvar::SetFlagByName("gta4_draw_distance_scale", std::to_string(lowered));
-            __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp",
-                                "thermal-guard: headroom %.2f gpu %.1fC, draw distance %.2f -> %.2f",
-                                headroom, gpu_temperature, guard_saved_scale, lowered);
-          } else if (guard_saved_scale && cool) {
-            rex::cvar::SetFlagByName("gta4_draw_distance_scale", std::to_string(guard_saved_scale));
-            __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp",
-                                "thermal-guard: headroom %.2f gpu %.1fC, draw distance restored to %.2f",
-                                headroom, gpu_temperature, guard_saved_scale);
-            guard_saved_scale = 0.0;
-          }
-        } else if (guard_saved_scale && !REXCVAR_GET(android_thermal_guard)) {
-          rex::cvar::SetFlagByName("gta4_draw_distance_scale", std::to_string(guard_saved_scale));
-          guard_saved_scale = 0.0;
-        }
+      const bool recovered=recovery_hold.Update(uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()),hot,cool);
+      const bool guard=REXCVAR_GET(android_thermal_guard);
+      if(!guard||recovered)gta4::android_power::thermal_pressure.store(false,std::memory_order_relaxed);
+      else if(hot)gta4::android_power::thermal_pressure.store(true,std::memory_order_relaxed);
+      const double current_scale = REXCVAR_GET(gta4_draw_distance_scale);
+      if (const auto scale = thermal_distance.Update(current_scale, guard, hot, recovered)) {
+        rex::cvar::SetFlagByName("gta4_draw_distance_scale", std::to_string(*scale));
+        REXLOG_INFO("thermal-guard: draw distance {:.2f} -> {:.2f}", current_scale,*scale);
       }
     }
 
     if (session) {
-      const int64_t wanted = int64_t(REXCVAR_GET(android_perf_hint_target_ms) * 1e6);
+      const int64_t wanted = gta4::android_power::HintTargetNanoseconds(REXCVAR_GET(gta4_frame_limit), REXCVAR_GET(android_perf_hint_target_ms));
       if (wanted != target_ns) {
         target_ns = wanted;
         api.update_target(session, target_ns);
@@ -253,12 +278,7 @@ void PowerLoop() {
       next_log = now + std::chrono::seconds(10);
       std::string ids;
       for (pid_t tid : threads) ids += (ids.empty() ? "" : ",") + std::to_string(tid);
-      __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp",
-                          "power: headroom=%.2f gpu=%.1fC hint=%s work=%.1fms/target %.1fms "
-                          "threads=%s%s",
-                          headroom, gpu_temperature, session ? "on" : "off",
-                          reported ? reported_sum_ms / reported : 0.0, double(target_ns) / 1e6,
-                          ids.c_str(), guard_saved_scale ? " guard=lowered" : "");
+      REXLOG_INFO("power: headroom={:.2f} gpu={:.1f}C thermal_status={} hint={} work_ms={:.1f} target_ms={:.1f} threads={} guard_enabled={} draw_scale={} lowered={} turbo_backoff={}",headroom,gpu_temperature,thermal&&api.thermal_status?api.thermal_status(thermal):-1,session?"on":"off",reported?reported_sum_ms/reported:0.0,double(target_ns)/1e6,ids,REXCVAR_GET(android_thermal_guard),REXCVAR_GET(gta4_draw_distance_scale),thermal_distance.lowered(),gta4::android_power::thermal_pressure.load(std::memory_order_relaxed));
       reported_sum_ms = 0.0;
       reported = 0;
     }
