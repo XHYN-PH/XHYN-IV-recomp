@@ -8,8 +8,15 @@
 // the same image.
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
+#include <cstring>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -163,6 +170,84 @@ bool OptimizeTriangleListForVertexCache(const Index* indices, uint32_t triangle_
   }
   return true;
 }
+
+// One reordered index range. The recorder reads `indices` only after seeing
+// state kReady (acquire); the optimizer thread writes them before (release).
+struct NativeVertexCacheRange {
+  enum State : int { kPending, kReady, kUnusable };
+  std::atomic<int> state{kPending};
+  std::vector<uint8_t> indices;
+  // Recorder only: the persistent GPU copy of indices and the persistent
+  // buffer epoch it was found in (the renderer's NativePersistentBufferEntry).
+  void* persistent_entry = nullptr;
+  uint64_t persistent_epoch = 0;
+};
+
+// Reorders ranges on a background thread so the recorder - the renderer's
+// slowest stage - never stalls on a newly streamed mesh: draws use the title's
+// order until the reordered copy is ready, typically a frame or two later.
+class NativeVertexCacheOptimizer {
+ public:
+  static NativeVertexCacheOptimizer& Get() {
+    static auto* optimizer = new NativeVertexCacheOptimizer();  // Never destroyed.
+    return *optimizer;
+  }
+
+  // Copies the indices; false (nothing queued) when the queue is full.
+  bool Enqueue(std::shared_ptr<NativeVertexCacheRange> range, const void* indices,
+               uint32_t index_count, bool index32) {
+    Job job{std::move(range), {}, index_count, index32};
+    job.source.resize(size_t(index_count) * (index32 ? 4 : 2));
+    std::memcpy(job.source.data(), indices, job.source.size());
+    {
+      std::lock_guard lock(mutex_);
+      if (jobs_.size() >= kMaxPending) return false;
+      jobs_.push_back(std::move(job));
+    }
+    condition_.notify_one();
+    return true;
+  }
+
+ private:
+  static constexpr size_t kMaxPending = 512;
+  struct Job {
+    std::shared_ptr<NativeVertexCacheRange> range;
+    std::vector<uint8_t> source;
+    uint32_t index_count;
+    bool index32;
+  };
+
+  NativeVertexCacheOptimizer() { std::thread([this] { Run(); }).detach(); }
+
+  void Run() {
+    for (;;) {
+      Job job;
+      {
+        std::unique_lock lock(mutex_);
+        condition_.wait(lock, [this] { return !jobs_.empty(); });
+        job = std::move(jobs_.front());
+        jobs_.pop_front();
+      }
+      job.range->indices.resize(job.source.size());
+      const uint32_t triangles = job.index_count / 3;
+      const bool ok =
+          job.index32
+              ? OptimizeTriangleListForVertexCache(
+                    reinterpret_cast<const uint32_t*>(job.source.data()), triangles,
+                    reinterpret_cast<uint32_t*>(job.range->indices.data()))
+              : OptimizeTriangleListForVertexCache(
+                    reinterpret_cast<const uint16_t*>(job.source.data()), triangles,
+                    reinterpret_cast<uint16_t*>(job.range->indices.data()));
+      if (!ok) job.range->indices = {};
+      job.range->state.store(ok ? NativeVertexCacheRange::kReady : NativeVertexCacheRange::kUnusable,
+                             std::memory_order_release);
+    }
+  }
+
+  std::mutex mutex_;
+  std::condition_variable condition_;
+  std::deque<Job> jobs_;
+};
 
 // Post-transform cache misses for a FIFO cache of `cache_size` (diagnostics).
 template <typename Index>

@@ -1,3 +1,4 @@
+#include "input/liberty_touch_overlay.h"
 #if !defined(GTA4_TOUCH_LEGACY_HOST)
 #include "gta4_aspect_hooks.h"
 #endif
@@ -559,6 +560,7 @@ void GTA4_TouchConsumePoll(PPCContext& context, uint8_t* base, uint64_t epoch) {
   const bool frontend_active = FrontendActive(context, base);
   const bool map_active = frontend_active && screen == kMapScreen;
   gta4::input::CaptureTouchContext(context, base, epoch, frontend_active, map_active);
+  gta4::input::PublishLibertyPauseMenu(frontend_active ? 1u : 0u, screen);
   const uint64_t presentation_revision = gta4::input::ContextTouchPresentationRevision();
   if (g_hud_presentation_revision != presentation_revision) {
     // A complete loading/cutscene transition may occur between input polls.
@@ -892,7 +894,10 @@ extern "C" void sub_8239C468(PPCContext& context, uint8_t* base) {
                                          gta4::aspect::CurrentUi(base));
 #endif
   __imp__sub_8239C468(context, base);
-  const auto bounds = pass.bounds;
+  const auto local=g_radar_capture.bounds;
+  if(pass.gameplay&&g_radar_capture.has_quad)
+    gta4::input::RememberTouchRadarLocalBounds(pass.authored,{local.left,local.top,local.right,local.bottom});
+  const auto bounds = gta4::aspect::RadarVisibleBounds(pass.viewport,{local.left,local.top,local.right,local.bottom});
   const bool visible = pass.gameplay && g_radar_capture.has_quad &&
       bounds.right > bounds.left && bounds.bottom > bounds.top;
   PublishRadarGeometry(visible ? Rect{.left = float(bounds.left), .top = float(bounds.top),

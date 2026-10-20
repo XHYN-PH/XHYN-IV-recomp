@@ -30,6 +30,7 @@
         android:theme="@style/AppTheme.Fullscreen"
         android:allowBackup="false"
         android:appCategory="game"
+        android:isGame="true"
         android:largeHeap="true"
         android:hardwareAccelerated="true"
         android:extractNativeLibs="true"
@@ -37,6 +38,13 @@
 
         <!-- Lets `adb shell simpleperf` sample this process. -->
         <profileable android:shell="true" />
+
+        <!-- Android's PERFORMANCE and BATTERY game modes (Android 13+), so the
+             system and device makers' game tools treat this as a game; some
+             cap the clocks of an app they do not know as one. -->
+        <meta-data
+            android:name="android.game_mode_config"
+            android:resource="@xml/game_mode_config" />
 
         <!-- The first screen: game status, Vulkan driver choice, Play. The
              driver must be chosen before the game loads native code, so it
@@ -53,6 +61,8 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity android:name=".TouchEditorActivity" android:exported="false" android:screenOrientation="sensorLandscape" android:theme="@style/LauncherTheme" />
 
         <!-- singleTask: relaunching over a live session would abandon the
              SurfaceView the running SDL thread still holds. The game runs in

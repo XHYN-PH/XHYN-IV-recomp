@@ -48,6 +48,16 @@ struct FunctionConfig {
   std::string name;     // Custom symbol name (empty = auto-generate sub_XXXXXXXX)
   uint32_t parent = 0;  // Parent function address (0 = standalone, non-zero = chunk)
 
+  // Keep non-volatiles in ctx instead of localizing them. Marks an MSVC SEH
+  // funclet, which reads the registers its owner left live and would see a zero
+  // from a local. Callers sync their localized copies across the call site.
+  bool shareRegisters = false;
+
+  // Callers sync their localized registers into ctx around calls to this
+  // function (a hooked function whose hook reads or writes them); the
+  // function itself is generated normally.
+  bool syncRegisters = false;
+
   // Get effective size (prefers size over end)
   uint32_t getSize(uint32_t address) const {
     return size ? size : (end > address ? end - address : 0);
@@ -78,6 +88,10 @@ struct RecompilerConfig {
   std::string outDirectoryPath;     ///< Output directory for generated code
   std::string templateDir;          ///< Optional custom template directory for overrides
 
+  /// Every TOML that fed this config, in load order. LoadFromTable() gets a
+  /// parsed table, so a manifest-embedded entry omits the manifest itself.
+  std::vector<std::string> loadedFiles;
+
   // === Code generation options (optional) ===
   bool skipLr = false;
   bool ctrAsLocalVariable = false;
@@ -87,6 +101,13 @@ struct RecompilerConfig {
   bool crRegistersAsLocalVariables = false;
   bool nonArgumentRegistersAsLocalVariables = false;
   bool nonVolatileRegistersAsLocalVariables = false;
+  // Volatile vector registers (v0-v13, v32-v63) as C++ locals: copied from
+  // ctx on entry, written back before every call and return, and read back
+  // after every call (FunctionGraph emission).
+  bool volatileVectorRegistersAsLocalVariables = false;
+  // The same for r0-r13 and f0-f13 (volatile_as_local): kept in host registers
+  // instead of PPCContext memory, which every guest-memory store could alias.
+  bool volatileRegistersAsLocalVariables = false;
   bool generateExceptionHandlers = false;  ///< Generate SEH exception handler wrappers
 
   // === Analysis tuning (optional) ===

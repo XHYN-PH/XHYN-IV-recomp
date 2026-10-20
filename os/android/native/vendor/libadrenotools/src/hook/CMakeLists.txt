@@ -12,6 +12,12 @@ target_link_options(main_hook PRIVATE -z global)
 target_link_libraries(main_hook hook_impl)
 set_target_properties(main_hook PROPERTIES CXX_VISIBILITY_PRESET hidden)
 
+add_library(c11_threads_compat SHARED c11_threads_compat.c)
+
+# API 30 headers declare the C11 thread functions; the definitions use only
+# pthread, so the library still loads on the proxy's API 28.
+target_compile_options(c11_threads_compat PRIVATE --target=aarch64-linux-android30 -Wall -Wextra)
+
 add_library(file_redirect_hook SHARED file_redirect_hook.c)
 
 target_compile_options(file_redirect_hook PRIVATE -Wall -Wextra)

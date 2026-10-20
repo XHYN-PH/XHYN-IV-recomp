@@ -15,12 +15,14 @@ class NativeDrawStateCache {
  public:
   void Reset() { *this = {}; }
 
-  bool UpdatePipeline(uint64_t pipeline) {
+  bool UpdatePipeline(uint64_t pipeline, bool full_dynamic_state = false) {
     if (!pipeline_.Update(pipeline)) {
       return false;
     }
-    // A different pipeline can contain static state that invalidates dynamic
-    // values. Conservatively re-emit them even for compatible native pipelines.
+    const bool retain = full_dynamic_state && full_dynamic_state_;
+    full_dynamic_state_ = full_dynamic_state;
+    if (retain) return true;
+    // Unknown or mixed static/dynamic pipelines invalidate these values.
     viewport_ = {};
     scissor_ = {};
     depth_bias_ = {};
@@ -30,10 +32,17 @@ class NativeDrawStateCache {
     return true;
   }
 
-  bool UpdateDescriptors(uint64_t layout,
-                         const std::array<uint64_t, DescriptorSetCount>& sets) {
-    return descriptors_.Update({layout, sets});
+  struct DescriptorSpan { uint32_t first=0,count=0; };
+  DescriptorSpan ChangedDescriptors(uint64_t layout,const std::array<uint64_t,DescriptorSetCount>& sets) {
+    uint32_t first=0,last=DescriptorSetCount;
+    if(descriptors_.last&&descriptors_.last->layout==layout){
+      while(first<last&&descriptors_.last->values[first]==sets[first])++first;
+      if(first==last)return {0,0};
+      while(last>first&&descriptors_.last->values[last-1]==sets[last-1])--last;
+    }
+    descriptors_.last=LayoutValues<DescriptorSetCount>{layout,sets};return {first,last-first};
   }
+  bool UpdateDescriptors(uint64_t layout,const std::array<uint64_t,DescriptorSetCount>& sets){return ChangedDescriptors(layout,sets).count!=0;}
   bool UpdateViewport(const std::array<uint32_t, 6>& bits) { return viewport_.Update(bits); }
   bool UpdateScissor(const std::array<int64_t, 4>& rectangle) {
     return scissor_.Update(rectangle);
@@ -45,6 +54,9 @@ class NativeDrawStateCache {
   }
   bool UpdatePushConstants(uint64_t layout, const std::array<uint64_t, 3>& addresses) {
     return push_constants_.Update({layout, addresses});
+  }
+  bool UpdateIndexBuffer(uint64_t command_buffer,uint64_t buffer,uint64_t offset,uint32_t type) {
+    return index_buffer_.Update({command_buffer,buffer,offset,type});
   }
   // Vertex buffer bindings are command-buffer state that survives pipeline
   // and render-pass changes; the command buffer is part of the value.
@@ -73,7 +85,9 @@ class NativeDrawStateCache {
     bool operator==(const LayoutValues&) const = default;
   };
 
+  Tracked<std::array<uint64_t,4>> index_buffer_;
   Tracked<uint64_t> pipeline_;
+  bool full_dynamic_state_ = false;
   Tracked<LayoutValues<DescriptorSetCount>> descriptors_;
   Tracked<std::array<uint32_t, 6>> viewport_;
   Tracked<std::array<int64_t, 4>> scissor_;

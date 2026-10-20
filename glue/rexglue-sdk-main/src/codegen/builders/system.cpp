@@ -30,21 +30,28 @@ bool build_attn(BuilderContext& ctx) {
   return true;
 }
 
+// Memory barriers. x86-64 orders memory strongly enough that these need no
+// instruction there, but AArch64 does not: a guest lock released with
+// `lwsync; stw` could become visible before the writes it protects. The
+// REX_PPC_* macros (generated init header) are fences on AArch64 and empty
+// elsewhere.
 bool build_sync(BuilderContext& ctx) {
-  // Memory barrier, x86 has strong ordering so this is a no-op
-  (void)ctx;
+  ctx.println("	REX_PPC_SYNC();");
   return true;
 }
 
 bool build_lwsync(BuilderContext& ctx) {
-  // Lightweight memory barrier, x86 has strong ordering so this is a no-op
-  (void)ctx;
+  ctx.println("	REX_PPC_LWSYNC();");
   return true;
 }
 
 bool build_eieio(BuilderContext& ctx) {
-  // Enforce in-order execution of I/O, x86 has strong ordering so this is a no-op
-  (void)ctx;
+  ctx.println("	REX_PPC_EIEIO();");
+  return true;
+}
+
+bool build_isync(BuilderContext& ctx) {
+  ctx.println("	REX_PPC_ISYNC();");
   return true;
 }
 

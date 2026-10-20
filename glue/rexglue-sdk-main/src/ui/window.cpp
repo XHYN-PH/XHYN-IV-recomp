@@ -14,6 +14,7 @@
 
 #include <rex/assert.h>
 #include <rex/cvar.h>
+#include <rex/platform.h>
 #include <rex/input/input_trace.h>
 #include <rex/logging.h>
 #include <rex/ui/imgui_drawer.h>
@@ -49,7 +50,8 @@ REXCVAR_DEFINE_INT32(video_mode_height, 720, "Display", "Guest video mode height
     .range(480, 0x0FFF)
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
-REXCVAR_DEFINE_STRING(resolution, "", "Display",
+// Android: native 720p (the console's resolution); the presenter scales it to the panel.
+REXCVAR_DEFINE_STRING(resolution, REX_PLATFORM_ANDROID ? "720p" : "", "Display",
                       "Common resolution preset for both guest video mode and startup window (for "
                       "example: 720p, 1080p, 1440p, 4k, 1280x720)")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);

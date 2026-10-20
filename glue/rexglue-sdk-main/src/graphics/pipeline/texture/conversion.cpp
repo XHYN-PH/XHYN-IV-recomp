@@ -128,6 +128,105 @@ void ConvertTexelDXT3AToDXT3(xenos::Endian endian, void* output, const void* inp
   std::memset(&output_bytes[8], 0, 8);
 }
 
+// Decoders for GPUs without textureCompressionBC (ARM Mali, for example). They
+// produce what sampling the BC1/BC2/BC3 image would: R8G8B8A8 texels in a 4x4
+// block, with `length` the output row pitch in bytes.
+
+static void DecodeBC1Colors(const uint8_t* block, bool three_color_mode_allowed,
+                            uint8_t* output, size_t output_pitch) {
+  const uint32_t c0 = uint32_t(block[0]) | (uint32_t(block[1]) << 8);
+  const uint32_t c1 = uint32_t(block[2]) | (uint32_t(block[3]) << 8);
+  uint8_t palette[4][4];
+  auto expand = [](uint32_t color, uint8_t* rgba) {
+    const uint32_t r = (color >> 11) & 31, g = (color >> 5) & 63, b = color & 31;
+    rgba[0] = uint8_t((r << 3) | (r >> 2));
+    rgba[1] = uint8_t((g << 2) | (g >> 4));
+    rgba[2] = uint8_t((b << 3) | (b >> 2));
+    rgba[3] = UINT8_MAX;
+  };
+  expand(c0, palette[0]);
+  expand(c1, palette[1]);
+  if (c0 > c1 || !three_color_mode_allowed) {
+    for (uint32_t i = 0; i < 3; ++i) {
+      palette[2][i] = uint8_t((2 * uint32_t(palette[0][i]) + palette[1][i] + 1) / 3);
+      palette[3][i] = uint8_t((uint32_t(palette[0][i]) + 2 * palette[1][i] + 1) / 3);
+    }
+    palette[2][3] = palette[3][3] = UINT8_MAX;
+  } else {
+    for (uint32_t i = 0; i < 3; ++i) {
+      palette[2][i] = uint8_t((uint32_t(palette[0][i]) + palette[1][i]) / 2);
+    }
+    palette[2][3] = UINT8_MAX;
+    std::memset(palette[3], 0, 4);
+  }
+  const uint32_t selectors = uint32_t(block[4]) | (uint32_t(block[5]) << 8) |
+                             (uint32_t(block[6]) << 16) | (uint32_t(block[7]) << 24);
+  for (uint32_t pixel = 0; pixel < 16; ++pixel) {
+    const uint32_t selector = (selectors >> (pixel * 2)) & 3;
+    std::memcpy(output + (pixel >> 2) * output_pitch + (pixel & 3) * 4, palette[selector], 4);
+  }
+}
+
+void ConvertTexelDXT1ToR8G8B8A8(xenos::Endian endian, void* output, const void* input,
+                                size_t length) {
+  uint8_t block[8];
+  CopySwapBlock(endian, block, input, sizeof(block));
+  DecodeBC1Colors(block, true, static_cast<uint8_t*>(output), length);
+}
+
+void ConvertTexelDXT1ToA1R5G5B5(xenos::Endian endian, void* output, const void* input,
+                                size_t length) {
+  // DXT1 stores 5:6:5 endpoints and 1-bit alpha, so 16 bits per texel keep
+  // almost all of it (green loses its lowest bit) at half the RGBA8 size.
+  uint8_t block[8];
+  CopySwapBlock(endian, block, input, sizeof(block));
+  uint8_t rgba[4 * 16];
+  DecodeBC1Colors(block, true, rgba, 4 * 4);
+  auto* output_bytes = static_cast<uint8_t*>(output);
+  for (uint32_t pixel = 0; pixel < 16; ++pixel) {
+    const uint8_t* texel = rgba + pixel * 4;
+    const uint16_t packed = uint16_t((texel[3] ? 0x8000u : 0u) | (uint32_t(texel[0] >> 3) << 10) |
+                                     (uint32_t(texel[1] >> 3) << 5) | uint32_t(texel[2] >> 3));
+    std::memcpy(output_bytes + (pixel >> 2) * length + (pixel & 3) * 2, &packed, 2);
+  }
+}
+
+void ConvertTexelDXT2_3ToR8G8B8A8(xenos::Endian endian, void* output, const void* input,
+                                  size_t length) {
+  uint8_t block[16];
+  CopySwapBlock(endian, block, input, sizeof(block));
+  auto* output_bytes = static_cast<uint8_t*>(output);
+  DecodeBC1Colors(block + 8, false, output_bytes, length);
+  for (uint32_t pixel = 0; pixel < 16; ++pixel) {
+    const uint32_t alpha = (block[pixel >> 1] >> ((pixel & 1) * 4)) & 15;
+    output_bytes[(pixel >> 2) * length + (pixel & 3) * 4 + 3] = uint8_t(alpha * 17);
+  }
+}
+
+void ConvertTexelDXT4_5ToR8G8B8A8(xenos::Endian endian, void* output, const void* input,
+                                  size_t length) {
+  uint8_t block[16];
+  CopySwapBlock(endian, block, input, sizeof(block));
+  auto* output_bytes = static_cast<uint8_t*>(output);
+  DecodeBC1Colors(block + 8, false, output_bytes, length);
+  // The alpha half is already swapped, so decode it as little-endian.
+  ConvertTexelBC4ToR8(xenos::Endian::kNone, output_bytes, block, length, 3, 4);
+}
+
+void ConvertTexelDXT3AToR8G8B8A8(xenos::Endian endian, void* output, const void* input,
+                                 size_t length) {
+  // DXT3A is the alpha half of a DXT3 block; ConvertTexelDXT3AToDXT3 pairs it
+  // with an all-zero color block, which decodes to black.
+  uint8_t block[8];
+  CopySwapBlock(endian, block, input, sizeof(block));
+  auto* output_bytes = static_cast<uint8_t*>(output);
+  for (uint32_t pixel = 0; pixel < 16; ++pixel) {
+    uint8_t* texel = output_bytes + (pixel >> 2) * length + (pixel & 3) * 4;
+    texel[0] = texel[1] = texel[2] = 0;
+    texel[3] = uint8_t(((block[pixel >> 1] >> ((pixel & 1) * 4)) & 15) * 17);
+  }
+}
+
 // https://github.com/BinomialLLC/crunch/blob/ea9b8d8c00c8329791256adafa8cf11e4e7942a2/inc/crn_decomp.h#L4108
 static uint32_t TiledOffset2DRow(uint32_t y, uint32_t width, uint32_t log2_bpp) {
   uint32_t macro = ((y / 32) * (width / 32)) << (log2_bpp + 7);

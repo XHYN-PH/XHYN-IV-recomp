@@ -14,11 +14,9 @@ JOBS="${1:-$(( $(nproc) > 3 ? $(nproc) - 2 : 1 ))}"
 python "$APP_DIR/scripts/materialize_symlinks.py"
 "$APP_DIR/scripts/setup_host_tools.sh"
 
-# Snapdragon 865 and every Android 10+ arm64 device we target are ARMv8.2:
-# inline LSE atomics instead of outline-atomic calls, and native ELF TLS
-# (API 29+) instead of emulated TLS. Both are hot in the guest thread.
-CPU_FLAGS="-march=armv8.2-a -fno-emulated-tls"
-if [ ! -f "$BUILD_DIR/build.ninja" ] || ! grep -q -- "-fno-emulated-tls" "$BUILD_DIR/CMakeCache.txt"; then
+# Portable ARMv8-A; outlined atomics select LSE at runtime where supported.
+CPU_FLAGS="-march=${ANDROID_CPU_ARCH:-armv8-a} -moutline-atomics -fno-emulated-tls"
+if [ ! -f "$BUILD_DIR/build.ninja" ] || ! grep -Fq -- "$CPU_FLAGS" "$BUILD_DIR/CMakeCache.txt"; then
   echo "== configuring $BUILD_TYPE in $BUILD_DIR"
   cmake -S "$REPO" -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_C_FLAGS="$CPU_FLAGS" \
@@ -40,8 +38,10 @@ fi
 
 # Calls between unhooked recompiled functions bypass the weak sub_X aliases so
 # the compiler can inline them (idempotent; a new codegen loses the rewrite).
-# Off by default: no measurable gain on the device, and the first build with it
-# crashed in game code (SIGSEGV after deeper inlining). DIRECT_CALLS=1 enables.
+# Off by default: no measurable gain at the bridge, neither before registers
+# became C++ locals nor after (2026-10-10, with functions named by address in
+# the sources kept indirect as nfsmw-android does), and the first build with
+# them crashed in game code. DIRECT_CALLS_ENABLE=1 turns them on.
 DIRECT_CALLS="$REPO/glue/rexglue-sdk-main/gta4-recomp/tools/direct_calls.py"
 if [ "${DIRECT_CALLS_ENABLE:-0}" = "1" ]; then
   python "$(cygpath -m "$DIRECT_CALLS")" apply
@@ -49,6 +49,8 @@ else
   python "$(cygpath -m "$DIRECT_CALLS")" undo
 fi
 echo "== building with $JOBS jobs"
+# Every behaviour-changing cvar must be in the hack registry (safe mode).
+python "$REPO/glue/rexglue-sdk-main/gta4-recomp/tools/check_hack_registry.py" || { echo "!! hack registry check failed"; exit 1; }
 cmake --build "$BUILD_DIR" --target LibertyRecomp -- -j"$JOBS" || { echo "!! native build failed"; exit 1; }
 
 echo "== staging libraries"

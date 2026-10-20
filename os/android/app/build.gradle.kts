@@ -22,12 +22,12 @@ android {
     ndkVersion  = "29.0.14206865"
 
     defaultConfig {
-        applicationId = "com.libertyrecomp"
+        applicationId = "com.xhyn.ivrecomp"
         // 28: ASharedMemory (26) for guest memory and AAudio (27) for audio.
         minSdk        = 29
         targetSdk     = 35
-        versionCode   = 13
-        versionName   = "0.5.7.8"
+        versionCode = 27
+        versionName   = "0.5.9.3-xhyn-r1"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -35,6 +35,16 @@ android {
     }
 
     sourceSets["main"].java.srcDirs("src/main/java", sdlJavaDir)
+
+    val releaseStore = System.getenv("XHYN_RELEASE_KEYSTORE")
+    if (!releaseStore.isNullOrBlank()) {
+        signingConfigs.create("xhynRelease") {
+            storeFile = file(releaseStore)
+            storePassword = System.getenv("XHYN_RELEASE_STORE_PASSWORD")
+            keyAlias = System.getenv("XHYN_RELEASE_KEY_ALIAS") ?: "xhyn"
+            keyPassword = System.getenv("XHYN_RELEASE_KEY_PASSWORD")
+        }
+    }
 
     buildTypes {
         debug {
@@ -44,7 +54,9 @@ android {
         }
         release {
             isMinifyEnabled = false
-            signingConfig   = signingConfigs.getByName("debug")
+            if (!releaseStore.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("xhynRelease")
+            }
         }
     }
 

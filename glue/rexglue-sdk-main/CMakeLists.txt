@@ -133,9 +133,19 @@ if(NOT WIN32)
 endif()
 
 # Global compile options
+# Android: the runtime and the native renderer (recorder and render worker,
+# the busiest threads) at -O3 and with -ffp-contract=off instead of
+# -ffp-model=strict, as nfsmw-android does. Strict also implies rounding-mode
+# and FP-exception awareness, which blocks reordering and vectorization of the
+# renderer's float code; guest FP semantics live in the generated code, which
+# never had it. Contract off still forbids fusing into FMA.
+if(ANDROID)
+    add_compile_options(-ffp-contract=off $<$<CONFIG:RELWITHDEBINFO>:-O3>)
+else()
+    add_compile_options(-ffp-model=strict)
+endif()
 add_compile_options(
     -fno-strict-aliasing
-    -ffp-model=strict
     $<$<CONFIG:DEBUG>:-g>
     $<$<CONFIG:DEBUG>:-O0>
     $<$<CONFIG:RELEASE>:-O3>

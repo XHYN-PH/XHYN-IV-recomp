@@ -27,6 +27,17 @@ void ConvertTexelCTX1ToR8G8(xenos::Endian endian, void* output, const void* inpu
 void ConvertTexelDXNToR8G8(xenos::Endian endian, void* output, const void* input, size_t length);
 void ConvertTexelDXT3AToDXT3(xenos::Endian endian, void* output, const void* input, size_t length);
 void ConvertTexelDXT5AToR8(xenos::Endian endian, void* output, const void* input, size_t length);
+// BC decoding for hosts without textureCompressionBC; `length` is the output row pitch.
+void ConvertTexelDXT1ToR8G8B8A8(xenos::Endian endian, void* output, const void* input,
+                                size_t length);
+void ConvertTexelDXT1ToA1R5G5B5(xenos::Endian endian, void* output, const void* input,
+                                size_t length);
+void ConvertTexelDXT2_3ToR8G8B8A8(xenos::Endian endian, void* output, const void* input,
+                                  size_t length);
+void ConvertTexelDXT4_5ToR8G8B8A8(xenos::Endian endian, void* output, const void* input,
+                                  size_t length);
+void ConvertTexelDXT3AToR8G8B8A8(xenos::Endian endian, void* output, const void* input,
+                                 size_t length);
 
 typedef std::function<void(void*, const void*, size_t)> UntileCopyBlockCallback;
 

@@ -10,7 +10,11 @@ calls still reach hooks.
 
 A function is hooked when its sub_X in the linked libmain.so is a strong
 symbol, i.e. its address differs from __imp__sub_X. That list is kept in
-direct_calls_hooked.txt next to this script.
+direct_calls_hooked.txt next to this script. As in nfsmw-android and NFS
+Carbon, a function whose address appears anywhere in the hand-written sources
+(gta4-recomp/src, the SDK's src and include) or in gta4_config.toml is kept
+indirect too: hooks are sometimes built from pieces of names or patched in by
+address, which the nm list misses.
 
   direct_calls.py hooks <nm-output>   refresh the hooked list from `llvm-nm --defined-only libmain.so`
   direct_calls.py apply               rewrite the generated sources (idempotent)
@@ -26,6 +30,10 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 GENERATED = HERE.parent / "generated"
 HOOKED = HERE / "direct_calls_hooked.txt"
+SDK = HERE.parent.parent
+MENTION_ROOTS = [HERE.parent / "src", SDK / "src", SDK / "include"]
+MENTION_SUFFIXES = {".cpp", ".h", ".hpp", ".inc", ".c", ".in"}
+ADDRESS = re.compile(r"(?<![0-9A-Fa-f])(82[0-9A-Fa-f]{6})(?![0-9A-Fa-f])")
 CALL = re.compile(r"\b(__imp__)?(sub_[0-9A-F]{8})\(ctx, base\)")
 
 
@@ -47,8 +55,19 @@ def sources():
     return sorted(GENERATED.glob("*.cpp"))
 
 
+def mentioned():
+    found = set()
+    files = [HERE.parent / "gta4_config.toml"]
+    for root in MENTION_ROOTS:
+        files += [f for f in root.rglob("*") if f.suffix in MENTION_SUFFIXES and
+                  "generated" not in f.parts and "thirdparty" not in f.parts]
+    for f in files:
+        found.update("sub_" + a.upper() for a in ADDRESS.findall(f.read_text(encoding="utf-8", errors="ignore")))
+    return found
+
+
 def rewrite(direct):
-    hooked = set(HOOKED.read_text().split())
+    hooked = set(HOOKED.read_text().split()) | (mentioned() if direct else set())
     total = changed = 0
     for path in sources():
         text = path.read_text(encoding="utf-8")

@@ -154,7 +154,9 @@ function(rexglue_apply_target_settings target_name)
         if(_rexglue_target_processor MATCHES "x86_64|AMD64")
             target_link_options(${target_name} PRIVATE -Wl,--no-relax)
             target_compile_options(${target_name} PRIVATE -mcmodel=large)
-        elseif(_rexglue_target_processor MATCHES "aarch64|ARM64|arm64")
+        elseif(_rexglue_target_processor MATCHES "aarch64|ARM64|arm64" AND NOT ANDROID)
+            # Android builds pass their own -march (armv8.2-a: inline LSE atomics);
+            # appending armv8-a here would override it for the recompiled code.
             target_compile_options(${target_name} PRIVATE -march=armv8-a)
         endif()
     endif()

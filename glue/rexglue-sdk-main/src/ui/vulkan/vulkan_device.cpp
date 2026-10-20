@@ -31,6 +31,9 @@
 
 #include "graphics/gta4_native/temporal/dlss_bootstrap.h"
 
+REXCVAR_DEFINE_BOOL(vulkan_command_counters, false, "UI/Vulkan",
+                    "Count barriers, renderings, draws, copies and pipeline binds per frame for "
+                    "the pipeline report (a wrapper on every such command)");
 REXCVAR_DEFINE_BOOL(vulkan_native_queue_separation, true, "UI/Vulkan",
                     "Isolate native offscreen work from drawable-dependent presentation")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
@@ -128,17 +131,20 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
         properties.deviceName);
     return nullptr;
   }
-  if (with_native_shader_support &&
-      (!supported_features.shaderClipDistance || !supported_features.sampleRateShading)) {
-    // These capabilities are declared statically by the cached title vertex
-    // shaders and the per-sample fullscreen conversion shaders, respectively.
-    // A draw-time flag cannot make either shader interface legal without them.
-    REXLOG_WARN(
-        "Vulkan device '{}' lacks native shader capabilities: shaderClipDistance={}, "
-        "sampleRateShading={}",
-        properties.deviceName, supported_features.shaderClipDistance != VK_FALSE,
-        supported_features.sampleRateShading != VK_FALSE);
+  if (with_native_shader_support && !supported_features.sampleRateShading) {
+    // Declared statically by the per-sample fullscreen conversion shaders. A
+    // draw-time flag cannot make that shader interface legal without it.
+    REXLOG_WARN("Vulkan device '{}' lacks native shader capability sampleRateShading",
+                properties.deviceName);
     return nullptr;
+  }
+  if (with_native_shader_support && !supported_features.shaderClipDistance) {
+    // The cached title vertex shaders declare ClipDistance. Without it (ARM
+    // Mali) util::CreateShaderModule turns the clip output into an unread
+    // ordinary output, so title clip planes stop clipping.
+    REXLOG_WARN(
+        "Vulkan device '{}' lacks shaderClipDistance; title clip planes are not applied",
+        properties.deviceName);
   }
 
   if ((with_gpu_emulation || with_native_shader_support) &&
@@ -252,6 +258,8 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     XE_UI_VULKAN_LOCAL_EXTENSION(KHR_pipeline_executable_properties)
   }
 #endif
+  // GPU breadcrumbs for hang diagnosis (gta4_native_gpu_breadcrumbs).
+  XE_UI_VULKAN_STRUCT_EXTENSION(AMD_buffer_marker)
   if (with_swapchain) {
     // #2.
     XE_UI_VULKAN_STRUCT_EXTENSION(KHR_swapchain)
@@ -842,7 +850,6 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     XE_UI_VULKAN_FEATURE(occlusionQueryPrecise)
     XE_UI_VULKAN_FEATURE(vertexPipelineStoresAndAtomics)
     XE_UI_VULKAN_FEATURE(fragmentStoresAndAtomics)
-    XE_UI_VULKAN_FEATURE(shaderCullDistance)
     XE_UI_VULKAN_FEATURE(sparseBinding)
     XE_UI_VULKAN_FEATURE(sparseResidencyBuffer)
   }
@@ -854,6 +861,7 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     XE_UI_VULKAN_FEATURE(fillModeNonSolid)
     XE_UI_VULKAN_FEATURE(samplerAnisotropy)
     XE_UI_VULKAN_FEATURE(shaderClipDistance)
+    XE_UI_VULKAN_FEATURE(shaderCullDistance)
   }
 
   if (with_native_shader_support) {
@@ -1082,6 +1090,11 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
 
 #undef XE_UI_VULKAN_FUNCTION
 
+  if (device->extensions_.ext_AMD_buffer_marker) {
+    dfn.vkCmdWriteBufferMarkerAMD = reinterpret_cast<PFN_vkCmdWriteBufferMarkerAMD>(
+        ifn.vkGetDeviceProcAddr(device->device_, "vkCmdWriteBufferMarkerAMD"));
+    if (!dfn.vkCmdWriteBufferMarkerAMD) device->extensions_.ext_AMD_buffer_marker = false;
+  }
   if (device->extensions_.ext_GOOGLE_display_timing) {
     dfn.vkGetRefreshCycleDurationGOOGLE = reinterpret_cast<PFN_vkGetRefreshCycleDurationGOOGLE>(
         ifn.vkGetDeviceProcAddr(device->device_, "vkGetRefreshCycleDurationGOOGLE"));
@@ -1098,7 +1111,7 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
                  properties.deviceName);
     return nullptr;
   }
-  InstallCommandCounters(dfn);
+  if (REXCVAR_GET(vulkan_command_counters)) InstallCommandCounters(dfn);
 
   // Get the queues.
 

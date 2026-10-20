@@ -17,6 +17,10 @@ struct X_INPUT_GAMEPAD;
 using TouchGamepadProvider = bool (*)(uint32_t user_index, X_INPUT_GAMEPAD* state) noexcept;
 void SetTouchGamepadProvider(TouchGamepadProvider provider) noexcept;
 bool ReadTouchGamepad(uint32_t user_index, X_INPUT_GAMEPAD* state) noexcept;
+using TouchGamepadRumbleProvider = bool (*)(uint32_t user_index,uint16_t low,uint16_t high) noexcept;
+void SetTouchGamepadRumbleProvider(TouchGamepadRumbleProvider provider) noexcept;
+bool TouchGamepadRumbleAvailable(uint32_t user_index) noexcept;
+bool WriteTouchGamepadRumble(uint32_t user_index,uint16_t low,uint16_t high) noexcept;
 void SetTouchInputActiveCallback(std::function<bool()> callback);
 
 enum class AbsolutePointerPhase : uint8_t {

@@ -9,6 +9,7 @@
 #include <optional>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -33,19 +34,25 @@ class NativePipelineCompiler {
     if (stopping_) {
       return false;
     }
-    if (jobs_.contains(key)) {
+    if (const auto found = jobs_.find(key); found != jobs_.end()) {
+      if (demanded) Promote(key, found->second);
       return true;
     }
     if (jobs_.size() >= capacity_) {
       if (!demanded || queue_.empty()) {
         return false;
       }
-      // Drop only an unstarted speculative recipe to admit an exact first use.
-      jobs_.erase(queue_.back());
-      queue_.pop_back();
+      // Evicting a demanded job would strand its waiter forever.
+      const auto disposable = std::find_if(queue_.rbegin(), queue_.rend(), [&](const Key& queued) {
+        return !jobs_.at(queued)->demanded;
+      });
+      if (disposable == queue_.rend()) return false;
+      jobs_.erase(*disposable);
+      queue_.erase(std::next(disposable).base());
     }
     auto job = std::make_shared<Job>();
     job->compile = std::move(compile);
+    job->demanded = demanded;
     jobs_.emplace(key, job);
     if (demanded) {
       queue_.push_front(key);
@@ -66,18 +73,14 @@ class NativePipelineCompiler {
     }
     const auto job = found->second;
     if (wait && !job->result) {
-      const auto queued = std::find(queue_.begin(), queue_.end(), key);
-      if (queued != queue_.end() && queued != queue_.begin()) {
-        queue_.erase(queued);
-        queue_.push_front(key);
-      }
-      changed_.notify_all();
+      Promote(key, job);
       changed_.wait(lock, [&] { return job->result.has_value() || stopping_; });
     }
     if (!job->result) {
       return std::nullopt;
     }
     Result result = std::move(*job->result);
+    completed_.erase(key);
     jobs_.erase(key);
     return result;
   }
@@ -85,14 +88,13 @@ class NativePipelineCompiler {
   std::vector<std::pair<Key, Result>> TakeCompleted() {
     std::lock_guard lock(mutex_);
     std::vector<std::pair<Key, Result>> completed;
-    for (auto it = jobs_.begin(); it != jobs_.end();) {
-      if (it->second->result) {
-        completed.emplace_back(it->first, std::move(*it->second->result));
-        it = jobs_.erase(it);
-      } else {
-        ++it;
-      }
+    completed.reserve(completed_.size());
+    for (const auto& key : completed_) {
+      auto it = jobs_.find(key);
+      completed.emplace_back(it->first, std::move(*it->second->result));
+      jobs_.erase(it);
     }
+    completed_.clear();
     return completed;
   }
 
@@ -120,7 +122,17 @@ class NativePipelineCompiler {
   struct Job {
     Compile compile;
     std::optional<Result> result;
+    bool demanded = false;
   };
+  void Promote(const Key& key, const std::shared_ptr<Job>& job) {
+    job->demanded = true;
+    const auto queued = std::find(queue_.begin(), queue_.end(), key);
+    if (queued != queue_.end() && queued != queue_.begin()) {
+      queue_.erase(queued);
+      queue_.push_front(key);
+    }
+    changed_.notify_all();
+  }
   void Run() {
     std::unique_lock lock(mutex_);
     for (;;) {
@@ -142,6 +154,7 @@ class NativePipelineCompiler {
       }
       lock.lock();
       job->result = std::move(result);
+      completed_.insert(key);
       job->compile = {};
       active_ = false;
       changed_.notify_all();
@@ -167,6 +180,7 @@ class NativePipelineCompiler {
   bool active_ = false;
   std::deque<Key> queue_;
   std::unordered_map<Key, std::shared_ptr<Job>, Hash> jobs_;
+  std::unordered_set<Key, Hash> completed_;
   std::thread thread_;
 };
 

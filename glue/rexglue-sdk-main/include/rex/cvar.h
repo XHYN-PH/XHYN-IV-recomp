@@ -177,6 +177,10 @@ std::optional<size_t> RegisterFlag(FlagEntry entry);
 void UnregisterFlag(std::string_view name);
 
 bool SetFlagByName(std::string_view name, std::string_view value);
+// Sets a flag as if it had been given on the command line: it outranks the
+// configuration file, and a flag of a module that is not loaded yet receives
+// the value when the module registers it.
+bool SetLaunchFlag(std::string_view name, std::string_view value);
 std::string GetFlagByName(std::string_view name);
 
 // Invoke a registered command by name, passing the raw argument text.

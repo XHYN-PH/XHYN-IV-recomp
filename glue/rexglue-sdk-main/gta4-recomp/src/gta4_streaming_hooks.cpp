@@ -12,6 +12,7 @@
 #include <new>
 #include <string>
 
+#include <rex/graphics/gta4_native/mobile_memory.h>
 #include <rex/cvar.h>
 #include <rex/graphics/gta4_native/title_commands.h>
 #include <rex/logging.h>
@@ -232,7 +233,8 @@ float EntityPreloadMargin(uint8_t* base, uint32_t entity, uint32_t view,
   world.distance = distance;
   world.threshold = draw_distance;
   world.deadline = ReadinessDeadline(world.now, distance, draw_distance, closing, false);
-  if (!config.modern || pending_count.load(std::memory_order_relaxed) >= config.pending_limit) {
+  if (!config.modern || pending_count.load(std::memory_order_relaxed) >= config.pending_limit ||
+      rex::graphics::gta4_native::MobilePrefetchMemoryPressure()) {
     return retail_margin;
   }
   const double lead = std::clamp(

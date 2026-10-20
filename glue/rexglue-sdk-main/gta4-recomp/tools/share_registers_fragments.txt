@@ -1,0 +1,18 @@
+# Split-off pieces that read their owner's r14-r31 (read_before_write.py on a
+# register-local build, 2026-10-09).
+sub_82A031E8
+sub_82A03BC4
+sub_82A08CE0
+sub_82A0AAB8
+sub_82A0AD80
+sub_82A0B00C
+sub_82A0C144
+sub_82A0CF9C
+sub_82A0F398
+sub_82A0F54C
+sub_82A10CA8
+sub_82A17A14
+sub_82A17CFC
+sub_82A1858C
+sub_82A1BB68
+sub_82A1C3C0

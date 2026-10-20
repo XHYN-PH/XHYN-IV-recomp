@@ -109,9 +109,9 @@ inline bool TryParseResolutionPreset(std::string_view resolution_value, int32_t&
 }
 
 inline bool TryGetResolutionPresetFromCVar(int32_t& width_out, int32_t& height_out) {
-  if (!rex::cvar::HasNonDefaultValue("resolution")) {
-    return false;
-  }
+  // Empty means automatic (the display's size). A non-empty default is a real
+  // choice too: Android defaults to 720p, which a "non-default only" check
+  // ignored, rendering at the panel's full resolution.
   const std::string& resolution_value = REXCVAR_GET(resolution);
   if (resolution_value.empty()) {
     return false;

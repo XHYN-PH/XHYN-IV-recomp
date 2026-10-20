@@ -18,7 +18,7 @@
 
 REXCVAR_DEFINE_BOOL(gta4_stale_object_guard, true, "GTA IV/Stability",
                     "Treat an object whose pointers lead to unmapped memory as absent in "
-                    "sub_8296E480 and sub_8296E310 instead of crashing");
+                    "sub_8296E480, sub_8296E310, sub_8297CE78 and sub_82477E30 instead of crashing");
 
 namespace {
 
@@ -106,6 +106,23 @@ static bool GuardedMatrixCopy(PPCContext& ctx, uint8_t* base, uint32_t object_of
   return false;
 }
 
+// sub_8297CE78 walks an object's child table (object+48+648+i*4) and reads the
+// child's words at +100 and +108 straight away: the same freed-object race, a
+// crash with the game standing still (2026-10-09). The edit that
+// tools/apply_generated_patches.py makes in the generated code asks here and,
+// for a child that no longer leads to mapped memory, takes the title's
+// empty-table path.
+extern "C" bool GTA4_StaleChildGuard(uint32_t child) {
+  if (!REXCVAR_GET(gta4_stale_object_guard) || Readable(child + 100, 12)) return true;
+  const uint64_t count = g_stale_objects.fetch_add(1, std::memory_order_relaxed) + 1;
+  if (count <= 8 || !(count % 1024)) {
+    __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp",
+                        "stale-object-guard: #%llu sub_8297CE78 child=%08X",
+                        static_cast<unsigned long long>(count), child);
+  }
+  return false;
+}
+
 extern "C" void sub_8296E480(PPCContext& ctx, uint8_t* base) {
   if (GuardedMatrixCopy(ctx, base, 56, 112, "sub_8296E480")) __imp__sub_8296E480(ctx, base);
 }
@@ -113,4 +130,24 @@ extern "C" void sub_8296E480(PPCContext& ctx, uint8_t* base) {
 // Same routine for the object at owner+52 (table at owner+104).
 extern "C" void sub_8296E310(PPCContext& ctx, uint8_t* base) {
   if (GuardedMatrixCopy(ctx, base, 52, 104, "sub_8296E310")) __imp__sub_8296E310(ctx, base);
+}
+
+// sub_82477EF0 walks the title's global entity list every frame and calls
+// sub_82477E30 for each entity's children (entity+652+i*4), the table
+// sub_8297CE78 reads. A collision left small integers in it (child=00000B32,
+// then 00000002, 2026-10-10): sub_8297CE78's guard took its empty path, and
+// sub_82477E30 then faulted reading the child's +52. A child that does not
+// lead to mapped memory is skipped; the next frame walks the table again.
+extern "C" void sub_82477E30(PPCContext& ctx, uint8_t* base) {
+  const uint32_t child = ctx.r3.u32;
+  if (!REXCVAR_GET(gta4_stale_object_guard) || Readable(child + 52, 8)) {
+    __imp__sub_82477E30(ctx, base);
+    return;
+  }
+  const uint64_t count = g_stale_objects.fetch_add(1, std::memory_order_relaxed) + 1;
+  if (count <= 8 || !(count % 1024)) {
+    __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp",
+                        "stale-object-guard: #%llu sub_82477E30 child=%08X",
+                        static_cast<unsigned long long>(count), child);
+  }
 }

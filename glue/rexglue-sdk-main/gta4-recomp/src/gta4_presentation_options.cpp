@@ -5,12 +5,13 @@
 #include <string_view>
 
 #include <rex/cvar.h>
+#include <rex/platform.h>
 
 REXCVAR_DEFINE_BOOL(
     gta4_skip_intro, false, "GTA IV/Frontend",
     "Skip legal and logo presentation at next launch; retain startup initialization")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
-REXCVAR_DEFINE_BOOL(gta4_motion_blur, true, "GTA IV/Graphics/Post-Processing",
+REXCVAR_DEFINE_BOOL(gta4_motion_blur, !REX_PLATFORM_ANDROID, "GTA IV/Graphics/Post-Processing",
                     "Enable the title motion-blur composite; preserve depth of field and other effects");
 REXCVAR_DEFINE_BOOL(gta4_disable_tlad_film_grain, false, "GTA IV/Frontend",
                     "Use TLAD's grain-free composite passes; no effect in other episodes");

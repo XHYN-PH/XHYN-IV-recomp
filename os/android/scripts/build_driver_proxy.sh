@@ -10,9 +10,9 @@ cmake -S "$APP_DIR/native" -B "$OUT" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build "$OUT"
 mkdir -p "$JNILIBS"
-for lib in libvulkan.so libmain_hook.so libhook_impl.so; do
+for lib in libvulkan.so libmain_hook.so libhook_impl.so libc11_threads_compat.so; do
   found=$(find "$OUT" -name "$lib" -type f | head -1)
   [ -n "$found" ] || { echo "!! $lib was not built"; exit 1; }
   "$NDK_BIN/llvm-strip" --strip-unneeded -o "$JNILIBS/$lib" "$found"
 done
-ls -la "$JNILIBS"/libvulkan.so "$JNILIBS"/libmain_hook.so "$JNILIBS"/libhook_impl.so
+ls -la "$JNILIBS"/libvulkan.so "$JNILIBS"/libmain_hook.so "$JNILIBS"/libhook_impl.so "$JNILIBS"/libc11_threads_compat.so

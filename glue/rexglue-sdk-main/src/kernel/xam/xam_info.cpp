@@ -268,7 +268,7 @@ void XamLoaderLaunchTitle_entry(mapped_string raw_name_ptr, u32 flags) {
 
   // Translate the launch path to a full path.
   if (raw_name_ptr) {
-    auto path = raw_name_ptr.value();
+    std::string path(raw_name_ptr.value());
     if (path.empty()) {
       loader_data.launch_path = "game:\\default.xex";
     } else {

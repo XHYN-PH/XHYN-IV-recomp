@@ -18,6 +18,12 @@ namespace gta4::input {
 // physical controller would.
 
 // gta4_touch_layout is "gamepad".
+void RefreshGamepadTouchLayout() noexcept;
+// Android's native UI requests a change; the rendering thread applies the CVar.
+void RequestGamepadTouchLayout(bool xbox) noexcept;
+void ReloadGamepadTouchLayout() noexcept;
+void SetTouchHostMenu(bool open, bool resume=true) noexcept;
+bool TouchHostMenuOpen() noexcept;
 bool GamepadTouchLayoutSelected() noexcept;
 // Selected and the touch controls are currently shown (touch_controls).
 bool GamepadTouchOverlayVisible() noexcept;

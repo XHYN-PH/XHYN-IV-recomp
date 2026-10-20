@@ -41,6 +41,12 @@ struct FrameConstantIdentityHash {
 // stale buckets are ignored without walking or destroying them. Keys and
 // values are deliberately restricted to POD so a stale generation cannot
 // retain ownership of command or GPU resources.
+//
+// The stamps live in their own dense array, each with an 8-bit fragment of the
+// key's hash: a probe reads 8 bytes per slot and touches a (large) bucket only
+// when the fragment matches. With the stamp inside the bucket, every probe of
+// the recorder's per-draw lookups loaded a cold cache line (the hottest line
+// of the recorder at the bridge).
 template <typename Key, typename Value, typename Hash = std::hash<Key>,
           typename Equal = std::equal_to<Key>>
 class FrameGenerationMap {
@@ -79,9 +85,7 @@ class FrameGenerationMap {
     return {&bucket->value, true};
   }
 
-  bool CanResetGeneration() const {
-    return generation_ != std::numeric_limits<uint64_t>::max();
-  }
+  bool CanResetGeneration() const { return generation_ < kMaximumGeneration; }
 
   bool ResetGeneration() {
     if (!CanResetGeneration()) {
@@ -94,7 +98,9 @@ class FrameGenerationMap {
 
   // Inspect only this generation; stale POD buckets retain no owners.
   template <typename Visitor> void ForEach(Visitor&& visitor) const {
-    for (const auto& bucket : buckets_) if (bucket.generation == generation_) visitor(bucket.key, bucket.value);
+    for (size_t i = 0; i < stamps_.size(); ++i) {
+      if ((stamps_[i] >> kTagBits) == generation_) visitor(buckets_[i].key, buckets_[i].value);
+    }
   }
 
   size_t size() const { return size_; }
@@ -103,12 +109,19 @@ class FrameGenerationMap {
  private:
   static constexpr size_t kInitialBucketCount = 32;
   static_assert((kInitialBucketCount & (kInitialBucketCount - 1)) == 0);
+  static constexpr unsigned kTagBits = 8;
+  static constexpr uint64_t kMaximumGeneration = (uint64_t(1) << (64 - kTagBits)) - 1;
 
   struct Bucket {
     Key key{};
     Value value{};
-    uint64_t generation = 0;
   };
+
+  // The fragment comes from the top of a multiplied hash, so it varies even
+  // when the hash is the identity of an aligned key.
+  static uint64_t Tag(size_t hash) {
+    return (uint64_t(hash) * 0x9E3779B97F4A7C15ull) >> (64 - kTagBits);
+  }
 
   Bucket* FindBucket(const Key& key) {
     return const_cast<Bucket*>(std::as_const(*this).FindBucket(key));
@@ -118,15 +131,17 @@ class FrameGenerationMap {
     if (buckets_.empty()) {
       return nullptr;
     }
+    const size_t hash = hasher_(key);
+    const uint64_t wanted = (generation_ << kTagBits) | Tag(hash);
     const size_t mask = buckets_.size() - 1;
-    size_t index = hasher_(key) & mask;
+    size_t index = hash & mask;
     for (size_t probe = 0; probe < buckets_.size(); ++probe) {
-      const Bucket& bucket = buckets_[index];
-      if (bucket.generation != generation_) {
+      const uint64_t stamp = stamps_[index];
+      if ((stamp >> kTagBits) != generation_) {
         return nullptr;
       }
-      if (equal_(bucket.key, key)) {
-        return &bucket;
+      if (stamp == wanted && equal_(buckets_[index].key, key)) {
+        return &buckets_[index];
       }
       index = (index + 1) & mask;
     }
@@ -136,6 +151,7 @@ class FrameGenerationMap {
   bool EnsureInsertionCapacity() {
     if (buckets_.empty()) {
       buckets_.resize(kInitialBucketCount);
+      stamps_.assign(kInitialBucketCount, 0);
       return true;
     }
     if (size_ < buckets_.size() / 2) {
@@ -149,15 +165,17 @@ class FrameGenerationMap {
 
   bool Rehash(size_t bucket_count) {
     std::vector<Bucket> previous = std::move(buckets_);
+    std::vector<uint64_t> previous_stamps = std::move(stamps_);
     const uint64_t previous_generation = generation_;
     buckets_.clear();
     buckets_.resize(bucket_count);
+    stamps_.assign(bucket_count, 0);
     generation_ = 1;
     const size_t previous_size = size_;
     size_ = 0;
-    for (const Bucket& bucket : previous) {
-      if (bucket.generation == previous_generation &&
-          !InsertWithoutGrowth(bucket.key, bucket.value)) {
+    for (size_t i = 0; i < previous.size(); ++i) {
+      if ((previous_stamps[i] >> kTagBits) == previous_generation &&
+          !InsertWithoutGrowth(previous[i].key, previous[i].value)) {
         return false;
       }
     }
@@ -168,14 +186,15 @@ class FrameGenerationMap {
     if (buckets_.empty()) {
       return nullptr;
     }
+    const size_t hash = hasher_(key);
     const size_t mask = buckets_.size() - 1;
-    size_t index = hasher_(key) & mask;
+    size_t index = hash & mask;
     for (size_t probe = 0; probe < buckets_.size(); ++probe) {
-      Bucket& bucket = buckets_[index];
-      if (bucket.generation != generation_) {
+      if ((stamps_[index] >> kTagBits) != generation_) {
+        Bucket& bucket = buckets_[index];
         bucket.key = key;
         bucket.value = value;
-        bucket.generation = generation_;
+        stamps_[index] = (generation_ << kTagBits) | Tag(hash);
         ++size_;
         return &bucket;
       }
@@ -185,6 +204,7 @@ class FrameGenerationMap {
   }
 
   std::vector<Bucket> buckets_;
+  std::vector<uint64_t> stamps_;
   size_t size_ = 0;
   uint64_t generation_ = 1;
   Hash hasher_{};

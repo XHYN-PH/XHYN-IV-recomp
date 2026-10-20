@@ -224,8 +224,9 @@ void PlaceTouchHelp(PPCContext& context, uint8_t* base, uint32_t position, uint3
   text_transform = layout.transform;
   radar_transform = gta4::aspect::RadarLayout(output);
 #endif
-  radar_transform = gta4::aspect::TopLeftRadarViewport(authored, safe.top, safe.bottom, radar_transform);
-  const auto radar = radar_transform.Map(authored);
+  const auto local=TouchRadarLocalBounds(authored);
+  if(rex::cvar::Query<bool>("gta4_touch_radar_top"))radar_transform=gta4::aspect::TopLeftRadarViewport(authored,safe.top,safe.bottom,radar_transform,rex::cvar::Query<double>("gta4_touch_radar_margin"),local);
+  const auto radar = gta4::aspect::RadarVisibleBounds(radar_transform.Map(authored),local);
   const double old_left = RadarFloat(base, wrap), old_right = RadarFloat(base, wrap + 4);
   const auto origin = text_transform.Map(gta4::aspect::Point{
       RadarFloat(base, position), RadarFloat(base, position + 4)});
@@ -273,6 +274,7 @@ struct RadarViewportCopy {
   TouchRadarPass pass;
 };
 std::mutex radar_viewport_mutex;
+gta4::aspect::Rect radar_local_bounds{0,0,1,1},radar_local_authored{};
 std::unordered_map<uint32_t, RadarViewportCopy> radar_viewport_copies;
 std::deque<std::pair<uint32_t, uint64_t>> radar_viewport_order;
 uint64_t radar_viewport_serial = 0;
@@ -310,6 +312,7 @@ void CopyTouchRadarViewport(PPCContext& context, uint8_t* base) {
     // sub_8239C9B8 retains that rectangle in phase+176; sub_821BC948 copies
     // it into this command. Layer vertices are local 0..1, including masks.
     const auto authored = RadarViewportRect(base, viewport, 664);
+    pass.authored=authored;
     rex::input::TouchPresentationState presentation;
     if (RadarRectValid(authored) && RadarRead(base, viewport + 688) > 0 &&
         RadarRead(base, viewport + 692) > 0 && rex::input::GetTouchPresentationState(&presentation)) {
@@ -326,13 +329,14 @@ void CopyTouchRadarViewport(PPCContext& context, uint8_t* base) {
 #endif
         // The drawable snapshot retains visibility through the one-second
         // fade, while native frontend/map state always keeps its own viewport.
-        if (ContextTouchHudLayoutActive()) {
+        if (rex::cvar::Query<bool>("gta4_touch_radar_top")) {
           const double top = double(presentation.safe_area_y) / presentation.output_height;
           const double bottom = (double(presentation.safe_area_y) + presentation.safe_area_height) /
                                 presentation.output_height;
-          transform = gta4::aspect::TopLeftRadarViewport(authored, top, bottom, transform);
+          transform = gta4::aspect::TopLeftRadarViewport(authored, top, bottom, transform, rex::cvar::Query<double>("gta4_touch_radar_margin"),TouchRadarLocalBounds(authored));
         }
         const auto displayed = transform.Map(authored);
+        pass.viewport=displayed;
         if (RadarRectValid(displayed) && !transform.identity()) {
           // Calling the retail setter updates both clipped/unclipped rectangles,
           // viewport matrices and projection offsets. Source camera and phase
@@ -367,6 +371,19 @@ void CopyTouchRadarViewport(PPCContext& context, uint8_t* base) {
   pending_radar_pass = {phase, command, token};
 }
 }  // namespace
+
+gta4::aspect::Rect TouchRadarLocalBounds(gta4::aspect::Rect authored) noexcept {
+  std::lock_guard lock(radar_viewport_mutex);
+  const auto& a=radar_local_authored;
+  if(std::abs(a.left-authored.left)>1e-5||std::abs(a.top-authored.top)>1e-5||
+     std::abs(a.right-authored.right)>1e-5||std::abs(a.bottom-authored.bottom)>1e-5)return {0,0,1,1};
+  return radar_local_bounds;
+}
+void RememberTouchRadarLocalBounds(gta4::aspect::Rect authored,gta4::aspect::Rect local) noexcept {
+  if(!RadarRectValid(authored)||!RadarRectValid(local)||!std::isfinite(local.left)||!std::isfinite(local.top)||
+     !std::isfinite(local.right)||!std::isfinite(local.bottom)||local.left<0||local.top<0||local.right>1||local.bottom>1)return;
+  std::lock_guard lock(radar_viewport_mutex);radar_local_authored=authored;radar_local_bounds=local;
+}
 
 void DrawTouchWeaponHudSprite(PPCContext& context, uint8_t* base,
                               void (*original)(PPCContext&, uint8_t*)) {

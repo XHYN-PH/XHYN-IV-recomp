@@ -32,6 +32,10 @@
 #include <rex/ui/vulkan/submission_tracker.h>
 #include <rex/ui/vulkan/ui_samplers.h>
 
+#if REX_PLATFORM_ANDROID
+#include <rex/ui/surface_android.h>
+#endif
+
 namespace rex {
 namespace ui {
 namespace vulkan {
@@ -676,6 +680,9 @@ class VulkanPresenter final : public Presenter {
   // DisconnectPaintingFromSurfaceFromUIThreadImpl) by the thread doing it, as
   // well as by presenter initialization and shutdown.
   PaintContext paint_context_;
+#if REX_PLATFORM_ANDROID
+  const AndroidNativeWindowSurface* android_surface_ = nullptr;
+#endif
   std::atomic<bool> generated_frame_presentation_enabled_{false};
   GeneratedFrameDelivery generated_delivery_;
   std::shared_ptr<GeneratedFrameImages> pending_generated_frame_;

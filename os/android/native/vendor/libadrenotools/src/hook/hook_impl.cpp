@@ -7,6 +7,7 @@
 #include <sys/ioctl.h>
 #include <android_linker_ns.h>
 #include <android/dlext.h>
+#include <android/api-level.h>
 #include <android/log.h>
 #include "kgsl.h"
 #include "hook_impl_params.h"
@@ -76,6 +77,16 @@ __attribute__((visibility("default"))) void *hook_android_dlopen_ext(const char 
         return nullptr;
 
     initHookParam(hook_params);
+
+    // Bionic exports the C11 thread functions (call_once, mtx_*, cnd_*,
+    // thrd_*) only since Android 11; Turnip builds made for newer targets
+    // reference them and fail to load on Android 10 without these.
+    if (android_get_device_api_level() < 30) {
+        if (linkernsbypass_namespace_dlopen("libc11_threads_compat.so", RTLD_GLOBAL, driverNs))
+            LOGI("hook_android_dlopen_ext: preloaded C11 threads for API %d", android_get_device_api_level());
+        else
+            LOGI("hook_android_dlopen_ext: failed to preload libc11_threads_compat.so");
+    }
 
     if (hook_params->featureFlags & ADRENOTOOLS_DRIVER_FILE_REDIRECT) {
         if (!linkernsbypass_namespace_dlopen("libfile_redirect_hook.so", RTLD_GLOBAL, driverNs)) {

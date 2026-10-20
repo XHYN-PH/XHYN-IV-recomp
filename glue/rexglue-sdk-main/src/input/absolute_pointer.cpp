@@ -30,6 +30,7 @@ namespace rex::input {
 namespace {
 
 std::atomic<TouchGamepadProvider> g_touch_gamepad_provider{nullptr};
+std::atomic<TouchGamepadRumbleProvider> g_touch_rumble_provider{nullptr};
 std::mutex g_capture_mutex;
 std::function<bool()> g_input_active;
 std::atomic<bool> g_host_input_allowed{true};
@@ -758,6 +759,20 @@ void SetTouchInputActiveCallback(std::function<bool()> callback) {
 
 void SetTouchGamepadProvider(TouchGamepadProvider provider) noexcept {
   g_touch_gamepad_provider.store(provider, std::memory_order_release);
+}
+
+void SetTouchGamepadRumbleProvider(TouchGamepadRumbleProvider provider) noexcept {
+  if(auto old=g_touch_rumble_provider.exchange(provider,std::memory_order_acq_rel);old&&old!=provider)old(0,0,0);
+}
+bool TouchGamepadRumbleAvailable(uint32_t user_index) noexcept {
+  return user_index==0&&g_touch_rumble_provider.load(std::memory_order_acquire)!=nullptr;
+}
+bool WriteTouchGamepadRumble(uint32_t user_index,uint16_t low,uint16_t high) noexcept {
+  const auto provider=g_touch_rumble_provider.load(std::memory_order_acquire);
+  if(!provider||user_index!=0)return false;
+  // A stop always passes through, including after touch input is hidden.
+  if((low||high)&&(!HostInputAllowed()||!TouchControlsAvailable())){provider(user_index,0,0);return false;}
+  return provider(user_index,low,high);
 }
 
 bool ReadTouchGamepad(uint32_t user_index, X_INPUT_GAMEPAD* state) noexcept {

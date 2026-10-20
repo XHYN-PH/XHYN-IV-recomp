@@ -13,6 +13,10 @@
 
 #include <mutex>
 
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
+
 namespace rex::thread {
 
 // The global critical region mutex singleton.
@@ -56,6 +60,22 @@ namespace rex::thread {
 class global_critical_region {
  public:
   static std::recursive_mutex& mutex();
+
+  // Locks, spinning briefly before blocking. Guest interrupt-disabled
+  // sections last a few instructions; sleeping on the futex for one (and
+  // waking the sleeper on unlock) costs far more than the wait.
+  static void LockSpinning() {
+    std::recursive_mutex& global_mutex = mutex();
+    for (int i = 0; i < 128; ++i) {
+      if (global_mutex.try_lock()) return;
+#if defined(__aarch64__)
+      __asm__ volatile("yield");
+#elif defined(__x86_64__) || defined(_M_X64)
+      _mm_pause();
+#endif
+    }
+    global_mutex.lock();
+  }
 
   // Acquires a lock on the global critical section.
   // Use this when keeping an instance is not possible. Otherwise, prefer

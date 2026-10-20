@@ -16,9 +16,16 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <vector>
 
+#if defined(__ANDROID__) || defined(__linux__)
+#include <pthread.h>
+#endif
+
 #include <rex/chrono/clock.h>
+#include <rex/cvar.h>
 #include <rex/dbg.h>
 #include <rex/kernel/xboxkrnl/private.h>
 #include <rex/kernel/xboxkrnl/threading.h>
@@ -38,6 +45,10 @@
 #include <rex/system/xtypes.h>
 #include <rex/thread/atomic.h>
 #include <rex/thread/mutex.h>
+
+REXCVAR_DEFINE_UINT32(kernel_spinlock_spins, 64, "Kernel",
+                      "Rounds a contended guest spinlock waits on the CPU (watching the lock "
+                      "word) before it starts giving up its time slice; 0 yields at once");
 
 namespace rex::kernel::xboxkrnl {
 using namespace rex::system;
@@ -401,7 +412,70 @@ u32 KeDelayExecutionThread_entry(u32 processor_mode, u32 alertable, mapped_u64 i
   return result;
 }
 
+namespace {
+
+// Per-thread yield counts for TakeYieldCountSummary. A thread's counter is
+// created on its first yield and kept for the process lifetime (threads that
+// yield are few), so the summary never races a thread's exit.
+struct YieldCounter {
+  std::atomic<uint64_t> yields{0};
+  std::atomic<uint64_t> spins{0};
+  uint64_t reported_yields = 0;
+  uint64_t reported_spins = 0;
+  char name[16] = "?";
+};
+
+std::mutex g_yield_counters_mutex;
+std::vector<YieldCounter*> g_yield_counters;
+
+YieldCounter& CurrentYieldCounter() {
+  thread_local YieldCounter* counter = [] {
+    auto* created = new YieldCounter();
+#if defined(__ANDROID__) || defined(__linux__)
+    pthread_getname_np(pthread_self(), created->name, sizeof(created->name));
+#endif
+    std::lock_guard lock(g_yield_counters_mutex);
+    g_yield_counters.push_back(created);
+    return created;
+  }();
+  return *counter;
+}
+
+}  // namespace
+
+std::string TakeYieldCountSummary(size_t max_threads) {
+  struct Delta {
+    const char* name;
+    uint64_t yields;
+    uint64_t spins;
+  };
+  std::vector<Delta> deltas;
+  {
+    std::lock_guard lock(g_yield_counters_mutex);
+    for (YieldCounter* counter : g_yield_counters) {
+      const uint64_t yields = counter->yields.load(std::memory_order_relaxed);
+      const uint64_t spins = counter->spins.load(std::memory_order_relaxed);
+      Delta delta{counter->name, yields - counter->reported_yields,
+                  spins - counter->reported_spins};
+      counter->reported_yields = yields;
+      counter->reported_spins = spins;
+      if (delta.yields || delta.spins) deltas.push_back(delta);
+    }
+  }
+  std::sort(deltas.begin(), deltas.end(), [](const Delta& a, const Delta& b) {
+    return a.yields + a.spins > b.yields + b.spins;
+  });
+  std::string summary;
+  for (size_t i = 0; i < deltas.size() && i < max_threads; ++i) {
+    if (!summary.empty()) summary += ' ';
+    summary += deltas[i].name;
+    summary += '=' + std::to_string(deltas[i].yields) + '/' + std::to_string(deltas[i].spins);
+  }
+  return summary;
+}
+
 u32 NtYieldExecution_entry() {
+  CurrentYieldCounter().yields.fetch_add(1, std::memory_order_relaxed);
   rex::thread::MaybeYield();
   return X_STATUS_SUCCESS;
 }
@@ -981,9 +1055,31 @@ uint32_t xeKeKfAcquireSpinLock(PPCContext* ctx, X_KSPINLOCK* lock, bool change_i
   uint32_t pcr_addr = static_cast<uint32_t>(ctx->r13.u64);
   const uint32_t self = rex::byte_swap(pcr_addr);
   assert_true(lock->prcb_of_owner.value != self);  // self-deadlock detection
-  while (!rex::thread::atomic_cas(0u, self, &lock->prcb_of_owner.value)) {
-    rex::thread::MaybeYield();
-  }
+  if (rex::thread::atomic_cas(0u, self, &lock->prcb_of_owner.value)) return old_irql;
+  // Guest spinlocks guard a few dozen instructions, and the owner runs on
+  // another core: watching the lock word for a while usually gets it without
+  // a trip through the scheduler (sched_yield costs microseconds and can hand
+  // the core to an unrelated thread). Past the budget the owner was most
+  // likely preempted, so give the core up as before.
+  YieldCounter& counter = CurrentYieldCounter();
+  uint32_t rounds = 0;
+  const uint32_t spin_rounds = REXCVAR_GET(kernel_spinlock_spins);
+  do {
+    counter.spins.fetch_add(1, std::memory_order_relaxed);
+    if (rounds < spin_rounds) {
+      ++rounds;
+      for (int i = 0; i < 32 && __atomic_load_n(&lock->prcb_of_owner.value, __ATOMIC_RELAXED);
+           ++i) {
+#if defined(__aarch64__)
+        __asm__ __volatile__("yield");
+#elif defined(__x86_64__) || defined(_M_X64)
+        __builtin_ia32_pause();
+#endif
+      }
+    } else {
+      rex::thread::MaybeYield();
+    }
+  } while (!rex::thread::atomic_cas(0u, self, &lock->prcb_of_owner.value));
   return old_irql;
 }
 

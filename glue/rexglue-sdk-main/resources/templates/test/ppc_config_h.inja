@@ -60,6 +60,18 @@
   REX_EXTERN(__imp__##name)
 #endif
 
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define REX_PPC_SYNC() __atomic_thread_fence(__ATOMIC_SEQ_CST)
+#define REX_PPC_LWSYNC() __atomic_thread_fence(__ATOMIC_ACQ_REL)
+#define REX_PPC_EIEIO() __atomic_thread_fence(__ATOMIC_SEQ_CST)
+#define REX_PPC_ISYNC() __atomic_thread_fence(__ATOMIC_ACQUIRE)
+#else
+#define REX_PPC_SYNC() ((void)0)
+#define REX_PPC_LWSYNC() ((void)0)
+#define REX_PPC_EIEIO() ((void)0)
+#define REX_PPC_ISYNC() ((void)0)
+#endif
+
 #if REX_PLATFORM_WIN32
 #define REX_PHYS_HOST_OFFSET(addr) (((u32)(addr) >= 0xE0000000u) ? 0x1000u : 0u)
 #else

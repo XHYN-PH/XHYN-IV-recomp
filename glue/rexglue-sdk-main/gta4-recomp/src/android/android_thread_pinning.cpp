@@ -8,6 +8,10 @@
 // big core each (fastest first) and confines every other thread to the
 // remaining cores. Threads are re-ranked continuously, so roles that move
 // between threads (loading, cutscenes) follow.
+//
+// Audio threads (ours at nice -16, AAudio's realtime callback) are never
+// confined: on the leftover cores they compete with streaming and loading,
+// and the little cores alone cannot decode XMA through a load spike.
 #include <dirent.h>
 #include <sched.h>
 #include <sys/syscall.h>
@@ -33,28 +37,37 @@ REXCVAR_DEFINE_UINT32(gta4_thread_pinning, 0, "GTA IV/Performance",
 
 namespace {
 
-uint64_t ThreadCpuTicks(pid_t tid) {
+struct ThreadStat {
+  uint64_t ticks = 0;
+  bool audio = false;  // high priority or realtime: left on every core
+};
+
+ThreadStat ReadThreadStat(pid_t tid) {
   char path[64];
   std::snprintf(path, sizeof(path), "/proc/self/task/%d/stat", tid);
   FILE* file = std::fopen(path, "r");
-  if (!file) return 0;
+  if (!file) return {};
   char buffer[512];
   const size_t length = std::fread(buffer, 1, sizeof(buffer) - 1, file);
   std::fclose(file);
   buffer[length] = 0;
   // Fields after the parenthesized name: state is field 3, utime 14, stime 15.
   const char* p = std::strrchr(buffer, ')');
-  if (!p) return 0;
+  if (!p) return {};
+  // Field 19 is nice, 41 the scheduling policy (1 FIFO, 2 RR).
   unsigned long long utime = 0, stime = 0;
+  long nice = 0, policy = 0;
   int field = 2;
-  for (const char* c = p + 1; *c && field < 15; ++c) {
+  for (const char* c = p + 1; *c && field < 41; ++c) {
     if (*c == ' ') {
       ++field;
       if (field == 14) utime = std::strtoull(c + 1, nullptr, 10);
       if (field == 15) stime = std::strtoull(c + 1, nullptr, 10);
+      if (field == 19) nice = std::strtol(c + 1, nullptr, 10);
+      if (field == 41) policy = std::strtol(c + 1, nullptr, 10);
     }
   }
-  return utime + stime;
+  return {utime + stime, nice <= -16 ||policy == 1 || policy == 2};
 }
 
 std::vector<int> CoresByMaxFrequency() {
@@ -90,13 +103,19 @@ void PinningLoop() {
     std::this_thread::sleep_for(std::chrono::seconds(2));
     const uint32_t pinned = std::min<uint32_t>(REXCVAR_GET(gta4_thread_pinning), 4);
     std::vector<std::pair<uint64_t, pid_t>> usage;
+    std::vector<pid_t> audio;
     std::unordered_map<pid_t, uint64_t> current;
     if (DIR* directory = opendir("/proc/self/task")) {
       while (dirent* entry = readdir(directory)) {
         const pid_t tid = pid_t(std::atoi(entry->d_name));
         if (tid <= 0) continue;
-        const uint64_t ticks = ThreadCpuTicks(tid);
+        const ThreadStat stat = ReadThreadStat(tid);
+        const uint64_t ticks = stat.ticks;
         current[tid] = ticks;
+        if (stat.audio) {
+          audio.push_back(tid);
+          continue;
+        }
         const auto old = previous.find(tid);
         usage.emplace_back(old != previous.end() && ticks >= old->second ? ticks - old->second : 0,
                            tid);
@@ -121,6 +140,10 @@ void PinningLoop() {
       }
       SetAffinity(usage[i].second, set);
     }
+    cpu_set_t all;
+    CPU_ZERO(&all);
+    for (int cpu : cores) CPU_SET(cpu, &all);
+    for (pid_t tid : audio) SetAffinity(tid, all);
     if (pinned != applied) {
       __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp", "thread-pinning: %u threads on cores %d,%d,%d",
                           pinned, cores[0], cores[1], cores[2]);

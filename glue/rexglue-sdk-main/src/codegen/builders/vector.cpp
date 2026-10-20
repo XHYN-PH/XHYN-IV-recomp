@@ -93,8 +93,8 @@ bool build_vmulfp128(BuilderContext& ctx) {
 bool build_vmaddfp(BuilderContext& ctx) {
   ctx.emit_set_flush_mode(true);
   ctx.println(
-      "\tsimde_mm_store_ps({}.f32, simde_mm_add_ps(simde_mm_mul_ps(simde_mm_load_ps({}.f32), "
-      "simde_mm_load_ps({}.f32)), simde_mm_load_ps({}.f32)));",
+      "\tsimde_mm_store_ps({}.f32, REX_VMADDFP(simde_mm_load_ps({}.f32), "
+      "simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)));",
       ctx.v(ctx.insn.operands[0]), ctx.v(ctx.insn.operands[1]), ctx.v(ctx.insn.operands[2]),
       ctx.v(ctx.insn.operands[3]));
   return true;
@@ -104,10 +104,8 @@ bool build_vnmsubfp(BuilderContext& ctx) {
   // vnmsubfp: vD = -(vA * vB - vC) - negation done by XOR with sign bit (0x80000000)
   ctx.emit_set_flush_mode(true);
   ctx.println(
-      "\tsimde_mm_store_ps({}.f32, "
-      "simde_mm_xor_ps(simde_mm_sub_ps(simde_mm_mul_ps(simde_mm_load_ps({}.f32), "
-      "simde_mm_load_ps({}.f32)), simde_mm_load_ps({}.f32)), "
-      "simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0x80000000)))));",
+      "\tsimde_mm_store_ps({}.f32, REX_VNMSUBFP(simde_mm_load_ps({}.f32), "
+      "simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)));",
       ctx.v(ctx.insn.operands[0]), ctx.v(ctx.insn.operands[1]), ctx.v(ctx.insn.operands[2]),
       ctx.v(ctx.insn.operands[3]));
   return true;

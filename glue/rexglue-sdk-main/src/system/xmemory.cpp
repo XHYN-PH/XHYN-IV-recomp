@@ -1533,6 +1533,17 @@ bool BaseHeap::Protect(uint32_t address, uint32_t size, uint32_t protect, uint32
     host_length = aligned_end - aligned_start;
   }
 
+#if REX_PLATFORM_LINUX
+  // The host's old access comes from /proc/self/maps on Linux (thousands of
+  // lines on Android); the guest's own page table holds the same protection.
+  if (old_protect) {
+    *old_protect = page_table_[start_page_number].current_protect;
+  }
+  if (!rex::memory::Protect(host_address, host_length, ToPageAccess(protect), nullptr)) {
+    REXSYS_ERROR("BaseHeap::Protect failed due to host VirtualProtect failure");
+    return false;
+  }
+#else
   memory::PageAccess old_protect_access;
   if (!rex::memory::Protect(host_address, host_length, ToPageAccess(protect),
                             old_protect ? &old_protect_access : nullptr)) {
@@ -1543,6 +1554,7 @@ bool BaseHeap::Protect(uint32_t address, uint32_t size, uint32_t protect, uint32
   if (old_protect) {
     *old_protect = FromPageAccess(old_protect_access);
   }
+#endif
 
   // Perform table change.
   for (uint32_t page_number = start_page_number; page_number <= end_page_number; ++page_number) {

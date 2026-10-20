@@ -9,6 +9,7 @@
 #include <utility>
 #include <type_traits>
 #include <fmt/format.h>
+#include <rex/logging.h>
 #include <rex/ui/vulkan/device.h>
 #include <rex/ui/vulkan/instance.h>
 #include <rex/ui/vulkan/util.h>
@@ -143,6 +144,7 @@ inline VkShaderModule CreateShader(const ui::vulkan::VulkanDevice* device,
                                   const uint32_t* code, size_t size,
                                   std::string_view name) {
   const auto shader = ui::vulkan::util::CreateShaderModule(device, code, size);
+  if (!shader) REXLOG_ERROR("gta4-native: failed to create shader '{}'", name);
   NameShader(device, shader, name);
   return shader;
 }

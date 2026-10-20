@@ -162,7 +162,7 @@ bool VulkanSubmissionTracker::AwaitSubmissionCompletion(uint64_t submission_inde
         gpu_flight::Record("fence.wait-begin", uint64_t(uintptr_t(pending_pair.second)),
                            pending_pair.first, 0, uint64_t(uintptr_t(this)), submission_index);
         const VkResult wait_result =
-            dfn.vkWaitForFences(device, 1, &pending_pair.second, VK_TRUE, UINT64_MAX);
+            vulkan_device_->WaitForFences(1, &pending_pair.second, VK_TRUE);
         gpu_flight::Record("fence.wait-end", uint64_t(uintptr_t(pending_pair.second)),
                            pending_pair.first, 0, uint64_t(uintptr_t(this)), submission_index,
                            int32_t(wait_result));

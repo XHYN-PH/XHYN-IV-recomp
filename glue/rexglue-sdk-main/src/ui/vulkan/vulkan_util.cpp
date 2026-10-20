@@ -9,9 +9,15 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <functional>
+#include <unordered_map>
+#include <vector>
 
 #include <rex/assert.h>
+#include <rex/logging.h>
 #include <rex/math.h>
 #include <rex/ui/vulkan/device.h>
 #include <rex/ui/vulkan/util.h>
@@ -121,14 +127,28 @@ bool CreateDedicatedAllocationImage(const VulkanDevice* const vulkan_device,
   // Legacy image-format queries describe ordinary images exactly. Extended
   // creation chains (external memory, format lists, etc.) require their own
   // matching properties2 query and continue through the existing creation path.
+  // Why an image could not be made (rare; the caller only sees false).
+  const auto log_failure = [&](const char* step, int result, uint64_t size) {
+    static std::atomic<uint32_t> count{0};
+    if (count.fetch_add(1, std::memory_order_relaxed) < 32) {
+      REXLOG_WARN("vulkan: image {} failed: result={} format={} extent={}x{} samples={} "
+                  "usage={:08X} size={}",
+                  step, result, uint32_t(create_info.format), create_info.extent.width,
+                  create_info.extent.height, uint32_t(create_info.samples),
+                  uint32_t(create_info.usage), size);
+    }
+  };
   if (!create_info.pNext && !IsImageCreateInfoSupported(vulkan_device, create_info)) {
+    log_failure("format-query", 0, 0);
     return false;
   }
   const VulkanDevice::Functions& dfn = vulkan_device->functions();
   const VkDevice device = vulkan_device->device();
 
   VkImage image;
-  if (dfn.vkCreateImage(device, &create_info, nullptr, &image) != VK_SUCCESS) {
+  if (const VkResult result = dfn.vkCreateImage(device, &create_info, nullptr, &image);
+      result != VK_SUCCESS) {
+    log_failure("create", int(result), 0);
     return false;
   }
 
@@ -137,6 +157,7 @@ bool CreateDedicatedAllocationImage(const VulkanDevice* const vulkan_device,
   uint32_t memory_type = ChooseMemoryType(vulkan_device->memory_types(),
                                           memory_requirements.memoryTypeBits, memory_purpose);
   if (memory_type == UINT32_MAX) {
+    log_failure("memory-type", int(memory_requirements.memoryTypeBits), memory_requirements.size);
     dfn.vkDestroyImage(device, image, nullptr);
     return false;
   }
@@ -156,7 +177,9 @@ bool CreateDedicatedAllocationImage(const VulkanDevice* const vulkan_device,
     memory_dedicated_allocate_info.buffer = VK_NULL_HANDLE;
   }
   VkDeviceMemory memory;
-  if (dfn.vkAllocateMemory(device, &memory_allocate_info, nullptr, &memory) != VK_SUCCESS) {
+  if (const VkResult result = dfn.vkAllocateMemory(device, &memory_allocate_info, nullptr, &memory);
+      result != VK_SUCCESS) {
+    log_failure("allocate", int(result), memory_requirements.size);
     dfn.vkDestroyImage(device, image, nullptr);
     return false;
   }
@@ -238,6 +261,47 @@ VkPipeline CreateComputePipeline(const VulkanDevice* const vulkan_device, VkPipe
       CreateComputePipeline(vulkan_device, layout, shader, specialization_info, entry_point);
   vulkan_device->functions().vkDestroyShaderModule(vulkan_device->device(), shader, nullptr);
   return pipeline;
+}
+
+VkShaderModule CreateShaderModule(const VulkanDevice* vulkan_device,
+                                 const uint32_t* code, size_t code_size_bytes) {
+  std::vector<uint32_t> rewritten;
+  const auto rewrite = RewriteUnsupportedClipCullDistances(
+      vulkan_device, code, code_size_bytes, rewritten);
+  if (rewrite == ClipCullRewriteResult::kUnsupported) {
+    REXLOG_ERROR("Vulkan shader compatibility rejected module: bytes={} clip={} cull={}",
+                 code_size_bytes, vulkan_device->properties().shaderClipDistance,
+                 vulkan_device->properties().shaderCullDistance);
+    return VK_NULL_HANDLE;
+  }
+  if (rewrite == ClipCullRewriteResult::kRewritten) {
+    code = rewritten.data();
+    code_size_bytes = rewritten.size() * sizeof(uint32_t);
+  }
+  VkShaderModuleCreateInfo info{};
+  info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  info.codeSize = code_size_bytes;
+  info.pCode = code;
+  VkShaderModule shader = VK_NULL_HANDLE;
+  const auto result = vulkan_device->functions().vkCreateShaderModule(
+      vulkan_device->device(), &info, nullptr, &shader);
+  if (result != VK_SUCCESS) {
+    REXLOG_ERROR("Vulkan shader module creation failed: result={} bytes={}",
+                 int32_t(result), code_size_bytes);
+    return VK_NULL_HANDLE;
+  }
+  return shader;
+}
+
+ClipCullRewriteResult RewriteUnsupportedClipCullDistances(const VulkanDevice* vulkan_device,
+    const uint32_t* code, size_t code_size_bytes, std::vector<uint32_t>& rewritten) {
+  const auto& properties = vulkan_device->properties();
+  if (properties.shaderClipDistance && properties.shaderCullDistance)
+    return RewriteClipCullDistances(code,code_size_bytes,true,true,0,rewritten);
+  VkPhysicalDeviceProperties device_properties{};
+  vulkan_device->vulkan_instance()->functions().vkGetPhysicalDeviceProperties(vulkan_device->physical_device(), &device_properties);
+  return RewriteClipCullDistances(code, code_size_bytes, properties.shaderClipDistance,
+      properties.shaderCullDistance, device_properties.limits.maxVertexOutputComponents/4, rewritten);
 }
 
 }  // namespace util

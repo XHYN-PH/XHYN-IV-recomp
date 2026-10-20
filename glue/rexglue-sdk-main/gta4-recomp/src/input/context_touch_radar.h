@@ -6,6 +6,7 @@
 namespace gta4::input {
 struct TouchRadarPass {
   gta4::aspect::Rect bounds{};
+  gta4::aspect::Rect authored{},viewport{};
   bool gameplay = false;
 };
 
@@ -15,4 +16,6 @@ TouchRadarPass ConsumeTouchRadarPass(uint8_t* base, uint32_t phase) noexcept;
 // Radar vertices are local to this viewport; screen layout must not be applied
 // a second time while the copied viewport is bound on the render thread.
 bool TouchRadarLocalViewport(uint8_t* base) noexcept;
+gta4::aspect::Rect TouchRadarLocalBounds(gta4::aspect::Rect authored) noexcept;
+void RememberTouchRadarLocalBounds(gta4::aspect::Rect authored,gta4::aspect::Rect local) noexcept;
 }  // namespace gta4::input

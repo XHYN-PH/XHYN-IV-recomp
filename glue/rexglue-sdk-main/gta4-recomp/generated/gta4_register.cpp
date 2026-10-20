@@ -1089,6 +1089,7 @@ void gta4_RegisterFunctions(rex::runtime::IModuleRegistrar* registrar) {
   registrar->SetFunction(0x82194708, sub_82194708);
   registrar->SetFunction(0x82194770, sub_82194770);
   registrar->SetFunction(0x82194830, sub_82194830);
+  registrar->SetFunction(0x82194838, sub_82194838);
   registrar->SetFunction(0x82194840, sub_82194840);
   registrar->SetFunction(0x82194848, sub_82194848);
   registrar->SetFunction(0x82194860, sub_82194860);

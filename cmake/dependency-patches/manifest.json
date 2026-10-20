@@ -65,7 +65,7 @@
       "path": "tools/XenosRecomp",
       "base_revision": "fb32631ee398e46f2a113d8f9103201dbaa000b4",
       "patch": "xenosrecomp.patch",
-      "sha256": "d68f6fb153421693e8546e27ba396ca31baf76d95b2a063926e46311743e7677",
+      "sha256": "4d13e88f3906cc15526c40cb46c6f022f5f6244366164fa36c4aa88c1ff1fff1",
       "files": [
         {
           "path": "XenosRecomp/CMakeLists.txt",
@@ -85,7 +85,7 @@
         {
           "path": "XenosRecomp/main.cpp",
           "before_sha256": "f04fb38b1f9bcbb27a922835c81914d851314ff53aa8c5877cf3b17ebb8b309f",
-          "after_sha256": "593b78f97e41c35fbf19245dad893116ddbfb6feffcd4baefd1ccfc15d1f7a06"
+          "after_sha256": "4f1a1795d8e144354be899ecb1314c7a7fcab9b13f84657eb3a5685465ce6f30"
         },
         {
           "path": "XenosRecomp/pch.h",
@@ -100,12 +100,12 @@
         {
           "path": "XenosRecomp/shader_recompiler.cpp",
           "before_sha256": "517fe7f38560e6205b053456fd3d69e7a9db1951a66cae2688107e5ba9bc46fc",
-          "after_sha256": "5eea610118c2811fe6164e196eb99c2ea40f30d108c75c40e5f135bd4e58d54e"
+          "after_sha256": "6f76010e1316c52e68595d63343b6f632a9d800c38f0aecca6bd2ccd0bf703a2"
         },
         {
           "path": "XenosRecomp/shader_recompiler.h",
           "before_sha256": "50bdf33e87d267f5389f48ce067659d6d6de8b8d6ca5842cc0b297dad368017d",
-          "after_sha256": "e9e3d644776cff779846260e64ecff2fc0b07e447d52f60501c307d7ee08172c"
+          "after_sha256": "41904b8b2cbc21ad3113cdf7e1377a457384ed2d2df96c5a108f2925e51ab0b5"
         },
         {
           "path": "XenosRecomp/shader_source_preservation.h",

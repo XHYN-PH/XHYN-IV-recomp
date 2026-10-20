@@ -5271,8 +5271,8 @@ void VulkanCommandProcessor::CheckSubmissionFenceAndDeviceLoss(uint64_t await_su
     // synchronization scope all commands that occur earlier in submission
     // order."
     VkResult wait_result =
-        dfn.vkWaitForFences(device, uint32_t(await_submission - submission_completed_),
-                            submissions_in_flight_fences_.data(), VK_TRUE, UINT64_MAX);
+        vulkan_device->WaitForFences(uint32_t(await_submission - submission_completed_),
+                                     submissions_in_flight_fences_.data(), VK_TRUE);
     if (wait_result == VK_SUCCESS) {
       fences_awaited += await_submission - submission_completed_;
     } else {

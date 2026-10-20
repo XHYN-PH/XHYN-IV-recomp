@@ -69,17 +69,30 @@ class NativePipelineLookupMemo {
     return Pipeline{};
   }
 
-  void Store(const void* owner, const FixedState& fixed, const Context& context, Pipeline pipeline) {
+  // signature: a 64-bit hash of the memo fixed state taken where the state
+  // was captured (0 = none). Equal signatures stand for equal fixed states.
+  Pipeline FindSigned(const void* owner, uint64_t signature, const Context& context) const {
+    if (!owner || !context.lifetime || !signature) return Pipeline{};
+    for (const auto& entry : entries_) {
+      if (entry.pipeline && entry.signature == signature && owner == entry.owner &&
+          context == entry.context) return entry.pipeline;
+    }
+    return Pipeline{};
+  }
+
+  void Store(const void* owner, const FixedState& fixed, const Context& context, Pipeline pipeline,
+             uint64_t signature = 0) {
     if (!owner || !context.lifetime || !pipeline) {
       return;
     }
     for (auto& entry : entries_) {
       if (entry.owner == owner && entry.context == context && entry.fixed == fixed) {
         entry.pipeline = pipeline;
+        if (signature) entry.signature = signature;
         return;
       }
     }
-    entries_[next_] = {owner, fixed, context, pipeline};
+    entries_[next_] = {owner, fixed, context, pipeline, signature};
     next_ = (next_ + 1) % entries_.size();
   }
 
@@ -89,6 +102,7 @@ class NativePipelineLookupMemo {
     FixedState fixed{};
     Context context{};
     Pipeline pipeline{};
+    uint64_t signature = 0;
   };
   std::array<Entry, 4> entries_{};
   size_t next_ = 0;

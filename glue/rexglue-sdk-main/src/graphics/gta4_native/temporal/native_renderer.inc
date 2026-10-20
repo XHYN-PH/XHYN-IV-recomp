@@ -95,6 +95,11 @@ bool Gta4NativeGraphicsSystem::PrepareTemporalFrame() {
   temporal_composite_source_ = nullptr;
   temporal_display_present_generation_ = 0;
   temporal_frame_prepared_ = temporal_active_ = temporal_resolved_ = temporal_encoded_ = false;
+  // A frame without temporal updates has no scene, and its commands still
+  // carry default temporal fields unless an earlier pass set them: skip the
+  // walk, which read the first cache line of every command.
+  if (!frame_has_temporal_updates_ && !temporal_fields_set_) return true;
+  temporal_fields_set_ = false;
   // One pass, and no stores into commands still at their defaults (every
   // command of a frame without temporal output): dirtying each command's
   // first line cost a cache-line transfer per draw.
@@ -187,10 +192,12 @@ bool Gta4NativeGraphicsSystem::PrepareTemporalFrame() {
       prefilter->fixed_function_state.color_write_mask = 0xFu;
       command.temporal_prefilter = std::move(prefilter);
       command.temporal_composite_mode = 2;
+      temporal_fields_set_ = true;
     }
     temporal_output_binding_->source = command.textures[contract->scene_stage];
     command.temporal_scene_binding = temporal_output_binding_.get();
     command.temporal_scene_stage = contract->scene_stage;
+    temporal_fields_set_ = true;
   }
   temporal_frame_prepared_ = true;
   return true;

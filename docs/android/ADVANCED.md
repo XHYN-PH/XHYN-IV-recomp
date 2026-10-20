@@ -39,7 +39,7 @@ These are the defaults, tuned on a Retroid Pocket 5 (Snapdragon 865):
 | `--gta4_present_mode` | `vsync` | `vsync` or `immediate` (tearing, lower latency). |
 | `--gta4_draw_distance_scale` | `1.0` | World draw distance. `1.0` is the console's. |
 | `--gta4_dynamic_draw_distance` | `true` | Lowers the draw distance while frames miss the 30 FPS budget and restores it once there is headroom. |
-| `--gta4_dynamic_draw_distance_min` | `0.75` | The lowest fraction of the draw distance the dynamic controller may use. |
+| `--gta4_dynamic_draw_distance_min` | `0.80` | The lowest fraction of the draw distance the dynamic controller may use. Lower values can break dynamic shadows. |
 | `--gta4_shadow_map_base_size` | `256` | Shadow map base size. `256` is the console's. `512` is sharper and costs about 4 FPS in heavy scenes. *Restart.* |
 | `--gta4_shadow_distance_scale` | `1.0` | Range of the sun shadows. Values below 1.0 are raised to 1.0, because they make vehicle and pedestrian shadows sink into the ground. Above 1.0 costs GPU time. *Restart.* |
 | `--gta4_reflection_resolution` | `original` | Reflection resolution: `original`, `1080p`, `full`. *Restart.* |
@@ -113,10 +113,14 @@ panel, with FSR's sharpening look.
 
 | Setting | Meaning |
 |---|---|
-| `--android_surface=WxH` | Fixes the size of the Android surface, for example `1280x720`. The display hardware scales it to the panel. Read by the app before the game starts. |
+| `--android_surface=WxH` | Fixes the size of the Android surface, for example `1280x720`. The display hardware scales it to the panel. Read by the app before the game starts. Currently broken together with `--gta4_output_height_cap`: the picture is drawn into a corner of the screen. |
 | `--gta4_reflection_aa=off` | No MSAA on the low-resolution reflection captures. Saves some GPU time at no visible cost. *Restart.* |
 | `--gta4_stale_object_guard=true` | Default on. Prevents a crash when the game frees an object another thread still uses (see [PORTING.md](PORTING.md#5-stability)). |
 | `--gta4_native_skip_pixel_shaders=2673E2AF` | Default. Draws using these pixel shader hashes are skipped. `2673E2AF` is a deferred light-volume shader that hangs the GPU under Turnip. Set it to an empty value to test it on another driver. |
+| `--gta4_native_water_reflection_min_indices=0` | Default 0 (off). Skips draws with fewer indices than this in the water reflection, for example `300`. Small objects disappear from the reflection; at the bridge the reflection is ~500 mostly small draws. Live. |
+| `--gta4_native_shadow_min_indices=0` | Default 0 (off). Skips draws with fewer indices than this in the shadow map passes. Small objects lose their shadows. Live. |
+| `--gta4_native_vertex_cache_order=true` | Default on. Reorders triangles of opaque draws for the GPU vertex cache on a background thread. Same image, slightly less GPU time. Live. |
+| `--android_pin_hot_threads=false` | Default off. Keeps the busiest threads on the big CPU cores. It made those threads faster on the Retroid Pocket 5 but did not raise the frame rate. Live. |
 | `--install_game_source=PATH` / `--install_update_source=PATH` | Installation sources, instead of the `install/` folder. |
 | `--audio_maxqframes=32` | Audio blocks queued ahead of playback (1-64, each ~5.3 ms), which is also the audio delay. Default 32 (~170 ms) on Android since 0.5.7.7; it was 64 (~340 ms behind the picture). 16 (~85 ms) is tighter but can stutter during frame hitches on slower devices; raise it if the sound crackles. *Restart.* |
 | `--touch_controls=auto` | On-screen controls. `auto` shows them whenever no gamepad is connected, `on` always shows them, `off` never does. |

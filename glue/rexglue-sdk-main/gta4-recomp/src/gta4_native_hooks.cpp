@@ -70,6 +70,7 @@ REXCVAR_DECLARE(std::string, gta4_reflection_aa);
 REXCVAR_DECLARE(std::string, gta4_reflection_capture_distance);
 REXCVAR_DECLARE(std::string, gta4_native_upscaler);
 REXCVAR_DECLARE(std::string, gta4_fsr1_quality);
+REXCVAR_DECLARE(std::string,gta4_effective_upscaling);
 REXCVAR_DEFINE_UINT32(gta4_output_height_cap, 0, "GTA IV/Graphics/Upscaling",
                       "Cap the game's output height (e.g. 720); the presenter scales that image "
                       "to the display. 0 keeps the display resolution")
@@ -2907,6 +2908,11 @@ NativeResolutionOverride GetNativeResolutionOverride(uint32_t requested_width,
           fsr1_requested, REXCVAR_GET(gta4_fsr1_quality), ssaa_active, hdr_requested, perceptual_before_hdr);
   result.width = upscaling.width; result.height = upscaling.height;
   result.fsr1_active = fsr1_requested&&upscaling.active();
+  const std::string status=fmt::format("{} · {}×{} → {}×{}{}",
+      result.fsr1_active?"FSR 1":"Native",result.width,result.height,result.display_width,result.display_height,
+      upscaling.selection==Fsr1Selection::kAdjustedQuality?" · compatible scale":fsr1_requested&&!result.fsr1_active?" · FSR unavailable at this size":"");
+  if(REXCVAR_GET(gta4_effective_upscaling)!=status)REXCVAR_SET(gta4_effective_upscaling,status);
+
   const auto selected_upscaler = REXCVAR_GET(gta4_native_upscaler);
   if (selected_upscaler == "fsr3" || selected_upscaler == "dlss") {
     TemporalUpscalerResult temporal;
@@ -2937,7 +2943,9 @@ NativeResolutionOverride GetNativeResolutionOverride(uint32_t requested_width,
       REXLOG_INFO("gta4-native-upscaler: quality={} selection={} render={}x{} display={}x{} hdr={} perceptual-before-hdr={}",
           REXCVAR_GET(gta4_fsr1_quality), uint32_t(upscaling.selection), result.width, result.height,
           result.display_width, result.display_height, hdr_requested, perceptual_before_hdr);
-      if (upscaling.selection == Fsr1Selection::kHdrInputUnsupported)
+      if (upscaling.selection == Fsr1Selection::kAdjustedQuality)
+        REXLOG_INFO("gta4-native-upscaler: selected the next compatible FSR scale above the validated scene floor");
+      else if (upscaling.selection == Fsr1Selection::kHdrInputUnsupported)
         REXLOG_WARN("gta4-native-upscaler: active backend converts to HDR before upscaling; using native resolution");
       else if (upscaling.selection == Fsr1Selection::kBelowRenderFloor)
         REXLOG_WARN("gta4-native-upscaler: FSR1 input would fall below the validated 640x360 scene floor; using native resolution");
@@ -5300,18 +5308,15 @@ extern "C" void sub_82A3B540(PPCContext& ctx, uint8_t* base) {
   StoreU32(base, device + 10440, packed_bottom_right);
 }
 
-#if defined(__ANDROID__)
-#include <android/log.h>
-#define SHADOW_TRACE(...)   __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp", "%s", fmt::format(__VA_ARGS__).c_str())
-#else
 #define SHADOW_TRACE(...) REXLOG_WARN(__VA_ARGS__)
-#endif
 // Diagnostics: how the six render targets made by the shadow initializer
 // (sub_82270A08) are bound, cleared, resolved and sampled, for N frames.
 REXCVAR_DEFINE_UINT32(gta4_trace_shadow_targets, 0, "GTA IV/Diagnostics",
                       "Log binds, clears, resolves and samples of the shadow render targets "
                       "for this many frames (change the value to trace again)")
     .range(0, 8);
+
+REXCVAR_DEFINE_UINT32(gta4_shadow_capture_trigger,0,"GTA IV/Diagnostics","Increment to capture six frames of shadow target state");
 
 namespace {
 // Globals written by sub_82270A08 with each created render target (8Bx8B
@@ -5320,8 +5325,8 @@ constexpr std::array<uint32_t, 6> kShadowTargetGlobals = {0x82C58D48, 0x82C58D44
                                                           0x82C58D60, 0x82C58D58, 0x82C58D54};
 constexpr std::array<const char*, 6> kShadowTargetNames = {"8Bx8B", "4BxB", "5B-depth",
                                                            "5B-color", "B-depth", "B-color"};
-uint32_t g_shadow_trace_value = 0;
-uint32_t g_shadow_trace_start = 0;
+std::atomic<uint32_t> g_shadow_trace_value{0},g_shadow_trace_start{0},g_shadow_capture_trigger{0};
+std::mutex g_shadow_trace_mutex;
 
 int ShadowTargetIndex(uint8_t* base, uint32_t handle, bool texture) {
   if (!handle) return -1;
@@ -5343,20 +5348,17 @@ std::string ShadowTargetFetch(uint8_t* base, uint32_t texture) {
 }
 
 bool ShadowTraceActive(uint8_t* base) {
-  const uint32_t frames = REXCVAR_GET(gta4_trace_shadow_targets);
-  static std::atomic<uint32_t> heartbeat{0};
-  if ((heartbeat.fetch_add(1, std::memory_order_relaxed) & 0x3FFF) == 0) {
-    SHADOW_TRACE("shadow-trace: heartbeat value={} frame={}", frames,
-                 GetNativeLightSubmittedFrame(base));
-  }
-  if (!frames) {
-    g_shadow_trace_value = 0;
-    return false;
-  }
-  const uint32_t frame = GetNativeLightSubmittedFrame(base);
-  if (g_shadow_trace_value != frames) {
-    g_shadow_trace_value = frames;
-    g_shadow_trace_start = frame;
+  const uint32_t trigger=REXCVAR_GET(gta4_shadow_capture_trigger);
+  const uint32_t frames=trigger?6:REXCVAR_GET(gta4_trace_shadow_targets);
+  if(!frames){if(g_shadow_trace_value.load(std::memory_order_relaxed))g_shadow_trace_value.store(0,std::memory_order_relaxed);return false;}
+  const uint32_t frame=GetNativeLightSubmittedFrame(base);
+  // Completed captures remain a cheap read-only check until another request.
+  if(g_shadow_trace_value.load(std::memory_order_acquire)==frames&&g_shadow_capture_trigger.load(std::memory_order_acquire)==trigger)
+    return frame-g_shadow_trace_start.load(std::memory_order_acquire)<frames;
+  std::lock_guard lock(g_shadow_trace_mutex);
+  if(g_shadow_trace_value.load(std::memory_order_relaxed)!=frames||g_shadow_capture_trigger.load(std::memory_order_relaxed)!=trigger){
+    g_shadow_trace_start.store(frame,std::memory_order_release);g_shadow_capture_trigger.store(trigger,std::memory_order_release);g_shadow_trace_value.store(frames,std::memory_order_release);
+    SHADOW_TRACE("shadow-trace: begin trigger={} frames={} effective_upscaling={} shadow_base={} shadow_distance={}",trigger,frames,rex::cvar::GetFlagByName("gta4_effective_upscaling"),rex::cvar::GetFlagByName("gta4_shadow_map_base_size"),rex::cvar::GetFlagByName("gta4_shadow_distance_scale"));
     for (size_t i = 0; i < kShadowTargetGlobals.size(); ++i) {
       const uint32_t wrapper = LoadU32(base, kShadowTargetGlobals[i]);
       const uint32_t surface = wrapper ? LoadU32(base, wrapper + 64) : 0;
@@ -5369,7 +5371,7 @@ bool ShadowTraceActive(uint8_t* base) {
           d.width, d.height, d.sample_type, texture, ShadowTargetFetch(base, texture));
     }
   }
-  return frame - g_shadow_trace_start < frames;
+  return frame - g_shadow_trace_start.load(std::memory_order_acquire) < frames;
 }
 
 int ShadowBoundTarget(uint8_t* base, uint32_t device, uint32_t* slot = nullptr) {

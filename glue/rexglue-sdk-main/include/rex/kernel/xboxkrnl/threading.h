@@ -17,6 +17,8 @@
 #include <rex/system/xtypes.h>
 #include <rex/types.h>
 
+#include <string>
+
 namespace rex::kernel::xboxkrnl {
 
 uint32_t xeNtSetEvent(uint32_t handle, rex::be<uint32_t>* previous_state_ptr);
@@ -34,6 +36,12 @@ uint32_t xeKeSetEvent(rex::system::X_KEVENT* event_ptr, uint32_t increment, uint
 uint32_t xeKeKfAcquireSpinLock(PPCContext* ctx, rex::X_KSPINLOCK* lock, bool change_irql = true);
 void xeKeKfReleaseSpinLock(PPCContext* ctx, rex::X_KSPINLOCK* lock, uint32_t old_irql,
                            bool change_irql = true);
+
+// Guest threads that spin through NtYieldExecution or a contended guest
+// spinlock, as "name=yields/spins" since the previous call, busiest first
+// (at most `max_threads`); empty when nothing yielded. A yield returns at once
+// on the host, so a title loop that counts yields as time spins instead.
+std::string TakeYieldCountSummary(size_t max_threads);
 
 // Guest-memory APC helpers
 void xeKeInitializeApc(rex::system::XAPC* apc, uint32_t thread_ptr, uint32_t kernel_routine,

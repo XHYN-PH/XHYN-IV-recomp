@@ -39,9 +39,9 @@ export REX_OUT_DIR="$REPO/glue/rexglue-sdk-main/out/linux-arm64"
 export JNILIBS="$APP_DIR/app/src/main/jniLibs/arm64-v8a"
 export ASSETS="$APP_DIR/app/src/main/assets"
 
-export PKG="${PKG:-com.libertyrecomp}"
+export PKG="${PKG:-com.xhyn.ivrecomp}"
 # The launcher; "--ez play true" makes it start the game at once.
-export ACTIVITY="${ACTIVITY:-$PKG/.LauncherActivity}"
+export ACTIVITY="${ACTIVITY:-$PKG/com.libertyrecomp.LauncherActivity}"
 # The game runs in its own process.
 export GAME_PROC="$PKG:game"
 export FILES="/sdcard/Android/data/$PKG/files"
@@ -59,11 +59,15 @@ fi
 export SERIAL="${SERIAL:-}"
 # Git Bash rewrites arguments that look like POSIX paths (/sdcard/...) into
 # Windows paths; adb must see them unchanged.
+# ADB_TIMEOUT (seconds, optional) ends an adb call that hangs - run-as shells
+# occasionally never return while the game is busy.
 adbs() {
+  local limit=()
+  [ -n "${ADB_TIMEOUT:-}" ] && limit=(timeout "$ADB_TIMEOUT")
   if [ -n "$SERIAL" ]; then
-    MSYS_NO_PATHCONV=1 adb -s "$SERIAL" "$@"
+    MSYS_NO_PATHCONV=1 "${limit[@]}" adb -s "$SERIAL" "$@"
   else
-    MSYS_NO_PATHCONV=1 adb "$@"
+    MSYS_NO_PATHCONV=1 "${limit[@]}" adb "$@"
   fi
 }
 # Local file arguments for adbs (push/install) in a form adb.exe understands.

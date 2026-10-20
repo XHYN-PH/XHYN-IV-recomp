@@ -12,9 +12,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <vector>
 
 #include <rex/math.h>
 #include <rex/ui/vulkan/device.h>
+#include <rex/ui/vulkan/clip_cull_rewrite.h>
 
 namespace rex {
 namespace ui {
@@ -138,23 +140,18 @@ bool CreateDedicatedAllocationImage(const VulkanDevice* vulkan_device,
                                     VkDeviceMemory& memory_out, uint32_t* memory_type_out = nullptr,
                                     VkDeviceSize* memory_size_out = nullptr);
 
+// For devices without shaderClipDistance/shaderCullDistance (ARM Mali): turns
+// every clip and cull distance output into an ordinary output at a free
+// location that no later stage reads, and drops the capability. The geometry
+// is then not clipped by those planes. Unchanged and unsafe modules have
+// distinct results; unsafe modules are rejected before driver submission.
+ClipCullRewriteResult RewriteUnsupportedClipCullDistances(const VulkanDevice* vulkan_device, const uint32_t* code,
+                                         size_t code_size_bytes, std::vector<uint32_t>& rewritten);
+
 // Explicitly accepting const uint32_t* to make sure attention is paid to the
 // alignment where this is called for safety on different host architectures.
-inline VkShaderModule CreateShaderModule(const VulkanDevice* const vulkan_device,
-                                         const uint32_t* const code, const size_t code_size_bytes) {
-  VkShaderModuleCreateInfo shader_module_create_info;
-  shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  shader_module_create_info.pNext = nullptr;
-  shader_module_create_info.flags = 0;
-  shader_module_create_info.codeSize = code_size_bytes;
-  shader_module_create_info.pCode = code;
-  VkShaderModule shader_module;
-  return vulkan_device->functions().vkCreateShaderModule(vulkan_device->device(),
-                                                         &shader_module_create_info, nullptr,
-                                                         &shader_module) == VK_SUCCESS
-             ? shader_module
-             : VK_NULL_HANDLE;
-}
+VkShaderModule CreateShaderModule(const VulkanDevice* vulkan_device,
+                                 const uint32_t* code, size_t code_size_bytes);
 
 VkPipeline CreateComputePipeline(const VulkanDevice* vulkan_device, VkPipelineLayout layout,
                                  VkShaderModule shader,

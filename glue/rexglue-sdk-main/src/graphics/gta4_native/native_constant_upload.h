@@ -10,6 +10,10 @@
 #include <optional>
 #include <span>
 
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
+
 namespace rex::graphics::gta4_native {
 
 // All constant allocations are contiguous, whole float4 registers. One tracker
@@ -46,7 +50,22 @@ class NativeConstantUploadTracker {
         ? std::min(source.size(), initialized_bytes_ - offset) : 0;
     const auto convert = [&](uint8_t* dst, const uint8_t* src, size_t bytes) {
       if (!guest_word_order) { std::memcpy(dst, src, bytes); return; }
-      for (size_t i = 0; i < bytes; i += sizeof(uint32_t)) {
+      size_t i = 0;
+#if defined(__aarch64__)
+      // The destination is usually write-combined upload memory: the scalar
+      // loop (a 4-byte store per word, ~1.7M per frame at the bridge) was the
+      // recorder's hottest code. Swap 16 bytes per register, store 64 at once.
+      for (; i + 64 <= bytes; i += 64) {
+        uint8x16x4_t block = vld1q_u8_x4(src + i);
+        block.val[0] = vrev32q_u8(block.val[0]);
+        block.val[1] = vrev32q_u8(block.val[1]);
+        block.val[2] = vrev32q_u8(block.val[2]);
+        block.val[3] = vrev32q_u8(block.val[3]);
+        vst1q_u8_x4(dst + i, block);
+      }
+      for (; i + 16 <= bytes; i += 16) vst1q_u8(dst + i, vrev32q_u8(vld1q_u8(src + i)));
+#endif
+      for (; i < bytes; i += sizeof(uint32_t)) {
         uint32_t word;
         std::memcpy(&word, src + i, sizeof(word));
         word = std::byteswap(word);

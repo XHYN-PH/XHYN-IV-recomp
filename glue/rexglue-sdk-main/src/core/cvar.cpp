@@ -279,6 +279,19 @@ void FlagRegistrar::apply_(std::function<void(FlagEntry&)> fn) {
   fn(GetRegistryStorage()[it->second]);
 }
 
+bool SetLaunchFlag(std::string_view name, std::string_view value) {
+  {
+    std::lock_guard lock(GetRegistryMutex());
+    if (GetRegistryIndex().find(std::string(name)) == GetRegistryIndex().end()) {
+      GetPendingValuesStorage()[std::string(name)].cmdline = std::string(value);
+      return true;
+    }
+  }
+  if (!SetFlagByName(name, value)) return false;
+  GetCommandLineValuesStorage()[std::string(name)] = std::string(value);
+  return true;
+}
+
 bool SetFlagByName(std::string_view name, std::string_view value) {
   std::lock_guard lock(GetRegistryMutex());
   auto it = GetRegistryIndex().find(std::string(name));
@@ -563,13 +576,35 @@ std::vector<std::string> Init(int argc, char** argv) {
     }
   }
 
+  // CLI11 can treat --string= as a missing value and consume the next
+  // option. Remove explicit empty strings before parsing, then restore only
+  // those that were the last occurrence of their flag. Keep other options
+  // in their original order and leave deferred/unknown flags to app.remaining.
+  std::vector<char*> parse_argv;
+  std::unordered_map<std::string,bool> empty_strings;
+  for(int i=0;i<argc;++i) {
+    const std::string_view arg=argv[i]?argv[i]:"";
+    bool omit=false;
+    if(i&&arg.starts_with("--")) {
+      const auto eq=arg.find('=');const auto name=arg.substr(2,eq==std::string_view::npos?arg.size()-2:eq-2);
+      const auto* flag=GetFlagInfo(name);
+      if(flag&&flag->type==FlagType::String) {
+        omit=eq!=std::string_view::npos&&eq+1==arg.size();
+        empty_strings[std::string(name)]=omit;
+      }
+    }
+    if(!omit)parse_argv.push_back(argv[i]);
+  }
   try {
-    app.parse(argc, argv);
+    app.parse(static_cast<int>(parse_argv.size()),parse_argv.data());
   } catch (const CLI::ParseError& e) {
     // TODO(tomc): dumb workaround for the stupid chicken and its egg.
     //             dont call rex logging funcs here for now.
     fprintf(stderr, "cvar: CLI11  parse error: %s\n", e.what());
   }
+
+  for(const auto& [name,empty]:empty_strings)if(empty&&SetFlagByName(name,""))
+    GetCommandLineValuesStorage()[name]="";
 
   // Stash unrecognized --options for cvars that register later. Supported
   // forms: --name=value, --name (true), --no-name (false); a separated

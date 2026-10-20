@@ -12,6 +12,11 @@
 // Only loads of whole float4 registers through `bank_base + offset` are
 // rewritten; anything else keeps its original BDA load, which stays valid
 // because the push constants still carry the bank addresses.
+//
+// A register index computed at run time (relative addressing, `c[a0 + n]`) is
+// clamped to the block: a stray a0 (a NaN shadow-cascade constant, say) read
+// outside the uniform buffer and hung the GPU (kgsl "GPU hang detected" in
+// the directional shadow pass), where the console reads a wrong register.
 #include <cstdint>
 #include <optional>
 #include <unordered_map>
@@ -23,6 +28,7 @@ namespace rex::graphics::gta4_native {
 struct SpirvUboConstantsResult {
   std::vector<uint32_t> words;
   uint32_t rewritten_loads = 0;
+  uint32_t clamped_loads = 0;  // run-time register indices clamped to the block
 };
 
 // bank: 0 vertex constants, 1 pixel constants. register_count sizes the
@@ -36,7 +42,7 @@ inline std::optional<SpirvUboConstantsResult> RewriteSpirvConstantBankToUbo(
                      kOpInBoundsAccessChain = 66, kOpDecorate = 71, kOpMemberDecorate = 72,
                      kOpConvertUToPtr = 120, kOpUConvert = 113, kOpBitcast = 124, kOpIAdd = 128,
                      kOpTypeArray = 28, kOpTypeStruct = 30, kOpShiftRightLogical = 194,
-                     kOpTypeBool = 20;
+                     kOpTypeBool = 20, kOpULessThan = 176, kOpSelect = 169;
   constexpr uint32_t kStoragePushConstant = 9, kStorageUniform = 2,
                      kStoragePhysicalStorageBuffer = 5349;
   constexpr uint32_t kDecorationBlock = 2, kDecorationArrayStride = 6, kDecorationOffset = 35,
@@ -45,7 +51,8 @@ inline std::optional<SpirvUboConstantsResult> RewriteSpirvConstantBankToUbo(
 
   // Pass 1: identify types, the bank base value and bank addresses.
   uint32_t bound = in[3];
-  uint32_t push_variable = 0, uint_type = 0, ulong_type = 0, float_type = 0, vec4_type = 0;
+  uint32_t push_variable = 0, uint_type = 0, ulong_type = 0, float_type = 0, vec4_type = 0,
+           bool_type = 0;
   std::unordered_map<uint32_t, uint64_t> constants;      // id -> value
   std::unordered_map<uint32_t, uint32_t> constant_types; // id -> type
   std::unordered_set<uint32_t> bank_pointers;            // access chain -> member `bank`
@@ -70,6 +77,9 @@ inline std::optional<SpirvUboConstantsResult> RewriteSpirvConstantBankToUbo(
         break;
       case kOpTypeFloat:
         if (w[2] == 32) float_type = w[1];
+        break;
+      case kOpTypeBool:
+        bool_type = w[1];
         break;
       case kOpTypeVector:
         if (w[2] == float_type && w[3] == 4 && float_type) vec4_type = w[1];
@@ -119,7 +129,8 @@ inline std::optional<SpirvUboConstantsResult> RewriteSpirvConstantBankToUbo(
   if (!uint_type || !vec4_type || bank_pointer_values.empty()) return std::nullopt;
 
   // New ids.
-  const uint32_t uint_zero = bound++, uint_four = bound++, uint_length = bound++;
+  const uint32_t uint_zero = bound++, uint_four = bound++, uint_length = bound++,
+                 uint_last = bound++;
   const uint32_t array_type = bound++, struct_type = bound++, struct_pointer = bound++,
                  element_pointer = bound++, variable = bound++;
 
@@ -150,6 +161,7 @@ inline std::optional<SpirvUboConstantsResult> RewriteSpirvConstantBankToUbo(
       emit(kOpConstant, {uint_type, uint_zero, 0});
       emit(kOpConstant, {uint_type, uint_four, 4});
       emit(kOpConstant, {uint_type, uint_length, register_count});
+      emit(kOpConstant, {uint_type, uint_last, register_count - 1});
       emit(kOpTypeArray, {array_type, vec4_type, uint_length});
       emit(kOpTypeStruct, {struct_type, array_type});
       emit(kOpTypePointer, {struct_pointer, kStorageUniform, struct_type});
@@ -174,8 +186,18 @@ inline std::optional<SpirvUboConstantsResult> RewriteSpirvConstantBankToUbo(
         offset32 = bound++;
         emit(kOpUConvert, {uint_type, offset32, address.offset_id});
       }
-      const uint32_t index = bound++, pointer = bound++;
+      uint32_t index = bound++;
+      const uint32_t pointer = bound++;
       emit(kOpShiftRightLogical, {uint_type, index, offset32, uint_four});
+      const bool constant_offset =
+          constants.count(address.offset_id) || constants.count(offset32);
+      if (!constant_offset && bool_type) {
+        const uint32_t in_range = bound++, clamped = bound++;
+        emit(kOpULessThan, {bool_type, in_range, index, uint_length});
+        emit(kOpSelect, {uint_type, clamped, in_range, index, uint_last});
+        index = clamped;
+        ++result.clamped_loads;
+      }
       emit(kOpAccessChain, {element_pointer, pointer, variable, uint_zero, index});
       // Same result id and type, now from the uniform block (drop any
       // physical-storage memory operands such as Aligned).

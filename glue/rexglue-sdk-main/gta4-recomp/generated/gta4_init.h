@@ -8,6 +8,10 @@
 
 #define REX_CONFIG_H_INCLUDED
 
+#define REX_CONFIG_CTR_AS_LOCAL
+#define REX_CONFIG_XER_AS_LOCAL
+#define REX_CONFIG_CR_AS_LOCAL
+#define REX_CONFIG_NON_VOLATILE_AS_LOCAL
 
 #define REX_IMAGE_BASE 0x82000000ull
 #define REX_IMAGE_SIZE 0x1300000ull
@@ -98,6 +102,44 @@ extern PPCFuncMapping PPCFuncMappings[];
 #else
 #define REX_FUNC_PROLOGUE() ((void)0)
 #endif
+#endif
+
+//=============================================================================
+// Vector Multiply-Add
+//=============================================================================
+
+// vmaddfp (a*b + c) and vnmsubfp (-(a*b - c)). The console's VMX fuses them
+// (one rounding); the default keeps the historical two-rounding form. Define
+// REX_FUSED_VMADDFP for the fused form (fmla on AArch64).
+#if defined(REX_FUSED_VMADDFP)
+#include <simde/x86/fma.h>
+#define REX_VMADDFP(a, b, c) simde_mm_fmadd_ps((a), (b), (c))
+// c - a*b in one rounding (fmls); simde's fmsub is not fused.
+#define REX_VNMSUBFP(a, b, c) simde_mm_fnmadd_ps((a), (b), (c))
+#else
+#define REX_VMADDFP(a, b, c) simde_mm_add_ps(simde_mm_mul_ps((a), (b)), (c))
+#define REX_VNMSUBFP(a, b, c)                                     \
+  simde_mm_xor_ps(simde_mm_sub_ps(simde_mm_mul_ps((a), (b)), (c)), \
+                  simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0x80000000))))
+#endif
+
+//=============================================================================
+// Memory Barriers
+//=============================================================================
+
+// sync/eieio are full barriers, lwsync orders everything but store-to-load,
+// isync completes earlier loads before later ones. x86-64 needs no instruction
+// for any of them; AArch64 does.
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define REX_PPC_SYNC() __atomic_thread_fence(__ATOMIC_SEQ_CST)
+#define REX_PPC_LWSYNC() __atomic_thread_fence(__ATOMIC_ACQ_REL)
+#define REX_PPC_EIEIO() __atomic_thread_fence(__ATOMIC_SEQ_CST)
+#define REX_PPC_ISYNC() __atomic_thread_fence(__ATOMIC_ACQUIRE)
+#else
+#define REX_PPC_SYNC() ((void)0)
+#define REX_PPC_LWSYNC() ((void)0)
+#define REX_PPC_EIEIO() ((void)0)
+#define REX_PPC_ISYNC() ((void)0)
 #endif
 
 //=============================================================================
@@ -328,28 +370,26 @@ inline void ppc_trap(PPCContext& ctx, u8* base, u16 trap_type) {
 // Interrupt Locks
 //=============================================================================
 
-inline std::atomic<i32>& ppc_global_lock_count_() {
-  static std::atomic<i32> count{0};
-  return count;
-}
+// Interrupt-disabled depth of the calling thread. The count under the global
+// lock is non-zero exactly when the caller holds the lock, so mfmsr reads this
+// instead of taking the lock: guest sections are a few instructions
+// (mfmsr/mtmsrd around lwarx/stwcx.), and the extra lock round trip doubled
+// their contention.
+inline thread_local i32 ppc_global_lock_depth_ = 0;
 
-#define REX_CHECK_GLOBAL_LOCK()                                        \
-  ([&]() -> u64 {                                                      \
-    auto lock_ = rex::thread::global_critical_region::AcquireDirect(); \
-    return ppc_global_lock_count_().load() ? 0 : 0x8000;               \
-  }())
+#define REX_CHECK_GLOBAL_LOCK() (ppc_global_lock_depth_ ? u64{0} : u64{0x8000})
 
 #define REX_ENTER_GLOBAL_LOCK()                          \
   do {                                                   \
-    rex::thread::global_critical_region::mutex().lock(); \
-    ppc_global_lock_count_().fetch_add(1);               \
+    rex::thread::global_critical_region::LockSpinning(); \
+    ++ppc_global_lock_depth_;                            \
   } while (0)
 
-#define REX_LEAVE_GLOBAL_LOCK()                                                           \
-  do {                                                                                    \
-    auto old_count_ = ppc_global_lock_count_().fetch_sub(1);                              \
-    assert(old_count_ >= 1 && "LeaveGlobalLock called without matching EnterGlobalLock"); \
-    rex::thread::global_critical_region::mutex().unlock();                                \
+#define REX_LEAVE_GLOBAL_LOCK()                                                             \
+  do {                                                                                      \
+    assert(ppc_global_lock_depth_ >= 1 && "LeaveGlobalLock called without EnterGlobalLock"); \
+    --ppc_global_lock_depth_;                                                               \
+    rex::thread::global_critical_region::mutex().unlock();                                  \
   } while (0)
 
 //=============================================================================
@@ -1437,6 +1477,7 @@ DECLARE_REX_FUNC(sub_82194698);
 DECLARE_REX_FUNC(sub_82194708);
 DECLARE_REX_FUNC(sub_82194770);
 DECLARE_REX_FUNC(sub_82194830);
+DECLARE_REX_FUNC(sub_82194838);
 DECLARE_REX_FUNC(sub_82194840);
 DECLARE_REX_FUNC(sub_82194848);
 DECLARE_REX_FUNC(sub_82194860);

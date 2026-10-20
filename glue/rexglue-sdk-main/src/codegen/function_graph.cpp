@@ -14,6 +14,7 @@
 #include "builders.h"
 
 #include <algorithm>
+#include <string_view>
 #include <cassert>
 #include <unordered_set>
 
@@ -635,6 +636,118 @@ std::string FunctionNode::emitCpp(const EmitContext& ctx) const {
     emit_println(body, "}}\n");
   }
 
+  // --- Volatile registers as locals: synchronize with ctx ---
+  // Calls (`NAME(ctx, base);`, REX_CALL_INDIRECT_FUNC(...);, ppc_trap) and
+  // returns are wrapped after the body is complete, when the set of localized
+  // volatile registers is known: the callee reads its arguments from ctx and
+  // leaves its results there, and the caller reads what this function leaves
+  // at return. Locals start as copies of ctx (they may carry arguments).
+  std::vector<size_t> volatileVectors, volatileGprs, volatileFprs;
+  if (ctx.config.volatileVectorRegistersAsLocalVariables) {
+    for (size_t i = 0; i < 128; ++i) {
+      if (localVariables.v[i] && (i <= 13 || (i >= 32 && i <= 63))) volatileVectors.push_back(i);
+    }
+  }
+  if (ctx.config.volatileRegistersAsLocalVariables) {
+    for (size_t i = 0; i <= 13; ++i) {
+      if (localVariables.r[i]) volatileGprs.push_back(i);
+      if (localVariables.f[i]) volatileFprs.push_back(i);
+    }
+    // The SEH catch block sets the establisher frame in ctx.r12 right before
+    // calling the handler; the call's write-back must not overwrite it.
+    if (localVariables.r[12]) {
+      const std::string seh = "\t\t\tctx.r12.s64 = ctx.r31.s64 + ";
+      for (size_t at = body.find(seh); at != std::string::npos; at = body.find(seh, at + 1)) {
+        body.replace(at, seh.size(), "\t\t\tr12.s64 = ctx.r12.s64 = ctx.r31.s64 + ");
+      }
+    }
+  }
+  if (!volatileVectors.empty() || !volatileGprs.empty() || !volatileFprs.empty()) {
+    // A GPR/FPR local the body never assigns always equals ctx (copied at
+    // entry, reloaded after every call), so only assigned ones are written
+    // back; every guest-memory store may alias ctx, so the compiler could not
+    // drop those stores itself. Assignments are `rN = `, `rN.member = ` or a
+    // compound assignment (the builders never take a register's address).
+    const auto is_identifier = [](char c) {
+      return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    };
+    const auto assigned = [&](char kind, size_t index) {
+      const std::string name = fmt::format("{}{}", kind, index);
+      for (size_t at = body.find(name); at != std::string::npos; at = body.find(name, at + 1)) {
+        if (at && (is_identifier(body[at - 1]) || body[at - 1] == '.')) continue;
+        size_t p = at + name.size();
+        if (p < body.size() && is_identifier(body[p])) continue;  // r1 vs r12
+        if (p < body.size() && body[p] == '.') {
+          ++p;
+          while (p < body.size() && is_identifier(body[p])) ++p;
+        }
+        while (p < body.size() && body[p] == ' ') ++p;
+        if (p + 1 < body.size() && body[p] == '=' && body[p + 1] != '=') return true;
+        if (p + 2 < body.size() && body[p + 1] == '=' && body[p + 2] != '=' &&
+            std::string_view("+-|&^*/%").find(body[p]) != std::string_view::npos)
+          return true;
+        if (p + 2 < body.size() && (body.compare(p, 3, "<<=") == 0 || body.compare(p, 3, ">>=") == 0))
+          return true;
+      }
+      return false;
+    };
+    std::string store, load;
+    for (size_t i : volatileGprs) {
+      if (assigned('r', i)) store += fmt::format("ctx.r{0} = r{0}; ", i);
+      load += fmt::format("r{0} = ctx.r{0}; ", i);
+    }
+    for (size_t i : volatileFprs) {
+      if (assigned('f', i)) store += fmt::format("ctx.f{0} = f{0}; ", i);
+      load += fmt::format("f{0} = ctx.f{0}; ", i);
+    }
+    for (size_t i : volatileVectors) {
+      store += fmt::format("ctx.v{0} = v{0}; ", i);
+      load += fmt::format("v{0} = ctx.v{0}; ", i);
+    }
+    std::string wrapped;
+    wrapped.reserve(body.size() + body.size() / 4);
+    size_t position = 0;
+    while (position < body.size()) {
+      const size_t call = body.find("(ctx, base);", position);
+      const size_t indirect = body.find("REX_CALL_INDIRECT_FUNC(", position);
+      const size_t trap = body.find("ppc_trap(ctx, base,", position);
+      const size_t ret = body.find("return;", position);
+      const size_t next = std::min({call, indirect, trap, ret});
+      if (next == std::string::npos) {
+        wrapped.append(body, position, std::string::npos);
+        break;
+      }
+      if (next == ret) {
+        wrapped.append(body, position, ret - position);
+        wrapped += "{ " + store + "return; }";
+        position = ret + 7;
+      } else if (next == trap) {
+        const size_t end = body.find(");", trap);
+        wrapped.append(body, position, trap - position);
+        wrapped += "{ " + store;
+        wrapped.append(body, trap, end + 2 - trap);
+        wrapped += " }";
+        position = end + 2;
+      } else if (next == indirect) {
+        const size_t end = body.find(");", indirect);
+        wrapped.append(body, position, indirect - position);
+        wrapped += "{ " + store;
+        wrapped.append(body, indirect, end + 2 - indirect);
+        wrapped += " " + load + "}";
+        position = end + 2;
+      } else {
+        size_t start = call;
+        while (start > position && is_identifier(body[start - 1])) --start;
+        wrapped.append(body, position, start - position);
+        wrapped += "{ " + store;
+        wrapped.append(body, start, call + 12 - start);
+        wrapped += " " + load + "}";
+        position = call + 12;
+      }
+    }
+    body = std::move(wrapped);
+  }
+
   // --- Emit local variable declarations, then body ---
   if (localVariables.ctr)
     emit_println(out, "\tPPCRegister ctr{{}};");
@@ -648,18 +761,30 @@ std::string FunctionNode::emitCpp(const EmitContext& ctx) const {
       emit_println(out, "\tPPCCRRegister cr{}{{}};", i);
   }
 
+  const auto is_volatile = [](const std::vector<size_t>& list, size_t i) {
+    return std::find(list.begin(), list.end(), i) != list.end();
+  };
   for (size_t i = 0; i < 32; i++) {
-    if (localVariables.r[i])
+    if (!localVariables.r[i]) continue;
+    if (is_volatile(volatileGprs, i))
+      emit_println(out, "\tPPCRegister r{0} = ctx.r{0};", i);
+    else
       emit_println(out, "\tPPCRegister r{}{{}};", i);
   }
 
   for (size_t i = 0; i < 32; i++) {
-    if (localVariables.f[i])
+    if (!localVariables.f[i]) continue;
+    if (is_volatile(volatileFprs, i))
+      emit_println(out, "\tPPCRegister f{0} = ctx.f{0};", i);
+    else
       emit_println(out, "\tPPCRegister f{}{{}};", i);
   }
 
   for (size_t i = 0; i < 128; i++) {
-    if (localVariables.v[i])
+    if (!localVariables.v[i]) continue;
+    if (std::find(volatileVectors.begin(), volatileVectors.end(), i) != volatileVectors.end())
+      emit_println(out, "\tPPCVRegister v{0} = ctx.v{0};", i);  // may carry an argument
+    else
       emit_println(out, "\tPPCVRegister v{}{{}};", i);
   }
 

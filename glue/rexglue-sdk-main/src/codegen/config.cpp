@@ -114,6 +114,11 @@ void ApplyToml(const toml::table& toml, RecompilerConfig& cfg, const std::string
             hasBool("non_argument_as_local"), "non_argument_as_local");
   MergeBool(cfg.nonVolatileRegistersAsLocalVariables, toml["non_volatile_as_local"].value_or(false),
             hasBool("non_volatile_as_local"), "non_volatile_as_local");
+  MergeBool(cfg.volatileRegistersAsLocalVariables, toml["volatile_as_local"].value_or(false),
+            hasBool("volatile_as_local"), "volatile_as_local");
+  MergeBool(cfg.volatileVectorRegistersAsLocalVariables,
+            toml["volatile_vector_as_local"].value_or(false), hasBool("volatile_vector_as_local"),
+            "volatile_vector_as_local");
   MergeBool(cfg.generateExceptionHandlers, toml["generate_exception_handlers"].value_or(false),
             hasBool("generate_exception_handlers"), "generate_exception_handlers");
   if (hasBool("is_dll")) {
@@ -197,6 +202,8 @@ void ApplyToml(const toml::table& toml, RecompilerConfig& cfg, const std::string
       fcfg.end = (*table)["end"].value_or(0u);
       fcfg.name = (*table)["name"].value_or(std::string{});
       fcfg.parent = (*table)["parent"].value_or(0u);
+      fcfg.shareRegisters = (*table)["share_registers"].value_or(false);
+      fcfg.syncRegisters = (*table)["sync_registers"].value_or(false);
 
       if (fcfg.size && fcfg.end) {
         REXCODEGEN_ERROR("Function 0x{:08X}: cannot specify both 'size' and 'end'", address);
@@ -406,6 +413,7 @@ bool LoadRecursive(const std::filesystem::path& filePath, RecompilerConfig& cfg,
     return false;
   }
   visited.insert(canonicalStr);
+  cfg.loadedFiles.push_back(canonicalStr);
 
   toml::table toml;
   try {

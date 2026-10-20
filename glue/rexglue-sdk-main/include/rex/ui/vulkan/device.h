@@ -10,6 +10,8 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <chrono>
+#include <thread>
 #include <string>
 #include <memory>
 #include <mutex>
@@ -234,6 +236,7 @@ class VulkanDevice {
   // `ext_major_minor_` prefix rather than `ext_`).
   struct Extensions {
     bool ext_GOOGLE_display_timing = false;
+    bool ext_AMD_buffer_marker = false;
     bool ext_KHR_swapchain = false;                     // #2
     bool ext_1_1_KHR_dedicated_allocation = false;      // #128
     bool ext_EXT_shader_stencil_export = false;         // #141
@@ -261,6 +264,7 @@ class VulkanDevice {
 
   struct Functions {
     PFN_vkGetRefreshCycleDurationGOOGLE vkGetRefreshCycleDurationGOOGLE = nullptr;
+    PFN_vkCmdWriteBufferMarkerAMD vkCmdWriteBufferMarkerAMD = nullptr;
     PFN_vkGetPastPresentationTimingGOOGLE vkGetPastPresentationTimingGOOGLE = nullptr;
 #define XE_UI_VULKAN_FUNCTION(name) PFN_##name name = nullptr;
 #define XE_UI_VULKAN_FUNCTION_PROMOTED(extension_name, core_name) \
@@ -283,6 +287,25 @@ class VulkanDevice {
   };
 
   const Functions& functions() const { return functions_; }
+
+  // vkWaitForFences until the fences signal or the device fails, a second at
+  // a time: an Adreno 830 driver (Snapdragon 8 Elite) returns VK_TIMEOUT at
+  // once for a UINT64_MAX timeout (found by pinyon-shift), which callers took
+  // for a failure.
+  VkResult WaitForFences(uint32_t fence_count, const VkFence* fences, VkBool32 wait_all) const {
+    for (;;) {
+      const auto began=std::chrono::steady_clock::now();
+      const VkResult result = functions_.vkWaitForFences(device_, fence_count, fences, wait_all,
+                                                         UINT64_C(1000000000));
+      if (result != VK_TIMEOUT) {
+        return result;
+      }
+      // A broken early-timeout implementation must not turn this blocking
+      // wait into a hot spin. Keep fence ownership until actual completion.
+      const auto elapsed=std::chrono::steady_clock::now()-began;
+      if(elapsed<std::chrono::milliseconds(1))std::this_thread::sleep_for(std::chrono::milliseconds(1)-elapsed);
+    }
+  }
 
   template <typename Object>
   void SetObjectName(const VkObjectType object_type, const Object object_handle,

@@ -515,7 +515,11 @@ VoidResult registerEntryPoints(CodegenContext& ctx) {
     for (size_t i = 14; i <= endReg; i++) {
       uint32_t addr = base14 + static_cast<uint32_t>((i - 14) * stride);
       uint32_t size = static_cast<uint32_t>((endReg + 1 - i) * stride + extraSize);
-      graph.addFunction(addr, size, FunctionAuthority::HELPER, true);
+      // Generated code with localized registers never calls the helpers; code
+      // that still keeps r14-r31 in ctx (hand-copied guest code in hooks) does,
+      // and needs them to save and restore ctx: keep their bodies in ctx.
+      if (auto* node = graph.addFunction(addr, size, FunctionAuthority::HELPER, true))
+        node->setSharesRegisters(true);
       graph.setFunctionName(addr, fmt::format("{}{}", prefix, i));
     }
   };
@@ -532,7 +536,8 @@ VoidResult registerEntryPoints(CodegenContext& ctx) {
     for (size_t i = 64; i < 128; i++) {
       uint32_t addr = state.restVmx64Address + static_cast<uint32_t>((i - 64) * 8);
       uint32_t size = static_cast<uint32_t>((128 - i) * 8 + 4);
-      graph.addFunction(addr, size, FunctionAuthority::HELPER, true);
+      if (auto* node = graph.addFunction(addr, size, FunctionAuthority::HELPER, true))
+        node->setSharesRegisters(true);
       graph.setFunctionName(addr, fmt::format("__restvmx_{}", i));
     }
   }
@@ -540,7 +545,8 @@ VoidResult registerEntryPoints(CodegenContext& ctx) {
     for (size_t i = 64; i < 128; i++) {
       uint32_t addr = state.saveVmx64Address + static_cast<uint32_t>((i - 64) * 8);
       uint32_t size = static_cast<uint32_t>((128 - i) * 8 + 4);
-      graph.addFunction(addr, size, FunctionAuthority::HELPER, true);
+      if (auto* node = graph.addFunction(addr, size, FunctionAuthority::HELPER, true))
+        node->setSharesRegisters(true);
       graph.setFunctionName(addr, fmt::format("__savevmx_{}", i));
     }
   }
@@ -550,8 +556,14 @@ VoidResult registerEntryPoints(CodegenContext& ctx) {
   for (const auto& [address, cfg] : config.functions) {
     uint32_t size = cfg.getSize(address);
     std::string name = cfg.name.empty() ? fmt::format("sub_{:08X}", address) : cfg.name;
-    graph.addFunction(address, size, FunctionAuthority::CONFIG, true);
+    auto* node = graph.addFunction(address, size, FunctionAuthority::CONFIG, true);
     graph.setFunctionName(address, name);
+    if (node && cfg.shareRegisters) {
+      node->setSharesRegisters(true);
+    }
+    if (node && cfg.syncRegisters) {
+      node->setSyncsRegisters(true);
+    }
     configFuncs++;
 
     if (cfg.isChunk()) {

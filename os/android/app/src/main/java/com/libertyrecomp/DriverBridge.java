@@ -2,6 +2,7 @@ package com.libertyrecomp;
 
 import android.content.Context;
 import android.os.Process;
+import android.os.Build;
 import android.util.Log;
 
 import org.json.JSONException;
@@ -21,40 +22,21 @@ import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-/**
- * Chooses the Vulkan driver once per process, before SDL loads libmain.so.
- *
- * <p>The runtime opens Vulkan with a bare {@code dlopen("libvulkan.so")}. The
- * APK ships its own libvulkan.so (os/android/native, built on libadrenotools)
- * in nativeLibraryDir, which is searched before the system namespace, so that
- * lookup always lands on the proxy - whether or not anyone loaded it. The proxy
- * is therefore always loaded and always initialized: "turnip" hands it the
- * bundled Mesa Turnip build, "system" forwards to /system/lib64/libvulkan.so.</p>
- *
- * <p>Turnip is the default: the stock Adreno 650 driver exposes a Vulkan 1.1
- * device and the native renderer needs 1.2. {@code driver.txt} next to
- * {@code args.txt} selects "system" instead.</p>
- *
- * <p>Ported from andrewnakas/skate3-android (MIT), which took it from
- * AlanConstantino/skate3-pocket; native/PROVENANCE.md has the details.</p>
+/** Chooses a compatible Vulkan driver once per game process before SDL loads the engine.
+ * Automatic uses bundled Turnip for supported Adreno GPUs and the system driver otherwise.
+ * Optional PanVK and RADV packages are admitted by GPU/API checks; actual Vulkan features
+ * and driver identity are verified by the native bridge. See native/PROVENANCE.md.
  */
 final class DriverBridge {
 
+    static final String AUTO = "auto";
     static final String TURNIP = "turnip";
     static final String SYSTEM = "system";
     /** "custom:NAME" loads an AdrenoTools package unpacked in drivers/NAME next to driver.txt. */
     static final String CUSTOM_PREFIX = "custom:";
 
     private static final String TAG = "LibertyDriver";
-    private static final String BUNDLE_ASSET = "drivers/turnip-r6.zip";
-    private static final String LIBRARY = "libvulkan_freedreno.so";
-    private static final String META = "meta.json";
-    private static final String ZIP_HASH =
-            "5fa2305eb9eff64d9347a670e6ca5ef7c518f60e9e782a4db7ee5588c9852d81";
-    private static final String LIB_HASH =
-            "4fd2fd30311af301ae5564139bc24cc727390d4dc3c90a20192c25ec91287c59";
-    private static final String META_HASH =
-            "b6dae160802aec1ab48a0953fd9b09d76465a282c4a1d134645218af2a62d9d3";
+    private static final String META="meta.json";
 
     private static boolean sInitialized;
     /** What the first initialization returned; the proxy is set up once per process. */
@@ -70,34 +52,29 @@ final class DriverBridge {
     private static final long VULKAN_1_2 = (1L << 22) | (2L << 12);
 
     /** Loads and initializes the proxy. Returns the native status JSON. */
-    static synchronized String initialize(Context context, String mode) {
+    static synchronized String initialize(Context context, String mode, String renderer) {
         if (sInitialized) {
             return sStatus;
         }
         String nativeDir = context.getApplicationInfo().nativeLibraryDir;
-        boolean custom = TURNIP.equals(mode);
-        File driverDir = new File(context.getFilesDir(), "drivers");
-        String library = LIBRARY;
-        if (mode != null && mode.startsWith(CUSTOM_PREFIX)) {
-            try {
-                String name = mode.substring(CUSTOM_PREFIX.length()).trim();
-                driverDir = prepareCustom(context, name);
-                library = customLibrary(driverDir);
-                custom = true;
-                Log.i(TAG, "custom driver " + name + " library=" + library);
-            } catch (IOException | RuntimeException e) {
-                Log.e(TAG, "custom driver unusable, using the bundled Turnip", e);
-                mode = TURNIP;
-                custom = true;
+        boolean unknownKgsl=(renderer==null || renderer.isEmpty()) &&
+                (new File("/dev/kgsl-3d0").exists() || new File("/sys/class/kgsl").exists());
+        if(AUTO.equals(mode) || mode==null) mode=unknownKgsl ? TURNIP : DriverPolicy.automatic(renderer,Build.VERSION.SDK_INT);
+        boolean custom=false;String library="";
+        File driverDir=new File(context.getFilesDir(),"drivers");
+        try {
+            if(mode.startsWith(CUSTOM_PREFIX)) {
+                driverDir=prepareCustom(context,mode.substring(CUSTOM_PREFIX.length()).trim());
+                library=customLibrary(driverDir);custom=true;
+            } else if(BundledDrivers.ALL.containsKey(mode)) {
+                BundledDrivers.Bundle bundle=BundledDrivers.ALL.get(mode);
+                if(!DriverPolicy.supports(mode,renderer,Build.VERSION.SDK_INT) && !(TURNIP.equals(mode)&&unknownKgsl))
+                    throw new IOException(bundle.label+" is not supported on this GPU / Android version");
+                driverDir=prepareBundle(context,bundle);library=bundle.library;custom=true;
             }
-        }
-        if (custom && LIBRARY.equals(library)) {
-            try {
-                driverDir = prepareBundle(context);
-            } catch (IOException | RuntimeException e) {
-                Log.e(TAG, "Turnip bundle unusable, using the system driver", e);
-                custom = false;
-            }
+        } catch(IOException | RuntimeException error) {
+            Log.e(TAG,"Selected driver unavailable; using the system driver",error);
+            custom=false;library="";
         }
         if (!driverDir.isDirectory() && !driverDir.mkdirs()) {
             Log.w(TAG, "cannot create " + driverDir);
@@ -138,33 +115,22 @@ final class DriverBridge {
                     + json.optString("error", "unknown error");
         }
         org.json.JSONArray devices = json.optJSONArray("devices");
-        long best = 0;
-        String name = "unknown GPU";
-        for (int i = 0; devices != null && i < devices.length(); ++i) {
-            JSONObject device = devices.optJSONObject(i);
-            if (device == null) continue;
-            long api = device.optLong("api_version", 0);
-            if (api >= best) {
-                best = api;
-                name = device.optString("name", name);
-            }
+        String missing="No compatible GPU was reported.";
+        for(int i=0;devices!=null && i<devices.length();++i) {
+            JSONObject device=devices.optJSONObject(i);if(device==null) continue;
+            if(device.optLong("api_version",0)>=VULKAN_1_2 && device.optBoolean("required_features",false)) return null;
+            missing=device.optString("name","GPU")+": "+device.optString("missing_features","Vulkan 1.2 and required shader features");
         }
-        if (best >= VULKAN_1_2) return null;
-        String fallbackFrom = json.optString("fallback_from");
-        return "This device's GPU (" + name + ") only offers Vulkan " + (best >> 22) + "."
-                + ((best >> 12) & 0x3FF) + " through its own driver, and the game needs Vulkan 1.2."
-                + (fallbackFrom.isEmpty()
-                        ? "\n\nIf driver.txt says \"system\", delete it to use the bundled Turnip driver."
-                        : "\n\nThe selected custom driver (the bundled Turnip unless driver.txt names "
-                                + "another) could not be used either: " + fallbackFrom);
+        return "This driver cannot run the game.\n\n"+missing+"\n\nChoose a compatible driver in the launcher.";
     }
 
     /** Copies an unpacked package from external storage into exec-capable private storage. */
     private static File prepareCustom(Context context, String name) throws IOException {
-        if (name.isEmpty() || name.contains("/") || name.contains("..")) {
+        if (name.isEmpty() || name.contains("/") || name.contains("\\") || name.contains("..")) {
             throw new IOException("bad custom driver name: " + name);
         }
-        File source = new File(context.getExternalFilesDir(null), "drivers/" + name);
+        File external=context.getExternalFilesDir(null);
+        File source=new File(external!=null ? external : context.getFilesDir(),"drivers/"+name);
         File[] files = source.listFiles();
         if (files == null || files.length == 0) {
             throw new IOException("no custom driver files in " + source);
@@ -191,8 +157,10 @@ final class DriverBridge {
             try (InputStream in = new java.io.FileInputStream(meta)) {
                 java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
                 copy(in, bytes);
-                String name = new JSONObject(bytes.toString("UTF-8")).optString("libraryName", "");
-                if (!name.isEmpty() && new File(dir, name).isFile()) return name;
+                JSONObject metadata=new JSONObject(bytes.toString("UTF-8"));
+                if(metadata.optInt("minApi",29)>Build.VERSION.SDK_INT) throw new IOException("Driver requires a newer Android version");
+                String name=metadata.optString("libraryName","");
+                if (!name.isEmpty() && !name.contains("/") && !name.contains("\\") && !name.contains("..") && new File(dir,name).isFile()) return name;
             } catch (JSONException ignored) {
             }
         }
@@ -203,56 +171,32 @@ final class DriverBridge {
         return libraries[0].getName();
     }
 
-    /** Extracts the hash-pinned two-file Turnip package into private storage. */
-    private static File prepareBundle(Context context) throws IOException {
-        File parent = new File(context.getFilesDir(), "drivers");
-        File destination = new File(parent, "r6-" + LIB_HASH.substring(0, 12));
-        if (valid(new File(destination, LIBRARY), LIB_HASH)
-                && valid(new File(destination, META), META_HASH)) {
-            return destination;
-        }
-        if (!parent.isDirectory() && !parent.mkdirs()) {
-            throw new IOException("cannot create " + parent);
-        }
-        File archive = File.createTempFile("turnip-r6-", ".zip", context.getCacheDir());
-        File staging = new File(parent, ".r6-staging-" + Process.myPid());
+    /** Verify all archived bytes before activating a private executable package. */
+    private static File prepareBundle(Context context,BundledDrivers.Bundle bundle) throws IOException {
+        File parent=new File(context.getFilesDir(),"drivers");
+        File destination=new File(parent,bundle.mode+"-"+bundle.zipHash.substring(0,12));
+        boolean ready=destination.isDirectory();
+        for(java.util.Map.Entry<String,String> file:bundle.files.entrySet()) ready &= valid(new File(destination,file.getKey()),file.getValue());
+        if(ready) return destination;
+        if(!parent.isDirectory() && !parent.mkdirs()) throw new IOException("Cannot create "+parent);
+        File archive=File.createTempFile("driver-",".zip",context.getCacheDir());
+        File staging=new File(parent,"."+bundle.mode+"-staging-"+Process.myPid());
         try {
-            try (InputStream in = context.getAssets().open(BUNDLE_ASSET);
-                 OutputStream out = new FileOutputStream(archive)) {
-                copy(in, out);
-            }
-            if (!ZIP_HASH.equals(digest(archive))) {
-                throw new IOException("bundled Turnip archive failed its integrity check");
-            }
-            deleteRecursively(staging);
-            if (!staging.mkdirs()) {
-                throw new IOException("cannot create " + staging);
-            }
-            try (ZipFile zip = new ZipFile(archive)) {
-                Set<String> names = new HashSet<>();
-                for (Enumeration<? extends ZipEntry> e = zip.entries(); e.hasMoreElements(); ) {
-                    names.add(e.nextElement().getName());
-                }
-                Set<String> expected = new HashSet<>();
-                expected.add(META);
-                expected.add(LIBRARY);
-                if (!names.equals(expected)) {
-                    throw new IOException("unexpected Turnip archive members: " + names);
-                }
-                extract(zip, META, new File(staging, META), META_HASH);
-                extract(zip, LIBRARY, new File(staging, LIBRARY), LIB_HASH);
+            try(InputStream in=context.getAssets().open(bundle.asset);OutputStream out=new FileOutputStream(archive)) { copy(in,out); }
+            if(!bundle.zipHash.equals(digest(archive))) throw new IOException("Driver archive integrity check failed");
+            deleteRecursively(staging);if(!staging.mkdirs()) throw new IOException("Cannot create "+staging);
+            try(ZipFile zip=new ZipFile(archive)) {
+                Set<String> names=new HashSet<>();
+                for(Enumeration<? extends ZipEntry> e=zip.entries();e.hasMoreElements();)
+                    if(!names.add(e.nextElement().getName())) throw new IOException("Duplicate archive entry");
+                if(!names.equals(bundle.files.keySet())) throw new IOException("Unexpected driver archive members");
+                for(java.util.Map.Entry<String,String> file:bundle.files.entrySet())
+                    extract(zip,file.getKey(),new File(staging,file.getKey()),file.getValue());
             }
             deleteRecursively(destination);
-            if (!staging.renameTo(destination)) {
-                throw new IOException("cannot activate " + destination);
-            }
+            if(!staging.renameTo(destination)) throw new IOException("Cannot activate "+destination);
             return destination;
-        } finally {
-            if (!archive.delete()) {
-                archive.deleteOnExit();
-            }
-            deleteRecursively(staging);
-        }
+        } finally { if(!archive.delete()) archive.deleteOnExit();deleteRecursively(staging); }
     }
 
     private static void extract(ZipFile zip, String name, File target, String hash)

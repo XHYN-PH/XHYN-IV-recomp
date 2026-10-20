@@ -46,6 +46,25 @@ constexpr bool IsNativeBlendControlEnabled(uint32_t packed) {
   return !IsNativeBlendControlIdentity(packed);
 }
 
+// Blending that cannot change what a target stores: none of its channels is
+// written, or every written channel group computes source * 1 + destination *
+// 0 (add or subtract). Turning it off keeps Turnip's LRZ writes on for the
+// rest of the render pass ("Depth write + blending" disables them).
+// write_mask: R=1, G=2, B=4, A=8 (NativeColorWriteMaskForTarget).
+constexpr bool IsNativeBlendEffectivelyDisabled(uint32_t packed, uint32_t write_mask) {
+  if (!(write_mask & 0xFu)) return true;
+  const NativeBlendControlState blend = DecodeNativeBlendControl(packed);
+  const auto passthrough = [](uint32_t source, uint32_t operation, uint32_t destination) {
+    return source == 1u && destination == 0u && (operation == 0u || operation == 1u);
+  };
+  const bool color_written = (write_mask & 0x7u) != 0;
+  const bool alpha_written = (write_mask & 0x8u) != 0;
+  return (!color_written ||
+          passthrough(blend.source_color, blend.color_operation, blend.destination_color)) &&
+         (!alpha_written ||
+          passthrough(blend.source_alpha, blend.alpha_operation, blend.destination_alpha));
+}
+
 constexpr uint32_t NativeBlendEnableMask(
     const std::array<uint32_t, kNativeFixedRenderTargetCount>& blend_controls,
     uint32_t active_target_mask) {

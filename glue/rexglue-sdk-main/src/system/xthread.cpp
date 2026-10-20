@@ -40,6 +40,7 @@
 #if REX_PLATFORM_ANDROID
 #include <android/log.h>
 #include <sys/resource.h>
+#include <unistd.h>
 #endif
 
 REXCVAR_DEFINE_BOOL(ignore_thread_priorities, true, "Kernel",
@@ -588,6 +589,26 @@ void XThread::Execute() {
   bool want_exit_code;
   int exit_code = 0;
 
+#if REX_PLATFORM_ANDROID
+  // Identifies guest threads across runs (their names are object addresses):
+  // the entry point and the first words of its context, where a title's own
+  // thread wrapper keeps the real routine.
+  {
+    uint32_t context_words[4] = {};
+    if (creation_params_.start_context) {
+      if (const auto* words = memory()->TranslateVirtual<const uint32_t*>(
+              creation_params_.start_context)) {
+        for (int i = 0; i < 4; ++i) context_words[i] = rex::byte_swap(words[i]);
+      }
+    }
+    __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp",
+                        "thread-start %s tid=%d startup=%08X start=%08X context=%08X "
+                        "[%08X %08X %08X %08X]",
+                        thread_name_.c_str(), int(gettid()), creation_params_.xapi_thread_startup,
+                        creation_params_.start_address, creation_params_.start_context,
+                        context_words[0], context_words[1], context_words[2], context_words[3]);
+  }
+#endif
   // If a XapiThreadStartup value is present, we use that as a trampoline.
   // Otherwise, we are a raw thread.
   if (creation_params_.xapi_thread_startup) {

@@ -383,6 +383,7 @@ bool build_attn(BuilderContext& ctx);
 bool build_sync(BuilderContext& ctx);
 bool build_lwsync(BuilderContext& ctx);
 bool build_eieio(BuilderContext& ctx);
+bool build_isync(BuilderContext& ctx);
 bool build_db16cyc(BuilderContext& ctx);
 bool build_cctpl(BuilderContext& ctx);
 bool build_cctpm(BuilderContext& ctx);

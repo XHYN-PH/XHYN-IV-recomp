@@ -319,6 +319,7 @@ static const std::unordered_map<int, Builder>& GetDispatchTable() {
       {PPC_INST_SYNC, build_sync},
       {PPC_INST_LWSYNC, build_lwsync},
       {PPC_INST_EIEIO, build_eieio},
+      {PPC_INST_ISYNC, build_isync},
       {PPC_INST_DB16CYC, build_db16cyc},
       {PPC_INST_CCTPL, build_cctpl},
       {PPC_INST_CCTPM, build_cctpm},

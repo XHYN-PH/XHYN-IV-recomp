@@ -23,4 +23,4 @@ set_target_properties(vulkan PROPERTIES LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR
 
 # Only these three runtime libraries are required for DRIVER_CUSTOM. The
 # vendored build also defines optional BCn/file-redirection/GPU-mapping hooks.
-install(TARGETS vulkan main_hook hook_impl LIBRARY DESTINATION lib/arm64-v8a)
+install(TARGETS vulkan main_hook hook_impl c11_threads_compat LIBRARY DESTINATION lib/arm64-v8a)

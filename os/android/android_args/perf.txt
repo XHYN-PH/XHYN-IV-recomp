@@ -24,7 +24,7 @@
 # Console draw distance, lowered automatically (down to 55%) only while
 # frames miss the 30 fps budget.
 --gta4_dynamic_draw_distance=true
---gta4_dynamic_draw_distance_min=0.75
+--gta4_dynamic_draw_distance_min=0.80
 --gta4_shadow_map_base_size=256
 --gta4_shadow_distance_scale=0.5
 --gta4_reflection_resolution=original

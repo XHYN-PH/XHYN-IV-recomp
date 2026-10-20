@@ -207,7 +207,13 @@ if(REXGLUE_USE_VULKAN)
         "Directory containing a DXC shared library compatible with gta4-native shader overrides")
     set(GTA4_NATIVE_SHADER_COMMON
         "${GTA4_NATIVE_SHADER_OVERRIDE_ROOT}/xenos_shader_common.h")
-    if(CMAKE_HOST_WIN32)
+    set(GTA4_NATIVE_DXC_EXECUTABLE "" CACHE FILEPATH "Host DXC executable for native shader overrides")
+    if(GTA4_NATIVE_DXC_EXECUTABLE)
+        if(NOT EXISTS "${GTA4_NATIVE_DXC_EXECUTABLE}")
+            message(FATAL_ERROR "Configured host DXC executable does not exist")
+        endif()
+        set(GTA4_NATIVE_DXC "${GTA4_NATIVE_DXC_EXECUTABLE}")
+    elseif(CMAKE_HOST_WIN32)
         # The bundled DXC 1.8 crashes on the Bink pixel shaders here as well
         # (see the macOS branch). GTA4_NATIVE_DXC_LIBRARY_PATH may name the bin
         # directory of a newer DXC release.
@@ -334,6 +340,25 @@ if(REXGLUE_USE_VULKAN)
     )
     if(TARGET rexglue_fidelityfx_vulkan)
         target_link_libraries(rexgpu-gta4-native PRIVATE rexglue_fidelityfx_vulkan)
+    endif()
+    # ThinLTO inside the renderer plugin (recorder and render worker).
+    if(ANDROID)
+        option(LIBERTY_ANDROID_RENDERER_THINLTO "ThinLTO for the native renderer on Android" ON)
+        if(LIBERTY_ANDROID_RENDERER_THINLTO)
+            target_compile_options(rexgpu-gta4-native PRIVATE -flto=thin)
+            target_link_options(rexgpu-gta4-native PRIVATE -flto=thin "-Wl,--thinlto-jobs=8"
+                "-Wl,--thinlto-cache-dir=${CMAKE_BINARY_DIR}/thinlto-cache-renderer")
+        endif()
+    endif()
+    # The function order libmain uses (gta4-recomp/CMakeLists.txt).
+    if(ANDROID)
+        set(_renderer_symbol_order "${CMAKE_CURRENT_SOURCE_DIR}/../../gta4-recomp/android_symbol_order.txt")
+        if(EXISTS "${_renderer_symbol_order}")
+            target_link_options(rexgpu-gta4-native PRIVATE
+                "-Wl,--symbol-ordering-file=${_renderer_symbol_order}"
+                "-Wl,--no-warn-symbol-ordering")
+            set_property(TARGET rexgpu-gta4-native APPEND PROPERTY LINK_DEPENDS "${_renderer_symbol_order}")
+        endif()
     endif()
     # Same switch as libmain (gta4-recomp/CMakeLists.txt): "generate" records
     # files/pgo/rexgpu-*.profraw, a .profdata path optimizes with it.

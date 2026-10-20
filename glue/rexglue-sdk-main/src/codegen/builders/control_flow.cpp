@@ -146,7 +146,11 @@ bool build_bctr(BuilderContext& ctx) {
         case TargetKind::Function:
         case TargetKind::Import:
           if (auto* targetFn = ctx.graph().getFunction(label)) {
-            ctx.println("\t\t{}(ctx, base);", targetFn->name());
+            if (targetFn->sharesRegisters() || targetFn->syncsRegisters())
+              ctx.emit_call_sharing_registers(fmt::format("{}(ctx, base);", targetFn->name()),
+                                              false, "\t\t");
+            else
+              ctx.println("\t\t{}(ctx, base);", targetFn->name());
           } else {
             REXCODEGEN_ERROR(
                 "Jump target 0x{:08X} classified as function but not in graph at bctr 0x{:08X}",
@@ -176,7 +180,10 @@ bool build_bctr(BuilderContext& ctx) {
     // NOTE(tomc): If this is actually an unresolved switch table, the code after
     // will be unreachable. This is caught during analysis by discover_blocks.
     // The validation phase will report missing switch tables.
-    ctx.println("\tREX_CALL_INDIRECT_FUNC({}.u32);", ctx.ctr());
+    // An indirect tail jump may land on a fragment split off this very function (the
+    // targets the hole finder declared), which reads our live registers from ctx.
+    ctx.emit_call_sharing_registers(fmt::format("REX_CALL_INDIRECT_FUNC({}.u32);", ctx.ctr()),
+                                    false, "\t");
     ctx.println("\treturn;");
   }
   return true;
@@ -192,7 +199,8 @@ bool build_bctrl(BuilderContext& ctx) {
 
 bool build_bnectr(BuilderContext& ctx) {
   ctx.println("\tif (!{}.eq) {{", ctx.cr(ctx.insn.operands[0]));
-  ctx.println("\t\tREX_CALL_INDIRECT_FUNC({}.u32);", ctx.ctr());
+  ctx.emit_call_sharing_registers(fmt::format("REX_CALL_INDIRECT_FUNC({}.u32);", ctx.ctr()),
+                                  false, "\t\t");
   ctx.println("\t\treturn;");
   ctx.println("\t}}");
   return true;

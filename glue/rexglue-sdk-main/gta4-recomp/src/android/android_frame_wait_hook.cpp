@@ -16,10 +16,13 @@
 
 #include "gta4_init.h"
 
-// Off by default: it gained nothing measurable, and the game-code crash in
-// sub_8296E480 (stale object pointer) first appeared in builds that had it;
-// changing the main thread's timing can expose game-side races.
-REXCVAR_DEFINE_BOOL(gta4_frame_wait_sleep, false, "GTA IV/Performance",
+// No frame rate change, but the spin held the main game thread at ~97% of a
+// big core while it waited (17% with the sleep): the whole process used 2.16
+// cores at the save point with the spin and 1.37 without (Retroid Pocket 5).
+// It was off for a while because the game-code crash in sub_8296E480 (stale
+// object pointer) first appeared in builds that had it; that crash has its
+// own guard now.
+REXCVAR_DEFINE_BOOL(gta4_frame_wait_sleep, true, "GTA IV/Performance",
                     "Sleep instead of spinning while the title waits for a frame slot");
 REXCVAR_DEFINE_UINT32(gta4_extra_frames_in_flight, 0, "GTA IV/Performance",
                       "Frames the title may run ahead beyond its own limit of two pending "

@@ -37,7 +37,8 @@ class NativeImmutableBindings {
   template <typename Materialize, typename Upload>
   Result Bind(FrameConstantKind kind, const std::shared_ptr<const ConstantStateVersion>& version,
               Allocation& allocation, const std::vector<uint8_t>*& bytes,
-              Materialize&& materialize, Upload&& upload, uint32_t write_bytes = UINT32_MAX) {
+              Materialize&& materialize, Upload&& upload, uint32_t write_bytes = UINT32_MAX,
+              uint64_t prefix_hash = 0, uint32_t prefix_hash_bytes = 0) {
     bytes = nullptr;
     if (!version || !version->byte_size || kind == FrameConstantKind::kShared) return Result::kFailure;
     const uint32_t written = uint32_t(std::min<size_t>(write_bytes, version->byte_size));
@@ -49,11 +50,15 @@ class NativeImmutableBindings {
     }
     bytes = materialize(version);
     if (!bytes || bytes->size() != version->byte_size || bytes->size() > UINT32_MAX) return Result::kFailure;
-    // Content identity covers only the written prefix: draws whose shaders
-    // read the same bytes share one upload even if the rest of the bank
-    // differs. A version hashed at creation (the whole bank) needs no rehash.
-    const uint64_t content_hash = written == bytes->size() && version->content_hash
-                                      ? version->content_hash
+    // Content identity covers the written prefix. A version hashed at
+    // creation (the whole bank, on the render worker) is reused even for a
+    // prefix: equal banks have equal prefixes, and a candidate is compared
+    // byte for byte below, so only prefix-only sharing is given up. Hashing
+    // here instead costs the recorder, the slowest pipeline stage.
+    // prefix_hash: the same prefix hashed ahead of time by the caller.
+    const uint64_t content_hash = version->content_hash ? version->content_hash
+                                  : prefix_hash_bytes == written && prefix_hash_bytes
+                                      ? prefix_hash
                                       : XXH3_64bits(bytes->data(), written);
     const NativeConstantContentKey key{content_hash, uint32_t(kind), written};
     const Entry* candidate = contents_.Find(key);

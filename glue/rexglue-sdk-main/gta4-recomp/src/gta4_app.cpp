@@ -1,7 +1,10 @@
+#include "android/android_power_policy.h"
 #include "gta4_app.h"
+#include "gta4_hack_registry.h"
 #include "gta4_present_mode_policy.h"
 #include "gta4_streaming_hooks.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -15,6 +18,7 @@
 #include <rex/graphics/gta4_native/hdr_policy.h>
 #include <rex/graphics/gta4_native/supersampling_policy.h>
 #include <rex/graphics/video_mode_util.h>
+#include <rex/kernel/xboxkrnl/threading.h>
 #include <rex/cvar.h>
 #include <rex/logging.h>
 #include <rex/runtime.h>
@@ -44,9 +48,17 @@
 
 #if REX_PLATFORM_ANDROID
 #include <android/log.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 #include <cctype>
+#include <dirent.h>
 #include <dlfcn.h>
 #include <fstream>
+#include <sched.h>
+#include <sstream>
+#include <thread>
+#include <unordered_map>
 #endif
 
 REXCVAR_DEFINE_STRING(gta4_multiplayer_backend, "community", "GTA IV/Multiplayer",
@@ -104,7 +116,8 @@ REXCVAR_DEFINE_STRING(gta4_aspect_ratio, "auto", "GTA IV/Graphics/Display",
 REXCVAR_DEFINE_STRING(gta4_present_mode, "vsync", "GTA IV/Graphics/Display",
                       "Vertical sync: vsync is On; immediate is Off; auto/mailbox are legacy modes")
     .allowed({"auto", "vsync", "fifo", "mailbox", "immediate"});
-REXCVAR_DEFINE_UINT32(gta4_frame_limit, 60, "GTA IV/Graphics/Display",
+// Android: 30 FPS with VSync divides the 60 Hz panel evenly.
+REXCVAR_DEFINE_UINT32(gta4_frame_limit, REX_PLATFORM_ANDROID ? 30 : 60, "GTA IV/Graphics/Display",
                       "Maximum game and host presentation rate: 0 is unlocked; caps are 30, 40, 60, and "
                       "120 FPS")
     .allowed({"0", "30", "40", "60", "120"});
@@ -130,7 +143,8 @@ REXCVAR_DEFINE_DOUBLE(gta4_native_auto_hdr_shoulder_power, 2.5,
                       "Auto HDR highlight shoulder exponent")
     .range(1.0, 10.0);
 
-REXCVAR_DEFINE_UINT32(gta4_shadow_map_base_size, 512, "GTA IV/Graphics/Shadows",
+REXCVAR_DEFINE_UINT32(gta4_shadow_map_base_size, REX_PLATFORM_ANDROID ? 256 : 512,
+                      "GTA IV/Graphics/Shadows",
                       "Base shadow-map size (512 creates a 4096x4096 point-shadow cache)")
     .range(256, 1024)
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
@@ -141,7 +155,8 @@ REXCVAR_DEFINE_DOUBLE(gta4_shadow_distance_scale, 2.0, "GTA IV/Graphics/Shadows"
                       "Multiplier applied to GTA IV's directional shadow range")
     .range(0.1, 4.0)
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
-REXCVAR_DEFINE_STRING(gta4_reflection_resolution, "1080p", "GTA IV/Graphics/Reflections",
+REXCVAR_DEFINE_STRING(gta4_reflection_resolution, REX_PLATFORM_ANDROID ? "original" : "1080p",
+                      "GTA IV/Graphics/Reflections",
                       "Reflection resolution preset: original, 1080p, or full")
     .allowed({"original", "1080p", "full"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
@@ -174,7 +189,8 @@ REXCVAR_DEFINE_STRING(gta4_reflection_capture_distance, "original",
                       "Exterior environment capture distance: near (20), original (40), extended (60), or "
                       "far (80)")
     .allowed({"near", "original", "extended", "far"});
-REXCVAR_DEFINE_STRING(gta4_native_anti_aliasing, "smaa", "GTA IV/Graphics/Anti-Aliasing",
+REXCVAR_DEFINE_STRING(gta4_native_anti_aliasing, REX_PLATFORM_ANDROID ? "fxaa" : "smaa",
+                      "GTA IV/Graphics/Anti-Aliasing",
                       "Anti-aliasing: off, fxaa, smaa, deferred MSAA, or even-factor SSAA")
     // `spatial` remains loadable as a deprecated compatibility alias. It is
     // never exposed by the frontend or accepted by the controller setter.
@@ -202,6 +218,8 @@ REXCVAR_DEFINE_STRING(gta4_temporal_upscaler_quality, "quality", "GTA IV/Graphic
                       "FSR 3.1/DLSS preset; dimensions come from the active provider")
     .allowed({"native", "quality", "balanced", "performance", "ultra_performance"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+REXCVAR_DEFINE_STRING(gta4_effective_upscaling, "", "GTA IV/Diagnostics",
+                      "Actual renderer input, output and spatial scaling status");
 REXCVAR_DEFINE_STRING(gta4_fsr1_quality, "quality", "GTA IV/Graphics/Upscaling",
                       "FSR 1 preset: ultra_quality, quality, balanced, or performance")
     .allowed({"ultra_quality", "quality", "balanced", "performance"})
@@ -223,7 +241,8 @@ REXCVAR_DEFINE_DOUBLE(gta4_dynamic_draw_distance_min, 0.7, "GTA IV/Graphics/LOD"
 REXCVAR_DEFINE_DOUBLE(gta4_draw_distance_dynamic_factor, 1.0, "GTA IV/Graphics/LOD",
                       "Current dynamic draw-distance factor (managed automatically)")
     .range(0.25, 1.0);
-REXCVAR_DEFINE_DOUBLE(gta4_draw_distance_scale, 3.0, "GTA IV/Graphics/LOD",
+REXCVAR_DEFINE_DOUBLE(gta4_draw_distance_scale, REX_PLATFORM_ANDROID ? 1.0 : 3.0,
+                      "GTA IV/Graphics/LOD",
                       "Multiplier applied through GTA IV's built-in world-distance input")
     .range(0.25, 4.0);
 REXCVAR_DEFINE_UINT32(gta4_drawable_reference_limit, 20000, "GTA IV/Graphics/LOD",
@@ -570,7 +589,7 @@ void ApplyPresentationMode() {
   const auto configured = rex::cvar::GetFlagByName("gta4_present_mode");
   const auto policy = gta4::presentation::ResolveMode(configured == "auto" ? "vsync" : configured);
   if (!policy.explicit_mode) return;
-  SetStartupFlag("vsync", policy.vsync ? "true" : "false");
+  if(rex::cvar::GetFlagInfo("vsync"))SetStartupFlag("vsync", policy.vsync ? "true" : "false");
   SetStartupFlag("vulkan_prefer_present_mode_fifo", policy.prefer_fifo ? "true" : "false");
   SetStartupFlag("vulkan_allow_present_mode_immediate", policy.immediate ? "true" : "false");
   SetStartupFlag("vulkan_allow_present_mode_mailbox", policy.mailbox ? "true" : "false");
@@ -670,6 +689,7 @@ std::optional<rex::PathConfig> GTA4App::OnFinalizePaths(
 }
 
 void GTA4App::OnPreSetup(rex::RuntimeConfig& config) {
+  gta4::hacks::ApplySafeModeIfRequested();
   rex::input::mnk::SetNativeControllerCompatibilityBindings(
       gta4::input::KeyboardControllerBindings());
   if (!config.graphics && config.gpu_plugin.empty()) {
@@ -790,7 +810,163 @@ void GTA4App::OnPreSetup(rex::RuntimeConfig& config) {
 }
 
 #if REX_PLATFORM_ANDROID
+// Off by default: on the Adreno 650 handheld it made the pinned threads faster
+// but not the frame rate (the GPU and the recorder bound it).
+REXCVAR_DEFINE_BOOL(android_pin_hot_threads, false, "GTA IV/Performance",
+                    "Keep the busiest threads (renderer stages, game logic) on the big CPU cores");
+
+REXCVAR_DEFINE_BOOL(android_gpu_turbo, false, "GTA IV/Performance",
+                    "Keep the Adreno GPU at its highest clock (kgsl power control off, as "
+                    "libadrenotools' adrenotools_set_turbo does): more heat and battery use");
+
+REXCVAR_DEFINE_BOOL(android_thermal_log, true, "GTA IV/Performance",
+                    "Log the GPU thermal level, clocks and temperature and the CPU clock limits "
+                    "every 5 seconds");
+
 namespace {
+
+// kgsl power control (KGSL_PROP_PWRCTRL through IOCTL_KGSL_SETPROPERTY): 0
+// pins the GPU at its highest power level, 1 gives scaling back to the
+// governor. The setting is device-wide and outlives the process, so the game
+// applies its own value at start (turbo off included) and restores scaling
+// when it shuts down normally. Without root it works on kgsl devices only.
+void ApplyGpuTurbo(bool turbo) {
+  struct KgslSetProperty {
+    unsigned int type;
+    void* value;
+    size_t size;
+  };
+  constexpr unsigned int kKgslPropPowerControl = 0xE;
+  uint32_t enable = turbo ? 0u : 1u;
+  KgslSetProperty property{kKgslPropPowerControl, &enable, sizeof(enable)};
+  const int fd = open("/dev/kgsl-3d0", O_RDWR | O_CLOEXEC);
+  if (fd < 0) return;
+  const int result = ioctl(fd, _IOW(0x09, 0x32, KgslSetProperty), &property);
+  close(fd);
+  REXLOG_INFO("gpu-turbo: {} ({})",turbo?"on":"off",result==0?"applied":"refused");
+}
+
+// Handhelds throttle the GPU on junction temperature, and the frame rate then
+// follows its clock ceiling, not the scene (seen in skate3-android). Logging
+// the kgsl and cpufreq state shows whether a slower session is the device
+// heating up rather than the game.
+void StartThermalLog() {
+  std::thread([] {
+    bool turbo = REXCVAR_GET(android_gpu_turbo)&&!gta4::android_power::thermal_pressure.load(std::memory_order_relaxed);
+    ApplyGpuTurbo(turbo);
+    const auto read = [](const char* path) {
+      std::ifstream file(path);
+      std::string value;
+      std::getline(file, value);
+      return value.empty() ? std::string("?") : value;
+    };
+    for (;;) {
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+      const bool requested=REXCVAR_GET(android_gpu_turbo)&&!gta4::android_power::thermal_pressure.load(std::memory_order_relaxed);
+      if (requested != turbo) {
+        turbo = requested;
+        ApplyGpuTurbo(turbo);
+      }
+      if (!REXCVAR_GET(android_thermal_log)) continue;
+      const std::string kgsl = "/sys/class/kgsl/kgsl-3d0/";
+      std::string cpu_limits;
+      for (int cpu : {0, 4, 7}) {
+        cpu_limits += read(("/sys/devices/system/cpu/cpu" + std::to_string(cpu) +
+                            "/cpufreq/scaling_max_freq").c_str());
+        cpu_limits += cpu == 7 ? "" : "/";
+      }
+      // Guest threads spinning on yields (pinyon-shift found a title loop that
+      // gave up after 1000 of them, which return at once on the host).
+      const std::string yields = rex::kernel::xboxkrnl::TakeYieldCountSummary(4);
+      __android_log_print(ANDROID_LOG_WARN, "LibertyRecomp",
+                          "thermal: gpu-level=%s gpu-max=%s gpu-clk=%s gpu-busy=%s gpu-temp=%s "
+                          "cpu-max-khz=%s yields/spins-5s=%s",
+                          read((kgsl + "thermal_pwrlevel").c_str()).c_str(),
+                          read((kgsl + "max_gpuclk").c_str()).c_str(),
+                          read((kgsl + "gpuclk").c_str()).c_str(),
+                          read((kgsl + "gpu_busy_percentage").c_str()).c_str(),
+                          read((kgsl + "temp").c_str()).c_str(), cpu_limits.c_str(),
+                          yields.empty() ? "none" : yields.c_str());
+    }
+  }).detach();
+}
+
+// The scheduler often places the renderer's pipeline stages and the game
+// threads on the little cores for a while, and the slowest stage holds up the
+// others. Once a second the busiest threads (at most one per big core) are
+// limited to the big cores; the rest keep every core.
+void StartHotThreadPinning() {
+  std::thread([] {
+    cpu_set_t all{},big{};
+    if(sched_getaffinity(0,sizeof(all),&all)!=0)return;
+    std::vector<std::pair<int,uint64_t>> capacities;
+    for(int cpu=0;cpu<CPU_SETSIZE;++cpu) {
+      if(!CPU_ISSET(cpu,&all))continue;
+      uint64_t capacity=0;
+      std::ifstream capacity_file("/sys/devices/system/cpu/cpu"+std::to_string(cpu)+"/cpu_capacity");capacity_file>>capacity;
+      if(!capacity) {std::ifstream frequency_file("/sys/devices/system/cpu/cpu"+std::to_string(cpu)+"/cpufreq/cpuinfo_max_freq");frequency_file>>capacity;}
+      if(capacity)capacities.emplace_back(cpu,capacity);
+    }
+    if(capacities.size()<3)return;
+    const auto slowest=std::min_element(capacities.begin(),capacities.end(),[](auto a,auto b){return a.second<b.second;})->second;
+    size_t big_count=0;
+    for(const auto& [cpu,capacity]:capacities)if(capacity>slowest){CPU_SET(cpu,&big);++big_count;}
+    if (!big_count) return;  // No big.LITTLE.
+
+    // CPU ticks (100 Hz) per second a thread needs to be pinned, or to stay.
+    constexpr uint64_t kPinTicks = 30, kKeepTicks = 20;
+    std::unordered_map<pid_t, uint64_t> last_ticks;
+    std::unordered_set<pid_t> pinned;
+    const auto set_affinity = [](pid_t tid, const cpu_set_t& set) {
+      sched_setaffinity(tid, sizeof(set), &set);
+    };
+    for (;;) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      if (!REXCVAR_GET(android_pin_hot_threads)) {
+        for (pid_t tid : pinned) set_affinity(tid, all);
+        pinned.clear();
+        last_ticks.clear();
+        continue;
+      }
+      std::vector<std::pair<uint64_t, pid_t>> busy;
+      std::unordered_map<pid_t, uint64_t> ticks;
+      if (DIR* tasks = opendir("/proc/self/task")) {
+        while (const dirent* entry = readdir(tasks)) {
+          if (!std::isdigit(static_cast<unsigned char>(entry->d_name[0]))) continue;
+          const pid_t tid = pid_t(std::atoi(entry->d_name));
+          std::ifstream stat_file(std::string("/proc/self/task/") + entry->d_name + "/stat");
+          std::string stat((std::istreambuf_iterator<char>(stat_file)), {});
+          const size_t name_end = stat.rfind(')');
+          if (name_end == std::string::npos) continue;
+          // Fields after the name start at 3 (state); utime is 14, stime 15.
+          std::istringstream fields(stat.substr(name_end + 2));
+          std::string field;
+          uint64_t utime = 0, stime = 0;
+          for (int index = 3; index <= 15 && fields >> field; ++index) {
+            if (index == 14) utime = std::strtoull(field.c_str(), nullptr, 10);
+            if (index == 15) stime = std::strtoull(field.c_str(), nullptr, 10);
+          }
+          ticks[tid] = utime + stime;
+          const auto last = last_ticks.find(tid);
+          if (last != last_ticks.end()) busy.emplace_back(utime + stime - last->second, tid);
+        }
+        closedir(tasks);
+      }
+      last_ticks = std::move(ticks);
+      std::sort(busy.begin(), busy.end(), std::greater<>());
+      std::unordered_set<pid_t> hot;
+      for (const auto& [delta, tid] : busy) {
+        if (hot.size() == big_count) break;
+        if (delta >= kPinTicks || (delta >= kKeepTicks && pinned.contains(tid))) hot.insert(tid);
+      }
+      for (pid_t tid : pinned)
+        if (!hot.contains(tid) && last_ticks.contains(tid)) set_affinity(tid, all);
+      for (pid_t tid : hot)
+        if (!pinned.contains(tid)) set_affinity(tid, big);
+      pinned = std::move(hot);
+    }
+  }).detach();
+}
 
 // Tuning without a relaunch: files/live_cvars.txt is re-read whenever it
 // changes, one --name=value per line. Settings the title latches at startup
@@ -843,7 +1019,11 @@ void StartLiveCvarWatcher(std::filesystem::path path) {
 
 void GTA4App::OnPostSetup() {
 #if REX_PLATFORM_ANDROID
+  extern void AndroidRegisterMobileSettingsCallbacks();
+  AndroidRegisterMobileSettingsCallbacks();
   StartLiveCvarWatcher(rex::filesystem::GetUserFolder() / "live_cvars.txt");
+  StartHotThreadPinning();
+  StartThermalLog();
 #endif
   gta4::presentation::InitializeOptions();
   rex::graphics::gta4_native::InitializeAntiAliasingController();
@@ -1192,6 +1372,9 @@ bool GTA4App::OnWindowCloseRequested() {
 }
 
 void GTA4App::OnShutdown() {
+#if REX_PLATFORM_ANDROID
+  if (REXCVAR_GET(android_gpu_turbo)) ApplyGpuTurbo(false);
+#endif
   gta4::streaming::FinishTrace();
   if (entitlement_service_) {
     entitlement_service_->SetConnectionRestoredHandler({});

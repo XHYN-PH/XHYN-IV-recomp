@@ -1,25 +1,17 @@
 --log_level=warn
---gta4_native_upscaler=native
---gta4_native_anti_aliasing=fxaa
---gta4_draw_distance_scale=1.0
+# Display settings (resolution, upscaler, VSync, frame limit, anti-aliasing,
+# draw distance, shadows, reflections, motion blur) belong to the in-game
+# Display menu: a line here would override its saved choice on every launch.
 --gta4_dynamic_draw_distance=true
---gta4_dynamic_draw_distance_min=0.75
---gta4_shadow_map_base_size=256
+--gta4_dynamic_draw_distance_min=0.80
 --gta4_shadow_distance_scale=1.0
---gta4_reflection_resolution=original
 --gta4_reflection_capture_distance=near
---gta4_frame_limit=30
 --gta4_traffic_density_scale=0.4
 --gta4_parked_car_density_scale=0.4
 --gta4_ped_density_scale=0.4
 --gta4_scenario_ped_density_scale=0.4
 --gta4_profile_native_detailed_cpu=false
 --gta4_profile_native_detailed_gpu=false
---gta4_motion_blur=false
 --gta4_native_max_queued_frames=3
-# Native 720p (the console's resolution); the presenter scales it to the panel.
---gta4_output_height_cap=720
-# 30 FPS with VSync: 30 divides the 60 Hz panel evenly.
---gta4_present_mode=vsync
 # The 30 FPS guard (environment reflection rate only now) is off by default.
 --gta4_fps_guard=0

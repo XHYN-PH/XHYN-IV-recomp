@@ -162,38 +162,6 @@ static bool FindEntryForAddress(void* address, LinuxMapEntry& out_entry) {
   return false;
 }
 
-// Check if [base, base+length) is fully covered by existing mappings (no gaps)
-static bool IsRangeFullyMapped(void* base_address, size_t length) {
-  if (!base_address || length == 0)
-    return false;
-
-  const uintptr_t begin = reinterpret_cast<uintptr_t>(base_address);
-  const uintptr_t end = begin + length;
-  if (end < begin) {  // overflow check
-    return false;
-  }
-
-  std::ifstream maps("/proc/self/maps");
-  if (!maps.is_open())
-    return false;
-
-  uintptr_t cursor = begin;
-  std::string line;
-  while (std::getline(maps, line)) {
-    LinuxMapEntry e;
-    if (!ParseProcMapsLine(line, e))
-      continue;
-    if (e.end <= cursor)
-      continue;
-    if (e.start > cursor)
-      return false;  // gap found
-    cursor = e.end;
-    if (cursor >= end)
-      return true;
-  }
-  return cursor >= end;
-}
-
 // Convert /proc/self/maps permission chars to PageAccess
 static PageAccess PermsToPageAccess(const char perms[5]) {
   const bool r = perms[0] == 'r';
@@ -245,7 +213,16 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
 
   void* result = mmap(base_address, length, prot_initial, flags, -1, 0);
   if (result != MAP_FAILED) {
-    return result;
+    if (!base_address || result == base_address) {
+      return result;
+    }
+    // Kernels before 4.17 (Snapdragon 855 phones on Android 10/11 run 4.14)
+    // ignore MAP_FIXED_NOREPLACE and treat the address as a hint: an occupied
+    // range comes back mapped elsewhere. Returning that left the guest pages
+    // uncommitted, and the first write to them crashed (a new thread's stack
+    // fill, issue #58). Handle it as the EEXIST it stands for.
+    munmap(result, length);
+    errno = EEXIST;
   }
 #if defined(MAP_FIXED_NOREPLACE) && REX_PLATFORM_LINUX
   // Handle EEXIST: address already has a mapping (e.g., from prior Reserve)
@@ -253,11 +230,11 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
   if (errno == EEXIST && base_address &&
       (allocation_type == AllocationType::kCommit ||
        allocation_type == AllocationType::kReserveCommit)) {
-    // Verify the entire range is mapped before using mprotect
-    if (IsRangeFullyMapped(base_address, length)) {
-      if (mprotect(base_address, length, static_cast<int>(prot_requested)) == 0) {
-        return base_address;
-      }
+    // mprotect fails with ENOMEM unless the whole range is mapped, which is
+    // the check this needs. Reading /proc/self/maps first (thousands of lines
+    // on Android) cost every guest commit; found by pinyon-shift.
+    if (mprotect(base_address, length, static_cast<int>(prot_requested)) == 0) {
+      return base_address;
     }
   }
 #endif
