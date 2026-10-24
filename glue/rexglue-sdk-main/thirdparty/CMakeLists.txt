@@ -42,6 +42,7 @@ set(REQUIRED_SUBMODULES
     utfcpp
     imgui
     sdl3
+    o1heap
 )
 
 if(REXGLUE_USE_VULKAN)

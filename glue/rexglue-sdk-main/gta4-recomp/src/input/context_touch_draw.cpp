@@ -1,4 +1,5 @@
 #include "input/context_touch_draw.h"
+#include "input/touch_theme.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -40,13 +41,12 @@ void DrawContextTouchLayer(ImDrawList* draw, ImFont* font, float font_size,
     if (control.kind == ContextTouchControlKind::kActivitySurface) {
       const auto lo = point(control.minimum_x, control.minimum_y);
       const auto hi = point(control.maximum_x, control.maximum_y);
-      const float rounding = radius * 0.18f;
+      const float rounding = radius * 0.28f;
       draw->AddRectFilled(lo, hi, color(10, 10, 10, active ? 140.0f : 85.0f), rounding);
-      draw->AddRect(lo, hi, color(255, 255, 255, active ? 225.0f : 105.0f), rounding);
       const float label_size = std::min(font_size, radius * 0.22f);
       const auto size = font->CalcTextSizeA(label_size, FLT_MAX, 0.0f, control.label.data());
       draw->AddText(font, label_size, ImVec2(center.x - size.x * 0.5f, lo.y + rounding),
-                    color(255, 255, 255, 245.0f), control.label.data());
+                    color(194, 194, 194, 225.0f), control.label.data());
       using G = TouchActivityGesture;
       const auto gesture = control.activity_gesture;
       const bool circular = gesture == G::kCircleRight;
@@ -75,17 +75,16 @@ void DrawContextTouchLayer(ImDrawList* draw, ImFont* font, float font_size,
       }
       continue;
     }
-    draw->AddCircleFilled(center, radius, active ? color(236, 135, 42, 255.0f)
-                                               : color(12, 18, 27, 210.0f), 48);
-    draw->AddCircle(center, radius, color(255, 255, 255, 255.0f), 48,
-                    std::max(1.0f, radius * 0.025f));
+    draw->AddCircleFilled(center, radius, active ? color(50, 50, 50, 150.0f)
+                                               : color(18, 18, 18, 96.0f), 48);
     if (control.kind == ContextTouchControlKind::kMovementStick || control.kind == ContextTouchControlKind::kRightStick) {
       const bool right = control.kind == ContextTouchControlKind::kRightStick;
       const float x = std::clamp(right ? (input ? input->right_x : 0.0f) : (input ? input->movement_x : 0.0f), -255.0f, 255.0f) / 255.0f;
       const float y = std::clamp(right ? (input ? input->right_y : 0.0f) : (input ? input->movement_y : 0.0f), -255.0f, 255.0f) / 255.0f;
-      draw->AddCircleFilled(ImVec2(center.x + x * radius * 0.55f,
-                                  center.y + y * radius * 0.55f),
-                            radius * 0.34f, color(255, 255, 255, 210.0f), 32);
+      theme::DrawStickGrip(draw, ImVec2(center.x + x * radius * 0.55f,
+                                      center.y + y * radius * 0.55f),
+                           radius, color(194, 194, 194, 190.0f));
+      continue;
     }
     ContextTouchIcon icon;
     bool has_icon = false;
@@ -99,14 +98,14 @@ void DrawContextTouchLayer(ImDrawList* draw, ImFont* font, float font_size,
       const float half_height = icon.aspect >= 1.0f ? bound / icon.aspect : bound;
       draw->AddImage(icon.texture, ImVec2(center.x - half_width, center.y - half_height),
                      ImVec2(center.x + half_width, center.y + half_height), icon.uv_min,
-                     icon.uv_max, color(255, 255, 255, 255.0f));
+                     icon.uv_max, color(194, 194, 194, 225.0f));
     } else if (control.label[0]) {
       const ImVec2 natural = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, control.label.data());
       const float fitted_size = natural.x > 0.0f
           ? std::min(font_size, font_size * radius * 1.55f / natural.x) : font_size;
       const ImVec2 size = font->CalcTextSizeA(fitted_size, FLT_MAX, 0.0f, control.label.data());
       draw->AddText(font, fitted_size, ImVec2(center.x - size.x * 0.5f, center.y - size.y * 0.5f),
-                     color(255, 255, 255, 255.0f), control.label.data());
+                     color(194, 194, 194, 225.0f), control.label.data());
     }
   }
 }

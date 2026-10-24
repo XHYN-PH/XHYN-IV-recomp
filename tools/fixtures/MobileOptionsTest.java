@@ -34,6 +34,9 @@ public class MobileOptionsTest {
         ArrayList<String> quality=new ArrayList<>(List.of("--gta4_native_shadow_interval=2","--gta4_native_water_reflection_interval=3","--gta4_draw_distance_scale=0.75"));
         PerformanceLaunchOptions.apply(quality,false,true,false);
         assert quality.contains("--gta4_native_shadow_interval=2")&&quality.contains("--gta4_native_water_reflection_interval=3")&&quality.contains("--gta4_draw_distance_scale=0.75");
+        ArrayList<String> aa=new ArrayList<>(List.of("--gta4_native_anti_aliasing=off","--gta4_native_msaa=4x","--gta4_native_anti_aliasing_unified=false"));
+        PerformanceLaunchOptions.canonicalAntiAliasing(aa);assert aa.contains("--gta4_native_anti_aliasing_unified=true")&&!aa.contains("--gta4_native_anti_aliasing_unified=false");
+        assert aa.contains("--gta4_native_anti_aliasing=off")&&aa.contains("--gta4_native_msaa=4x");
         assert RefreshPolicy.choose(new float[]{60,90,120},40)==120;
         assert RefreshPolicy.choose(new float[]{60,90,120},90)==90;
         assert RefreshPolicy.choose(new float[]{60,120},0)==120;
@@ -44,9 +47,10 @@ public class MobileOptionsTest {
         assert MobileConfig.read(config).get("resolution").equals("540p");
         assert Files.readString(config.toPath()).contains("other = 7");
         MobileConfig.update(config,Map.of("gta4_touch_radar_margin","0.04","gta4_shadow_distance_scale","0.75"));
-        MobileConfig.migrateRadarMargin(config);assert MobileConfig.read(config).get("gta4_touch_radar_margin").equals("0")&&MobileConfig.read(config).get("gta4_shadow_distance_scale").equals("1");
+        MobileConfig.migrateRadarMargin(config);assert MobileConfig.read(config).get("gta4_touch_radar_margin").equals("-0.06")&&MobileConfig.read(config).get("gta4_shadow_distance_scale").equals("1");
         MobileConfig.update(config,Map.of("gta4_touch_radar_margin","0.08"));MobileConfig.migrateRadarMargin(config);assert MobileConfig.read(config).get("gta4_touch_radar_margin").equals("0.08");
         MobileConfig.update(config,Map.of("gta4_touch_radar_margin","-0.015"));MobileConfig.migrateRadarMargin(config);assert MobileConfig.read(config).get("gta4_touch_radar_margin").equals("-0.015");
+        MobileConfig.update(config,Map.of("gta4_native_anti_aliasing","off"));assert MobileConfig.read(config).get("gta4_native_anti_aliasing_unified").equals("true");
         boolean rejected=false;try{MobileConfig.update(config,Map.of("resolution","720p\nmalicious=true"));}catch(IOException expected){rejected=true;}assert rejected;
         File oldConfig=new File(data,"old-upscaler.toml");
         Files.writeString(oldConfig.toPath(),"# keep this comment\ngta4_native_upscaler = \"sgsr\" # old selection\npresent_sgsr = true\nresolution = \"540p\"\n");
@@ -77,11 +81,19 @@ public class MobileOptionsTest {
         File saves=SaveData.root(data);new File(saves,"profile/545407F2/00000001/slot").mkdirs();
         File slot=new File(saves,"profile/545407F2/00000001/slot/save.dat");Files.write(slot.toPath(),new byte[]{5,6});
         ByteArrayOutputStream out=new ByteArrayOutputStream();SaveData.exportZip(saves,out);
+        File achievements=SaveData.achievements(saves);achievements.mkdirs();
+        Files.writeString(new File(achievements,"catalog.json").toPath(),"{\"version\":1,\"achievements\":[]}");
+        Files.writeString(new File(achievements,"545407F2.toml").toPath(),"[unlocked.1]\nfiletime = 123\n");
+        ByteArrayOutputStream achievementProfile=new ByteArrayOutputStream();SaveData.exportZip(saves,achievementProfile);
+        Files.writeString(new File(achievements,"545407F2.toml").toPath(),"changed");
+        SaveData.importZip(saves,new ByteArrayInputStream(achievementProfile.toByteArray()));
+        assert Files.readString(new File(achievements,"545407F2.toml").toPath()).contains("123");
         for(byte[] bad:new byte[][]{zip("saves/../../escape"),zip("other/file"),zip("saves/a/../same","saves/same"),new byte[]{1,2,3}}) {
             rejected=false;try{SaveData.importZip(saves,new ByteArrayInputStream(bad));}catch(IOException expected){rejected=true;}
             assert rejected&&Files.readAllBytes(slot.toPath())[0]==5;
         }
         SaveData.importZip(saves,new ByteArrayInputStream(zip("saves/profile/new-save")));
+        assert Files.readString(new File(achievements,"545407F2.toml").toPath()).contains("123");
         assert new File(saves,"profile/new-save").isFile();assert new File(saves.getParentFile(),"saves-before-import/profile/545407F2/00000001/slot/save.dat").isFile();
         SaveData.deleteTree(saves);assert !saves.exists()&&config.isFile();
         File logs=new File(data,"debug_logs");logs.mkdirs();

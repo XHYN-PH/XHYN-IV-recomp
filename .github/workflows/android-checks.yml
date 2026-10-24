@@ -1,0 +1,51 @@
+name: Android regression checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host-and-ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install API 35 build tools
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+      - name: Fetch pinned host-test dependencies
+        run: >-
+          git submodule update --init --depth 1 --jobs 4
+          glue/rexglue-sdk-main/thirdparty/fmt
+          glue/rexglue-sdk-main/thirdparty/spdlog
+          glue/rexglue-sdk-main/thirdparty/imgui
+          glue/rexglue-sdk-main/thirdparty/sdl3
+          glue/rexglue-sdk-main/thirdparty/simde
+          glue/rexglue-sdk-main/thirdparty/xxHash
+          glue/rexglue-sdk-main/thirdparty/cli11
+          glue/rexglue-sdk-main/thirdparty/tomlplusplus
+          glue/rexglue-sdk-main/thirdparty/utfcpp
+          glue/rexglue-sdk-main/thirdparty/vulkan-headers
+          glue/rexglue-sdk-main/thirdparty/volk
+      - name: Java data, layout and driver regressions
+        run: python3 tools/run_android_java_tests.py
+      - name: Android resources and UI compilation
+        run: >-
+          python3 tools/check_android_ui.py
+          --android-jar "$ANDROID_HOME/platforms/android-35/android.jar"
+          --aapt2 "$ANDROID_HOME/build-tools/35.0.0/aapt2"
+      - name: Native ASan and UBSan regressions
+        run: python3 tools/run_android_host_tests.py
+      - name: Address shader rewrite and rejection checks
+        run: >-
+          python3 tools/check_address_int64.py
+          --tools "$ANDROID_HOME/ndk/29.0.14206865/shader-tools/linux-x86_64"
+      - name: Android ARM64 native compilation
+        run: python3 tools/check_android_native.py --ndk "$ANDROID_HOME/ndk/29.0.14206865"

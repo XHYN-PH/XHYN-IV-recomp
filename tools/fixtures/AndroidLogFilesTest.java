@@ -21,6 +21,7 @@ public class AndroidLogFilesTest {
         do {text=Files.readString(denied.toPath());if(text.contains("exit 2"))break;Thread.sleep(10);}
         while(System.nanoTime()<deadline);
         assert text.contains("permission denied") && text.contains("exit 2");DebugLog.stop();
+        assert !session.exists():"Starting a new logged session must remove fallback logs";
         File broken2=new File(root,"also-blocked");Files.write(broken2.toPath(),new byte[]{1});
         assert DebugLog.start(blocked,broken2)==null;
         File rotated=new File(root,"rotate/debug.log");
@@ -62,6 +63,16 @@ public class AndroidLogFilesTest {
         assert retained&&names.contains("README.txt")&&names.size()==3;
         failure=false;try {DebugLogArchive.write(new OutputStream(){public void write(int value)throws IOException{throw new IOException("full");}},root,fallback);}
         catch(IOException expected){failure=true;}assert failure;
+        File profile=new File(logs,chosen+".runtime.log.profile/frames");assert profile.mkdirs();
+        Files.writeString(new File(profile,"capture.json").toPath(),"old profile");
+        Files.writeString(new File(logs,chosen+".1").toPath(),"old rotated log");
+        File unrelated=new File(logs,"notes.txt");Files.writeString(unrelated.toPath(),"keep user files");
+        File similarName=new File(logs,"debug-notes.log");Files.writeString(similarName.toPath(),"also keep user files");
+        File latest=DebugLog.start(root,fallback,new String[]{"unavailable-logcat-for-host-test"});DebugLog.stop();
+        assert latest!=null&&latest.isFile();
+        assert !new File(logs,chosen).exists()&&!large.exists()&&!profile.exists();
+        assert !new File(logs,chosen+".1").exists()&&unrelated.isFile()&&similarName.isFile();
+        assert DebugLogArchive.sessions(root,fallback).length==1:"Only the latest log session should remain";
         System.out.println("Logcat startup failure/fallback, early file writes, bounded rotation, export failures and layout persistence passed");
     }
 }

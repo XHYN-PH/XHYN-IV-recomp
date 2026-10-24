@@ -20,6 +20,10 @@
 #include <fmt/format.h>
 #include <rex/logging.h>
 #include <toml++/toml.hpp>
+#include <rex/cvar.h>
+
+REXCVAR_DEFINE_BOOL(achievement_notifications,true,"Achievements",
+                    "Show local achievement unlock notifications; tracking remains enabled");
 
 namespace rex::system {
 
@@ -150,7 +154,7 @@ AchievementUnlockResult AchievementManager::UnlockAchievement(
   REXSYS_INFO("Achievement unlocked: {:08X}", id);
   SaveUnlockState();
   DispatchCallbacks(unlock_callbacks_, event);
-  if (notification == AchievementNotification::kShow) {
+  if (notification == AchievementNotification::kShow && REXCVAR_GET(achievement_notifications)) {
     DispatchCallbacks(notification_callbacks_, event);
   }
   return AchievementUnlockResult::kUnlocked;
@@ -177,6 +181,7 @@ AchievementUnlockResult AchievementManager::ImportUnlockedAchievement(uint32_t i
 }
 
 bool AchievementManager::ShowAchievementNotification(uint32_t id) {
+  if(!REXCVAR_GET(achievement_notifications))return false;
   AchievementEvent event;
   {
     std::lock_guard lock(mutex_);
@@ -324,14 +329,60 @@ void AchievementManager::SaveUnlockState() const {
       return;
     }
     file << content;
+    file.flush();
+    if (!file) {
+      REXSYS_WARN("Achievement save: write failed: {}", temporary_path.string());
+      return;
+    }
   }
 
+#if defined(_WIN32)
   std::filesystem::remove(save_path, ec);
   ec.clear();
+#endif
   std::filesystem::rename(temporary_path, save_path, ec);
   if (ec) {
     REXSYS_WARN("Achievement save: rename failed: {}", ec.message());
   }
+  WriteCatalogUnlocked();
+}
+
+void AchievementManager::SetCatalogExportPath(std::filesystem::path path) {
+  std::lock_guard save_lock(save_mutex_);
+  {std::lock_guard lock(mutex_);catalog_export_path_=std::move(path);}
+  WriteCatalogUnlocked();
+}
+
+void AchievementManager::WriteCatalogUnlocked() const {
+  std::filesystem::path path;
+  std::vector<AchievementInfo> catalog;
+  std::unordered_map<uint32_t,uint64_t> unlocked;
+  {std::lock_guard lock(mutex_);path=catalog_export_path_;if(path.empty())return;
+    catalog=achievements_;unlocked=unlocked_achievements_;}
+  const auto quote=[](const std::string& value){
+    std::string out="\"";
+    for(unsigned char c:value){
+      if(c=='"'||c=='\\'){out+='\\';out+=char(c);}
+      else if(c<32)out+=fmt::format("\\u{:04x}",uint32_t(c));
+      else out+=char(c);
+    }return out+'"';
+  };
+  std::string json="{\"version\":1,\"achievements\":[";bool first=true;
+  for(const auto& a:catalog){
+    if(!first)json+=',';first=false;
+    const auto found=unlocked.find(a.id);uint64_t stamp=found==unlocked.end()?0:found->second;
+    const uint64_t unix_seconds=stamp>=116444736000000000ull?(stamp-116444736000000000ull)/10000000ull:0;
+    json+=fmt::format("{{\"id\":{},\"name\":{},\"description\":{},\"locked_description\":{},\"image\":{},\"score\":{},\"hidden\":{},\"unlocked\":{},\"time\":{}}}",
+      a.id,quote(a.label),quote(a.description),quote(a.unachieved_description),a.image_id,a.gamerscore,
+      // Bit 3 means show while unachieved; its absence makes it secret.
+      (a.flags&8u)?"false":"true",found!=unlocked.end()?"true":"false",unix_seconds);
+  }
+  json+="]}\n";std::error_code error;
+  std::filesystem::create_directories(path.parent_path(),error);if(error)return;
+  auto temporary=path;temporary+=".tmp";
+  {std::ofstream out(temporary,std::ios::binary|std::ios::trunc);out<<json;out.flush();if(!out)return;}
+  std::filesystem::rename(temporary,path,error);
+  if(error)REXSYS_WARN("Achievement catalog export failed: {}",error.message());
 }
 
 void AchievementManager::DispatchCallbacks(

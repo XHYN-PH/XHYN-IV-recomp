@@ -1,0 +1,48 @@
+[
+  {
+    "mode": "turnip_v38",
+    "url": "https://github.com/StevenMXZ/Adreno-Tools-Drivers/releases/download/v27.0.0-R1/Turnip_Gen8_V38_Patched.zip",
+    "sha256": "2bbb279a3da7680503a54a51a3051c7a4302c8fb2a089f8b183b4b5d6ba9ac17",
+    "library": "libvulkan_freedreno.so",
+    "minApi": 28,
+    "files": {
+      "meta.json": "b27f1d1c401025704ee271a8ff768b8f68465c374c467c7238164fa79a546c8d",
+      "libvulkan_freedreno.so": "7b0b16fb0c8fb7854868e77eb8b284a1e95789e32c1fd8b545ed91165bf78189"
+    },
+    "launcherMinApi": 29,
+    "mesa": "27.0.0-devel",
+    "observedMesaCommit": "f28352d117",
+    "exactSourceReproductionValidated": false
+  },
+  {
+    "mode": "radv18",
+    "url": "https://github.com/JimVulkan/radv-xclipse/releases/download/v1.8.0/radv-xclipse-27.0.0-devel-269238e.zip",
+    "sha256": "0545b1b24817cc0ed4a9e4fc440a7080cbaf69a9ce5d1e4bb22b0e697129c223",
+    "library": "vulkan.radeon.so",
+    "minApi": 34,
+    "files": {
+      "meta.json": "0a4b8545e9e05a076963441dae006b1ad455b482047b92dd86eb8c5b14c2c437",
+      "vulkan.radeon.so": "286aacb0dece09fc8e33c616b8a8a7e4ef5c827feb1d1bfc2bf12cc8b9e19f56",
+      "NOTICE.txt": "b29b68c54946d4eb2ab86c8066b375fee423915b09191b945a68820141757c08"
+    }
+  },
+  {
+    "mode": "turnip_v43",
+    "url": "https://github.com/Vauzi-17/710/releases/download/4.3/Turnip-710-720-722-v4.3.zip",
+    "sha256": "45ac070f30086cb67bd6f24600199293192c3fa4810c402b25ac185967a3b5e6",
+    "library": "libvulkan_freedreno.so",
+    "minApi": 28,
+    "launcherMinApi": 29,
+    "mesa": "27.0.0-devel",
+    "mesaCommit": "d1e369d8a63e",
+    "credits": [
+      "Mesa Project",
+      "Vauzi-17 and upstream contributors"
+    ],
+    "files": {
+      "meta.json": "e4bef43957b5754a1e0d1a0032134db0465508e4bc75e423f4b175bcc34eddc1",
+      "libvulkan_freedreno.so": "919a19b3d49880292d88dd35ff92b516ca7c929a3321d62452e1361c3ceeefc5"
+    },
+    "deviceGameplayValidated": false
+  }
+]

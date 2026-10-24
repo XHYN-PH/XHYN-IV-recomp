@@ -12,7 +12,7 @@
   <a href="https://t.me/xhynports">Telegram</a>
 </p>
 
-**Current testing version: 0.5.9.3-xhyn-r1.** Performance is still not that good, and work to improve it will continue through future updates. Expect frame drops, occasional crashes and graphics issues while testing.
+**Current testing version: 0.5.9.3-xhyn-r2-test6.** Performance is still not that good, and work to improve it will continue through future updates. Expect frame drops, occasional crashes and graphics issues while testing. See the [Test6 release notes](docs/android/R2-TEST6-RELEASE.md) and [phone checklist](docs/android/R2-TEST6-DEVICE-CHECKS.md).
 
 **You must provide your own legally obtained Xbox 360 game files and Title Update 8.** The game, disc image and title update are not included or provided here.
 
@@ -25,6 +25,9 @@
 - Adjustable phone rumble on supported devices.
 - Save export, import and deletion from the launcher.
 - Optional graphics drivers and simple log exports for reporting problems.
+- Achievement and cheat browsers, an adjustable performance HUD and optional phone gyro controls.
+- Per-context control imports, individual save-slot tools and compatible loose-data mod management.
+- Preparation summaries, driver settings and bounded session/benchmark reports.
 
 ## Requirements
 
@@ -41,8 +44,7 @@ Support depends on the phone, Android version and driver. A supported GPU name d
 
 | GPU family | Driver options |
 |---|---|
-| Adreno 6xx / 7xx | Bundled Turnip or a compatible imported driver |
-| Newer Adreno | A compatible imported driver or the system driver |
+| Adreno 6xx / 7xx / 8xx | System, compatible bundled Turnip or imported drivers; ESMERINGHOY is an experimental A7XX/A8XX candidate |
 | Mali / Immortalis | System driver; bundled PanVK is experimental on supported Android 15+ devices |
 | Xclipse | System driver; bundled RADV is experimental on supported Android 14+ devices |
 

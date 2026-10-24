@@ -12,8 +12,11 @@
 #include <rex/filesystem/devices/host_path_entry.h>
 
 #include <algorithm>
+#include <cctype>
 
 #include <rex/filesystem.h>
+#include <rex/filesystem/data_mod_policy.h>
+#include <exception>
 #include <rex/filesystem/devices/host_path_device.h>
 #include <rex/logging.h>
 #include <rex/math.h>
@@ -97,6 +100,92 @@ Entry* HostPathDevice::ResolvePath(const std::string_view path) {
   }
 
   return current_entry;
+}
+
+bool HostPathDevice::AddReadOnlyOverlay(const std::filesystem::path& path) {
+  return AddReadOnlyOverlays({{this, path}});
+}
+
+bool HostPathDevice::AddReadOnlyOverlays(const std::vector<Overlay>& overlays) {
+  std::vector<OverlayEdit> edits;
+  uint32_t files = 0;
+  uint64_t bytes = 0;
+  bool success = true;
+  try {
+    for (const auto& overlay : overlays) {
+      if (!overlay.device || !overlay.device->read_only_ || !overlay.device->root_entry_ ||
+          !overlay.device->MergeReadOnlyOverlay(
+              static_cast<HostPathEntry*>(overlay.device->root_entry_.get()),
+              overlay.path, 1, files, bytes, &edits)) {
+        success = false;
+        break;
+      }
+    }
+  } catch (const std::exception&) {
+    success = false;
+  }
+  if (!success) {
+    for (auto edit = edits.rbegin(); edit != edits.rend(); ++edit) {
+      if (edit->previous) edit->parent->children_[edit->index] = std::move(edit->previous);
+      else edit->parent->children_.pop_back();
+    }
+  }
+  return success;
+}
+
+bool HostPathDevice::MergeReadOnlyOverlay(
+    HostPathEntry* parent, const std::filesystem::path& path, uint32_t depth,
+    uint32_t& files, uint64_t& bytes, std::vector<OverlayEdit>* edits) {
+  const auto root_status = std::filesystem::symlink_status(path);
+  if (depth > data_mods::kMaxDepth || !std::filesystem::is_directory(root_status)) return false;
+  for (const auto& item : std::filesystem::directory_iterator(path)) {
+    const auto status = item.symlink_status();
+    if (depth >= data_mods::kMaxDepth || std::filesystem::is_symlink(status)) return false;
+    const bool directory = std::filesystem::is_directory(status);
+    if (!directory) {
+      const auto extension = data_mods::PathKey(data_mods::Utf8(item.path().extension()));
+      if (!std::filesystem::is_regular_file(status) ||
+          (extension != ".dat" && extension != ".xml" && extension != ".ide" &&
+           extension != ".ipl" && extension != ".txt" && extension != ".meta" &&
+           extension != ".gxt")) return false;
+      const auto size = item.file_size();
+      if (files >= data_mods::kMaxFiles || size > data_mods::kMaxBytes - bytes) return false;
+      ++files;
+      bytes += size;
+    }
+    const auto name = rex::path_to_utf8(item.path().filename());
+    auto existing = std::find_if(parent->children_.begin(), parent->children_.end(),
+        [&](const auto& entry) { return rex::string::utf8_equal_case(entry->name(), name); });
+    if (existing != parent->children_.end()) {
+      const bool was_directory = ((*existing)->attributes() & kFileAttributeDirectory) != 0;
+      if (was_directory != directory) return false;
+      if (directory) {
+        if (!MergeReadOnlyOverlay(static_cast<HostPathEntry*>(existing->get()), item.path(),
+                                  depth + 1, files, bytes, edits)) return false;
+        continue;
+      }
+    }
+    rex::filesystem::FileInfo info;
+    if (!rex::filesystem::GetInfo(item.path(), &info)) return false;
+    info.name = item.path().filename();
+    auto child = std::unique_ptr<HostPathEntry>(HostPathEntry::Create(this, parent, item.path(), info));
+    if (!child) return false;
+    // Build unattached subtrees first; their children must never enter the shared journal.
+    if (directory && !MergeReadOnlyOverlay(child.get(), item.path(), depth + 1, files, bytes, nullptr))
+      return false;
+    const size_t index = static_cast<size_t>(existing - parent->children_.begin());
+    const bool replace = existing != parent->children_.end();
+    // Reserve before journaling: a failed allocation must not journal an unapplied append.
+    if (!replace && parent->children_.size() == parent->children_.capacity())
+      parent->children_.reserve(std::max<size_t>(8, parent->children_.size() * 2));
+    if (edits) {
+      edits->push_back({parent, index, nullptr});
+      if (replace) edits->back().previous = std::move(parent->children_[index]);
+    }
+    if (replace) parent->children_[index] = std::move(child);
+    else parent->children_.push_back(std::move(child));
+  }
+  return true;
 }
 
 void HostPathDevice::PopulateEntry(HostPathEntry* parent_entry) {

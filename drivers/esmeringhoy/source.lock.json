@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "name": "ESMERINGHOY 27.0.0-devel (A7XX/A8XX)",
+  "mesa_repository": "https://gitlab.freedesktop.org/mesa/mesa.git",
+  "mesa_commit": "f28352d1179a4a85b4be286a883747bae2d3786b",
+  "mesa_version": "27.0.0-devel",
+  "ndk": "android-ndk-r29",
+  "ndk_revision": "29.0.14206865",
+  "ndk_archive_sha1": "87e2bb7e9be5d6a1c6cdf5ec40dd4e0c6d07c30b",
+  "android_min_api": 29,
+  "platform_sdk_version": 29,
+  "meson": "1.9.0",
+  "ninja": "1.13.0",
+  "cmake": "3.31.6",
+  "mako": "1.3.10",
+  "ply": "3.11",
+  "patch_sha256": "b6fb7a2e1c1b57c329dd3a4c64e94ddc8c65f965d5b6a3f805796ecfefc3712d",
+  "patched_files_sha256": {
+    "src/freedreno/common/freedreno_dev_info.h": "c78d79df418e90e241081bc8647b5bb29014b57adf7cf91ed8070b2cba8756db",
+    "src/freedreno/common/freedreno_devices.py": "6e498c0997cb2f50b9d5122c0e28f6cdd8b66f6504c2f27997223bae9f046a98",
+    "src/freedreno/vulkan/tu_autotune.cc": "2600711fccd6b5da16f2aebd6ac9047d62d086fb6bf7396a0eefaa0edcda31b8",
+    "src/freedreno/vulkan/tu_cmd_buffer.cc": "6cecb9a4b0322385b4721b0b6ce65fb00ea5e4969dce5a118d022ce52944e395",
+    "src/freedreno/vulkan/tu_device.cc": "ada2c1f09238626b589e0d3b0a453088243ddd4bc54fa1187e6a682a4b474499",
+    "src/util/u_gralloc/meson.build": "fe7e408c03bfcf29f89bfcbb38276a848aac54281eb3ff1e2d4dbe7480a9ede8",
+    "src/util/u_gralloc/u_gralloc.c": "1fb094db2f91cbd36206e0fd779ad91538990a077f7e44bfd14a159d74a9af2c",
+    "src/util/u_gralloc/u_gralloc.h": "8ec7f822b81be415c98d957d868451b2299b9d50f58e9a10d3ded9b7c3e2485d",
+    "src/util/u_gralloc/u_gralloc_fallback.c": "02277025415c3cdcc69a812ef6bd07c2e7a97370ed01ef7188332483173c6619",
+    "src/util/u_gralloc/u_gralloc_internal.h": "4b9c02f1d6be6798dfbdad240699827dfa5506e82161281f1633f7518a68f66a",
+    "src/vulkan/runtime/vk_android.c": "ee4b2e0a9765ccde086fa519cbd289b1c12a9c4e3de0ad4a165a66a06fc8d8a8",
+    "src/vulkan/runtime/vk_physical_device.h": "cef82a9ed2440272b2de45e84917d892d55301ce2b3abf8bfccb0ffc1780b8e1",
+    "src/util/u_gralloc/u_gralloc_aimapper.c": "87376e29090487a6a01f48ab8ed0dbcfebeab7211eacab3dd874e2630d196ecd"
+  },
+  "reference_zip_sha256": "2bbb279a3da7680503a54a51a3051c7a4302c8fb2a089f8b183b4b5d6ba9ac17",
+  "reference_reproduction": "Same Mesa source revision. Original V38 build options and complete patch manifest were not published with the binary; byte-identical reproduction is not claimed.",
+  "upstreams": [
+    {
+      "name": "Mesa",
+      "revision": "f28352d1179a4a85b4be286a883747bae2d3786b"
+    },
+    {
+      "name": "StevenMXZ/Adreno-Tools-Drivers",
+      "revision": "b3b32ad30e7d7b4bd897e678af064036eeb9df09",
+      "scripts": [
+        "fix_gralloc_flushall.py",
+        "fix_a8xx_dev_info.py",
+        "apply_a8xx_gpus.py",
+        "apply_a7xx_gen1_quirks.py",
+        "apply_a7xx_gen2_ubwc_hint.py",
+        "add_aimapper_gralloc.py",
+        "add_ubwc_swapchain_usage.py",
+        "apply_balance_variant.py"
+      ]
+    },
+    {
+      "name": "WinNative-Emu/Drivers",
+      "revision": "c71f600a2977a141f21a922c9ed2e14fb09b13d3",
+      "role": "Android recipe and stable-C IMapper backend provenance"
+    }
+  ],
+  "tuning": {
+    "gmem_bandwidth_multiplier": "10/10 (reference script changes 11/10 to 10/10)",
+    "gta4_measurements": "pending",
+    "a810_a829": "keep source-forced SYSMEM",
+    "missing_A825_script_anchor": "not inserted; unsupported chip IDs are not invented",
+    "draw_count_threshold": "not changed; old script anchor is absent at this Mesa revision",
+    "conflicting_mesh_patchset": "not force-applied; review remaining semantic differences separately",
+    "kgsl_zero_timeout": "already handled by kgsl_poll_timestamp in the pinned base"
+  },
+  "device_status": {
+    "Adreno 7xx": "source candidate; no device validation yet",
+    "Adreno 8xx": "source candidate for registered chip IDs; no device validation yet",
+    "Adreno 6xx": "use the separate upstream Turnip/Vauzi candidates",
+    "Mali/Immortalis": "ESMERINGHOY is not a Mali driver",
+    "Xclipse": "ESMERINGHOY is not an Xclipse driver"
+  }
+}

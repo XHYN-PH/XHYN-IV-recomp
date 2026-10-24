@@ -31,7 +31,7 @@ class CpuScope {
 };
 class CpuPhaseScope {
  public:
-  explicit CpuPhaseScope(CpuPhase phase) : owner_(current_cpu_recorder) {
+  explicit CpuPhaseScope(CpuPhase phase) : owner_(current_cpu_recorder && current_cpu_recorder->active() ? current_cpu_recorder : nullptr) {
     if (owner_)
       prior_ = owner_->SetPhase(phase);
   }
@@ -50,7 +50,7 @@ class CpuPhaseScope {
 };
 class CpuContextScope {
  public:
-  explicit CpuContextScope(CpuContext context) : owner_(current_cpu_recorder) {
+  explicit CpuContextScope(CpuContext context) : owner_(current_cpu_recorder && current_cpu_recorder->active() ? current_cpu_recorder : nullptr) {
     if (owner_)
       prior_ = owner_->SetContext(context);
   }

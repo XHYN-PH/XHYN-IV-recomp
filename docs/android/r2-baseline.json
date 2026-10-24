@@ -1,0 +1,59 @@
+{
+  "source": "XHYN-IV-debug-20261019-094234-177.log.zip",
+  "device": "PurpleVK-public Adreno (TM) 750 (git-62ac221a33)/unknown",
+  "settings": {
+    "gta4_frame_limit": "30",
+    "resolution": "720p",
+    "gta4_native_upscaler": "native",
+    "gta4_effective_upscaling": "Native · 1280×576 → 1280×576",
+    "gta4_fsr1_quality": "balanced",
+    "gta4_native_anti_aliasing": "off",
+    "gta4_draw_distance_scale": "1.000000",
+    "gta4_draw_distance_dynamic_factor": "1.000000",
+    "gta4_dynamic_draw_distance": "false",
+    "gta4_shadow_map_base_size": "512",
+    "gta4_shadow_distance_scale": "1.000000",
+    "gta4_native_shadow_interval": "1",
+    "gta4_native_water_reflection_interval": "1",
+    "gta4_native_environment_reflection_interval": "1",
+    "android_perf_hint": "true",
+    "android_thermal_guard": "true",
+    "android_gpu_turbo": "true"
+  },
+  "benchmark": {
+    "status": "complete: 60-second measurement finished; interval_samples=1717",
+    "measurement_windows": 28,
+    "window_publisher_fps_min": 25.0818,
+    "window_publisher_fps_max": 30.061,
+    "worst_window_p95_ms": 66.7269,
+    "maximum_interval_ms": 132.372
+  },
+  "gpu": {
+    "approximate_envelope_samples": 119,
+    "median_ms": 9.17466897917,
+    "p95_ms": 11.2919868842,
+    "timing": "approximate queue stage/encoder boundaries; not isolated shader execution; repeated timestamps may collapse ranges"
+  },
+  "cpu": {
+    "detailed_rows": 0,
+    "game_function_sampling_available": false
+  },
+  "presentation": {
+    "physical_scanout_measured": false,
+    "suboptimal_observations": 120
+  },
+  "textures": {
+    "last_age_pressure_recovery_evictions": [
+      20104,
+      0,
+      0
+    ],
+    "detected_content_reuploads": 7613
+  },
+  "limits": [
+    "Publisher FPS is not display FPS.",
+    "GPU envelope timing is not isolated shader cost.",
+    "Window percentiles cannot be combined into a session percentile.",
+    "No CPU hotspot or FPS gain is inferred from these summaries."
+  ]
+}

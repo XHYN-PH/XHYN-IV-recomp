@@ -31,6 +31,7 @@ import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
+import android.widget.HorizontalScrollView;
 import android.widget.TextView;
 
 import org.json.JSONObject;
@@ -92,7 +93,7 @@ public class LauncherActivity extends Activity {
     private RadioGroup mDrivers;
     private TextView mDriverNote;
     private Button mPlay;
-    private Button mRemove;
+    private final java.util.Map<String,View> mDriverTrash=new java.util.LinkedHashMap<>();
     private final List<String> mDriverModes = new ArrayList<>();
     private final Handler mMain = new Handler(Looper.getMainLooper());
     private boolean mBusy;
@@ -100,7 +101,7 @@ public class LauncherActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if(savedInstanceState!=null)mLogSession=savedInstanceState.getString("log_session");
+        if(savedInstanceState!=null){mLogSession=savedInstanceState.getString("log_session");mSelectedSlot=savedInstanceState.getString("selected_slot");}
         // The app icon over a running game: some home screens start a second
         // launcher on top of the task instead of bringing it forward. Step
         // aside so the game underneath comes back.
@@ -112,10 +113,11 @@ public class LauncherActivity extends Activity {
         }
         File external = getExternalFilesDir(null);
         mDataRoot = external != null ? external : getFilesDir();
+        PreviousExitCapture.capture(this,mDataRoot);
         if(!gameRunning()){
-            migrateTouchPreferences();migratePerformanceGraphics();
+            migrateTouchPreferences();migratePerformanceGraphics();try{MobileConfig.ensureDefaults(MobileConfig.file(mDataRoot));}catch(IOException e){Log.w(TAG,"Default settings deferred",e);}
             android.content.SharedPreferences ui=getSharedPreferences("interface",Context.MODE_PRIVATE);
-            if(!ui.getBoolean("radar_top_v6",false))try{MobileConfig.migrateRadarMargin(MobileConfig.file(mDataRoot));ui.edit().putBoolean("radar_top_v6",true).apply();}catch(IOException e){Log.w(TAG,"Minimap preference migration deferred",e);}
+            if(!ui.getBoolean("radar_offset_v7",false))try{MobileConfig.migrateRadarMargin(MobileConfig.file(mDataRoot));ui.edit().putBoolean("radar_offset_v7",true).apply();}catch(IOException e){Log.w(TAG,"Minimap preference migration deferred",e);}
         }
         setContentView(buildLayout());
         hideSystemBars();
@@ -138,7 +140,7 @@ public class LauncherActivity extends Activity {
         refreshDrivers();
         refreshStatus();
         if (mInstallerReady) refreshInstall();
-        refreshCrash();
+        refreshCrash();refreshAchievementSummary();
         mMain.removeCallbacks(mStopDebugLog);
         mMain.postDelayed(mStopDebugLog, 10000);
     }
@@ -215,59 +217,96 @@ public class LauncherActivity extends Activity {
     private TextView mLastLaunch;
 
     private View mDriverPanel,mFilesPanel;
+    private TextView mLaunchSummary,mAchievementSummary;
+    private String launchSummary(){
+        try{java.util.Map<String,String> c=MobileConfig.read(MobileConfig.file(mDataRoot));c.putAll(PendingSettings.read(mDataRoot));String mode=readFirstLine(new File(mDataRoot,"driver.txt"));if(mode==null)mode="Automatic";String driver=BundledDrivers.ALL.containsKey(mode)?BundledDrivers.ALL.get(mode).label:mode.replace("custom:","");String summary=c.getOrDefault("resolution","720p")+" · Cap "+c.getOrDefault("gta4_frame_limit","30")+" FPS · "+c.getOrDefault("gta4_native_anti_aliasing","fxaa").toUpperCase(Locale.ROOT)+" / "+c.getOrDefault("gta4_native_upscaler","native")+"\n"+driver+" · Android "+Build.VERSION.RELEASE+" · "+GpuInfo.renderer();
+            ActivityManager manager=(ActivityManager)getSystemService(Context.ACTIVITY_SERVICE);if(manager!=null){ActivityManager.MemoryInfo memory=new ActivityManager.MemoryInfo();manager.getMemoryInfo(memory);summary+=String.format(Locale.ROOT,"\nFree RAM %.1f GB",memory.availMem/1073741824.0);}if(Build.VERSION.SDK_INT>=31)summary+=" · "+Build.SOC_MODEL;summary+=" · Preparation runs at startup";if(PendingSettings.pending(mDataRoot))summary+=" · Restart pending";
+            try{java.util.Properties last=SessionHistory.load(new File(SessionHistory.directory(mDataRoot),"last-session.properties"));double fps=SessionHistory.number(last,"fps",-1);if(fps>=0)summary+=String.format(Locale.ROOT,"\nLast session %.1f FPS · %.0f MB app RAM",fps,SessionHistory.number(last,"ram.mb",0));
+                if(last.containsKey("driver.actual"))summary+="\nLast rendered: "+last.getProperty("gpu","GPU unknown")+" · "+last.getProperty("driver.actual");
+                if(last.containsKey("gta4_native_preparation_status"))try{JSONObject prep=new JSONObject(last.getProperty("gta4_native_preparation_status"));summary+="\nLast preparation: "+prep.optString("outcome","unknown")+" · "+prep.optInt("ready")+" ready · "+prep.optInt("remaining")+" remaining";}catch(org.json.JSONException ignored){}}catch(IOException ignored){}
+            return summary;
+        }catch(Exception e){return "Configured graphics and driver apply when you play.";}
+    }
+    private String observedCompletion(){
+        File completion=new File(mDataRoot,"LibertyRecomp/saves/last-session-completion.json");
+        try{if(completion.isFile()&&completion.length()<4096){JSONObject progress=new JSONObject(new String(java.nio.file.Files.readAllBytes(completion.toPath()),StandardCharsets.UTF_8));double value=progress.optDouble("percent",-1);if(Double.isFinite(value)&&value>=0&&value<=100)return String.format(Locale.ROOT," │ Last observed completion %.2f%%",value);}}catch(Exception ignored){}
+        return "";
+    }
     private View buildLayout() {
         android.widget.FrameLayout canvas=new android.widget.FrameLayout(this);
         LauncherArtView artwork=new LauncherArtView(this);canvas.addView(artwork,new android.widget.FrameLayout.LayoutParams(-1,-1));
-        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(24),dp(14),dp(24),dp(14));canvas.addView(root,new android.widget.FrameLayout.LayoutParams(-1,-1));
-        LinearLayout details=new LinearLayout(this);details.setOrientation(LinearLayout.VERTICAL);details.setGravity(Gravity.BOTTOM);
-        details.addView(buildCrashCard(),matchWrap(dp(6)));
-        mLastLaunch=ModernUi.text(this,"",13,0xffffb7a3);details.addView(mLastLaunch,matchWrap(dp(4)));
-        mStatus=ModernUi.text(this,"Checking game files…",14,Color.BLACK);details.addView(mStatus,matchWrap(dp(8)));
-        TextView brand=ModernUi.text(this,"XHYN IV",38,Color.BLACK);brand.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));
-        details.addView(brand,matchWrap(dp(5)));
-        root.addView(details,new LinearLayout.LayoutParams(-1,0,1));
-        android.widget.HorizontalScrollView navigation=new android.widget.HorizontalScrollView(this);
-        navigation.setHorizontalScrollBarEnabled(false);
-        LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER_VERTICAL);
-        mPlay=ModernUi.button(this,"PLAY",true);mPlay.setOnClickListener(v->play(false));
-        actions.addView(mPlay,new LinearLayout.LayoutParams(dp(140),dp(54)));
-        addNavigation(actions,"Game files",this::showFilesPanel);
-        addNavigation(actions,"Settings",this::showSettings);
-        navigation.addView(actions);root.addView(navigation,matchWrap(dp(14)));
-        navigation.addOnLayoutChangeListener((v,left,top,right,bottom,oldLeft,oldTop,oldRight,oldBottom)->artwork.setNavigationTop(top));
-        LinearLayout footer=new LinearLayout(this);footer.setGravity(Gravity.CENTER_VERTICAL);
-        footer.addView(ModernUi.text(this,versionLine(),11,ModernUi.MUTED),new LinearLayout.LayoutParams(-2,-2));
-        LinearLayout links=new LinearLayout(this);links.setOrientation(LinearLayout.HORIZONTAL);links.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
-        addFooterLink(links,"XHYN · GitHub ↗","https://github.com/XHYN-PH/XHYN-IV-recomp");
-        addFooterLink(links,"YouTube ↗","https://youtube.com/@xhyn_ph");
-        addFooterLink(links,"Telegram ↗","https://t.me/xhynports");
-        android.widget.HorizontalScrollView linkStrip=new android.widget.HorizontalScrollView(this);linkStrip.setHorizontalScrollBarEnabled(false);linkStrip.setFillViewport(true);linkStrip.addView(links);
-        // Keep every link on one line even in a small multi-window viewport.
-        footer.addView(linkStrip,new LinearLayout.LayoutParams(0,-2,1));
-        root.addView(footer,matchWrap(dp(6)));
-        buildSecondaryPanels();return canvas;
+        View shade=new View(this);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xe808090a,0xa008090a,0x1808090a}));canvas.addView(shade,new android.widget.FrameLayout.LayoutParams(-1,-1));
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(26),dp(12),dp(26),dp(10));ModernUi.safeInsets(this,root,26,12);canvas.addView(root,new android.widget.FrameLayout.LayoutParams(-1,-1));
+        ScrollView viewport=new ScrollView(this);viewport.setFillViewport(true);viewport.setVerticalScrollBarEnabled(false);
+        LinearLayout block=new LinearLayout(this);block.setOrientation(LinearLayout.VERTICAL);block.setGravity(Gravity.BOTTOM);viewport.addView(block,new ScrollView.LayoutParams(-1,-1));
+        int width=Math.min(dp(500),(int)(getResources().getDisplayMetrics().widthPixels*.48f));root.addView(viewport,new LinearLayout.LayoutParams(width,0,1));
+        block.addView(buildCrashCard(),matchWrap(dp(3)));
+        mLastLaunch=ModernUi.text(this,"",12,0xffffb7a3);block.addView(mLastLaunch,matchWrap(dp(2)));
+        block.addView(ModernUi.text(this,"LIBERTY CITY IS WAITING",12,ModernUi.ACCENT));
+        TextView brand=ModernUi.text(this,"XHYN IV",38,ModernUi.TEXT);brand.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));block.addView(brand,matchWrap(dp(3)));
+        mLaunchSummary=ModernUi.text(this,launchSummary(),12,ModernUi.MUTED);block.addView(mLaunchSummary,matchWrap(dp(3)));
+        mStatus=ModernUi.text(this,"Checking game files…",12,ModernUi.MUTED);LinearLayout.LayoutParams statusGap=matchWrap(dp(5));statusGap.bottomMargin=dp(7);block.addView(mStatus,statusGap);
+        mPlay=ModernUi.icon(this,"Play","play",true);mPlay.setTextSize(19);mPlay.setOnClickListener(v->play(false));LinearLayout playRow=new LinearLayout(this);playRow.addView(mPlay,new LinearLayout.LayoutParams(0,dp(50),1));Button overflow=ModernUi.button(this,"⋯",false);overflow.setTextSize(24);overflow.setContentDescription("More actions");LinearLayout.LayoutParams overflowSize=new LinearLayout.LayoutParams(dp(48),dp(50));overflowSize.leftMargin=dp(8);playRow.addView(overflow,overflowSize);overflow.setOnClickListener(v->showLogs());block.addView(playRow);
+        LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.VERTICAL);
+        launcherAction(actions,"Settings","settings",this::showSettings);launcherAction(actions,"Game files","folder",this::showFilesPanel);
+        launcherAction(actions,"Touch controls","touch",this::showTouchSettings);launcherAction(actions,"Drivers","driver",this::showDriverPanel);
+
+        block.addView(actions,matchWrap(dp(2)));
+        LinearLayout footer=new LinearLayout(this);footer.setGravity(Gravity.CENTER_VERTICAL);footer.addView(ModernUi.text(this,versionLine(),11,ModernUi.MUTED),new LinearLayout.LayoutParams(-2,-2));LinearLayout links=new LinearLayout(this);links.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);addFooterLink(links,"YouTube ↗","https://youtube.com/@xhyn_ph");addFooterLink(links,"Telegram ↗","https://t.me/xhynports");addFooterLink(links,"GitHub ↗","https://github.com/XHYN-PH/XHYN-IV-recomp");HorizontalScrollView linkStrip=new HorizontalScrollView(this);linkStrip.setHorizontalScrollBarEnabled(false);linkStrip.setFillViewport(true);linkStrip.addView(links);footer.addView(linkStrip,new LinearLayout.LayoutParams(0,-2,1));root.addView(footer,matchWrap(dp(3)));
+        if(getResources().getDisplayMetrics().widthPixels>getResources().getDisplayMetrics().heightPixels){
+            LinearLayout achievements=ModernUi.panel(this);achievements.setBackground(ModernUi.surface(this,0xc4181a1c,12));
+            achievements.addView(ModernUi.text(this,"ACHIEVEMENTS",11,ModernUi.ACCENT));mAchievementSummary=ModernUi.text(this,"Prepare the installed game’s achievement list",14,ModernUi.TEXT);mAchievementSummary.setPadding(0,dp(6),0,dp(6));achievements.addView(mAchievementSummary);
+            Button browse=ModernUi.icon(this,"View achievements","trophy",false);browse.setOnClickListener(v->showAchievements());achievements.addView(browse,new LinearLayout.LayoutParams(-1,dp(38)));
+            android.widget.FrameLayout.LayoutParams card=new android.widget.FrameLayout.LayoutParams(dp(235),-2,Gravity.RIGHT|Gravity.BOTTOM);card.setMargins(0,0,dp(26),dp(54));canvas.addView(achievements,card);ModernUi.enter(this,achievements,80);
+        }
+        ModernUi.enter(this,block,0);ModernUi.enter(this,footer,80);buildSecondaryPanels();return canvas;
     }
     private void addFooterLink(LinearLayout links,String label,String url){
         TextView link=ModernUi.text(this,label,12,ModernUi.ACCENT);link.setPadding(dp(10),dp(7),dp(3),dp(7));link.setMinHeight(dp(32));link.setGravity(Gravity.CENTER);link.setSingleLine(true);
         link.setContentDescription(label+", "+url);
         link.setFocusable(true);link.setOnClickListener(v->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception ignored){toast(url);}});links.addView(link);
     }
-    private void addNavigation(LinearLayout row,String title,Runnable run) {
-        Button b=ModernUi.button(this,title,false);b.setOnClickListener(v->run.run());
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,dp(48));lp.leftMargin=dp(8);row.addView(b,lp);
+    private void launcherAction(LinearLayout grid,String label,String icon,Runnable action){
+        LinearLayout row=grid.getChildCount()>0?(LinearLayout)grid.getChildAt(grid.getChildCount()-1):null;
+        if(row==null||row.getChildCount()==2){row=new LinearLayout(this);row.setBaselineAligned(false);grid.addView(row,new LinearLayout.LayoutParams(-1,-2));}
+        Button button=ModernUi.icon(this,label,icon,false);button.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);button.setOnClickListener(v->action.run());
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(40),1);lp.topMargin=dp(6);if(row.getChildCount()>0)lp.leftMargin=dp(8);row.addView(button,lp);
     }
     private void buildSecondaryPanels() {
         LinearLayout drivers=new LinearLayout(this);drivers.setOrientation(LinearLayout.VERTICAL);
         drivers.addView(ModernUi.text(this,"Applies next time you play.",13,ModernUi.MUTED));
+        ModernUi.action(this,drivers,"Import driver ZIP",this::pickDriverZip);
+        ModernUi.action(this,drivers,"Advanced Turnip options",()->TurnipSettingsUi.show(this,mDataRoot,gameRunning()));
+        ModernUi.action(this,drivers,"Restore last driver that published frames",()->{
+            if(gameRunning()){toast("Quit the game before changing drivers.");return;}
+            String working=DriverState.lastWorking(mDataRoot,Build.FINGERPRINT,Build.VERSION.SDK_INT);
+            if(working.isEmpty()){toast("No working driver has been recorded for this Android build yet.");return;}
+            if(working.startsWith(DriverBridge.CUSTOM_PREFIX)&&!new File(customRoot(),working.substring(DriverBridge.CUSTOM_PREFIX.length())).isDirectory()){toast("The recorded driver package is no longer installed. Choose System or import it again.");return;}
+            if(writeDriverMode(working)){refreshDrivers();toast("Recorded working driver selected for next launch.");}
+        });
         mDrivers=new RadioGroup(this);mDrivers.setOnCheckedChangeListener((group,id)->onDriverChecked(id));drivers.addView(mDrivers);
         mDriverNote=ModernUi.text(this,"",13,ModernUi.MUTED);drivers.addView(mDriverNote);
-        ModernUi.action(this,drivers,"Import driver ZIP",this::pickDriverZip);
-        mRemove=ModernUi.button(this,"Remove selected imported driver",false);mRemove.setOnClickListener(v->removeSelectedDriver());drivers.addView(mRemove,matchWrap(dp(10)));
+
         mDriverPanel=drivers;
-        LinearLayout files=new LinearLayout(this);files.setOrientation(LinearLayout.VERTICAL);files.addView(buildInstallCard());
-        ModernUi.action(this,files,"Save data",this::showSaveData);
+        LinearLayout files=new LinearLayout(this);files.setOrientation(LinearLayout.VERTICAL);files.addView(buildInstallCard());ModernUi.action(this,files,"Check game files",()->GameDataCheck.show(this,mDataRoot));
+        ModernUi.action(this,files,"Save data",this::showSaveData);ModernUi.action(this,files,"Game file location",this::showGameLocation);ModernUi.action(this,files,"Data-file mods",()->ModOverlayUi.show(this,mDataRoot,gameRunning()));
         mRightScroll=new ScrollView(this);mRightScroll.setFillViewport(true);mRightScroll.addView(files);mFilesPanel=mRightScroll;
+    }
+    private void refreshAchievementSummary(){if(mAchievementSummary==null)return;try{
+        File catalog=new File(mDataRoot,"LibertyRecomp/saves/achievements/catalog.json");if(!catalog.isFile()||catalog.length()>2*1024*1024)return;
+        org.json.JSONArray entries=new JSONObject(new String(java.nio.file.Files.readAllBytes(catalog.toPath()),StandardCharsets.UTF_8)).getJSONArray("achievements");int unlocked=0;for(int i=0;i<entries.length();i++)if(entries.getJSONObject(i).optBoolean("unlocked"))unlocked++;
+        mAchievementSummary.setText(unlocked+" / "+entries.length()+" unlocked");
+    }catch(Exception ignored){mAchievementSummary.setText("Progress unavailable");}}
+    private void showAchievements(){
+        File catalog=new File(mDataRoot,"LibertyRecomp/saves/achievements/catalog.json");
+        if(!catalog.isFile()&&!gameRunning()&&!mBusy&&!Installer.running()&&Installer.installState(mDataRoot)==null){prepareAchievementCatalog();return;}
+        AchievementsUi.show(this,mDataRoot,null,gameRunning()?null:this::prepareAchievementCatalog);
+    }
+    private void prepareAchievementCatalog(){
+        if(mBusy||gameRunning()||Installer.running()){toast("Quit the game and finish file operations first.");return;}
+        LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.addView(new ProgressBar(this));body.addView(ModernUi.text(this,"Reading the installed game's achievement metadata…",15,ModernUi.TEXT));android.app.AlertDialog progress=ModernUi.dialog(this,"Preparing achievements",body);progress.setCancelable(false);progress.show();
+        setBusy(true,"Preparing achievement metadata...");
+        new Thread(()->{String error=Installer.prepareAchievements(this,mDataRoot);mMain.post(()->{progress.dismiss();if(isFinishing()||isDestroyed())return;setBusy(false,null);refreshAchievementSummary();if(error==null||error.isEmpty())showAchievements();else toast(error);});},"PrepareAchievements").start();
     }
     private void showDriverPanel(){showPanel("Graphics driver",mDriverPanel);}
     private void showFilesPanel(){showPanel("Game files & saves",mFilesPanel);}
@@ -275,24 +314,35 @@ public class LauncherActivity extends Activity {
         if(panel.getParent() instanceof ViewGroup)((ViewGroup)panel.getParent()).removeView(panel);
         ModernUi.dialog(this,title,panel).show();
     }
-    private void showSettings(){
-        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
-        ModernUi.action(this,panel,"Graphics & performance",this::showPerformanceTestSettings);
-        ModernUi.action(this,panel,"Controls",this::showTouchSettings);
-        ModernUi.action(this,panel,"Graphics driver",this::showDriverPanel);
-        ModernUi.action(this,panel,"Logs & troubleshooting",this::showLogs);
-        ModernUi.dialog(this,"Settings",panel).show();
-    }
+    private void showSettings(){MobileSettingsUi.graphics(this,mDataRoot,null);}
     private void showLogs(){
         LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
-        panel.addView(ModernUi.text(this,"Play with logs records a report you can share after a problem. Old logs are cleared when a new game session starts.",14,ModernUi.MUTED));
+        panel.addView(ModernUi.text(this,"Play with logs records a report you can share after a problem. Previous logs are replaced automatically when the next game session starts. For an input capture, open the in-game menu → Diagnostics → Input test when ready.",14,ModernUi.MUTED));
         ModernUi.action(this,panel,"Play with logs",()->{mDebugMode=0;play(true);});
-        ModernUi.action(this,panel,"Share latest log",()->exportLatestLog());
-        ModernUi.action(this,panel,"Delete saved logs",()->{
+        ModernUi.action(this,panel,"Input diagnostics (start capture in-game)",()->{mDebugMode=1;play(true);});
+        ModernUi.action(this,panel,"Recorded sessions & benchmarks",()->SessionResultsUi.show(this,mDataRoot));
+        TextView latest=ModernUi.text(this,"",12,ModernUi.MUTED);panel.addView(latest);
+        LinearLayout logActions=new LinearLayout(this);panel.addView(logActions);
+        ModernUi.gridAction(this,logActions,"Share latest log",()->exportLatestLog());
+        Button share=(Button)logActions.getChildAt(0);
+        final Runnable refreshLogs=()->{
+            String[] sessions=DebugLogArchive.sessions(mDataRoot,getFilesDir());
+            latest.setText(sessions.length==0?"No saved log. Use Play with logs to create one.":"Latest saved log: "+sessions[0]+(gameRunning()?" · recording":""));
+            share.setEnabled(sessions.length>0);
+        };
+        ModernUi.gridAction(this,logActions,"Delete saved logs",()->{
             if(gameRunning()){toast("Quit the game before deleting its log.");return;}
-            new Thread(()->{String result;try{DebugLogArchive.clear(mDataRoot,getFilesDir());result="Logs deleted.";}catch(IOException e){result="Could not delete logs: "+e.getMessage();}
-                String message=result;mMain.post(()->toast(message));},"DeleteLogs").start();
+            final AlertDialog[] confirm={null};
+            confirm[0]=ModernUi.dialog(this,"Delete saved logs?",
+                ModernUi.text(this,"Remove the saved game logs and diagnostic captures? Recorded performance results are kept.",14,ModernUi.TEXT),
+                "Cancel","Delete",()->{
+                    if(gameRunning()){toast("Quit the game before deleting its log.");return;}
+                    confirm[0].dismiss();share.setEnabled(false);
+                    new Thread(()->{String result;try{DebugLogArchive.clear(mDataRoot,getFilesDir());result="Logs deleted.";}catch(IOException e){result="Could not delete logs: "+e.getMessage();}
+                        String message=result;mMain.post(()->{if(isFinishing()||isDestroyed())return;refreshLogs.run();toast(message);});},"DeleteLogs").start();
+                });confirm[0].show();
         });
+        refreshLogs.run();
         LinearLayout advanced=new LinearLayout(this);advanced.setOrientation(LinearLayout.VERTICAL);advanced.setVisibility(View.GONE);
         ModernUi.action(this,panel,"Advanced troubleshooting",()->advanced.setVisibility(advanced.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));
         advanced.addView(ModernUi.text(this,"Use this when asked for a deeper report. Short timing and shadow captures are available from the in-game menu. Captures temporarily add overhead.",13,ModernUi.MUTED));
@@ -308,7 +358,7 @@ public class LauncherActivity extends Activity {
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
-        state.putString("log_session",mLogSession);super.onSaveInstanceState(state);
+        state.putString("selected_slot",mSelectedSlot);state.putString("log_session",mLogSession);super.onSaveInstanceState(state);
     }
     private boolean gameRunning() {
         ActivityManager manager=(ActivityManager)getSystemService(Context.ACTIVITY_SERVICE);
@@ -336,32 +386,29 @@ public class LauncherActivity extends Activity {
         if(gameRunning()){toast("Open Touch controls from the in-game menu while playing.");return;}
         MobileSettingsUi.touch(this,mDataRoot,null);
     }
-    private void showSaveData() {
-        if(mBusy)return;
-        if(gameRunning()){toast("Quit the game before managing save data.");return;}
-        new android.app.AlertDialog.Builder(this).setTitle("Save data")
-            .setItems(new String[]{"Export saves","Import saves","Delete save data"},(dialog,which)->{
-                if(which==2) {
-                    new android.app.AlertDialog.Builder(this).setTitle("Delete save data?")
-                        .setMessage("This removes local saves and player profiles, including the previous import backup. Game files and graphics settings are kept. Export your saves first if you want to keep them.")
-                        .setNegativeButton("Cancel",null).setPositiveButton("Delete",(d,w)->{
-                            if(gameRunning()){toast("Quit the game first.");return;}
-                            setBusy(true,"Deleting save data...");
-                            new Thread(()->{
-                                String result;
-                                try{File root=SaveData.root(mDataRoot);SaveData.deleteTree(root);SaveData.deleteTree(new File(root.getParentFile(),"saves-before-import"));result="Save data deleted.";}
-                                catch(IOException error){result="Delete failed: "+error.getMessage();}
-                                final String message=result;mMain.post(()->{setBusy(false,null);toast(message);});
-                            },"DeleteSaves").start();
-                        }).show();return;
-                }
-                if(which==1) {
-                    new android.app.AlertDialog.Builder(this).setTitle("Import saves?")
-                        .setMessage("Choose a save ZIP exported by XHYN IV. Current saves are kept in a local backup before replacement. Any previous import backup is replaced. Quit the game first.")
-                        .setNegativeButton("Cancel",null).setPositiveButton("Choose ZIP",(d,w)->pickSaveDocument(false)).show();
-                }else pickSaveDocument(true);
-            }).show();
+    private String mSelectedSlot;
+    private static final int REQUEST_SLOT_EXPORT=33,REQUEST_SLOT_IMPORT=34;
+    private static final int REQUEST_GAME_TREE=35;
+    private void showGameLocation(){
+        if(mBusy||gameRunning()){toast("Quit the game and finish the current task first.");return;}
+        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.addView(ModernUi.text(this,"Current location and extraction destination:\n"+Installer.installRoot(mDataRoot)+"\n\nNew installs extract here. Choose a location before installing, or copy the current installation here. Save slots and achievements stay in their existing folder.\n\nPicked folders are copied locally for native streaming; they are not used as a live SAF mount. Folder permission is needed only while copying. Keep this screen open until the copy finishes.",13,ModernUi.MUTED));
+        ModernUi.action(this,panel,"Use accessible Android/media folder",()->{try{File target=GameStorage.accessible(this);new android.app.AlertDialog.Builder(this).setTitle("Use accessible game folder?").setMessage(target+"\n\nExisting game files are copied and verified first. This needs enough free storage for a second copy. The original remains available.").setPositiveButton("Copy and select",(d,w)->storageOperation(()->GameStorage.switchTo(mDataRoot,target))).setNegativeButton("Cancel",null).show();}catch(IOException e){toast(e.getMessage());}});
+        ModernUi.action(this,panel,"Use app data folder",()->storageOperation(()->GameStorage.switchTo(mDataRoot,new File(mDataRoot,"LibertyRecomp"))));
+        ModernUi.action(this,panel,"Copy an existing game folder here",()->{Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);new android.app.AlertDialog.Builder(this).setTitle("Import a local game copy?").setMessage("Choose the folder containing default.xex, or its parent containing game and optionally dlc. A validated copy replaces those folders here. Any replaced files are kept in folder-import-recovery; other app data stays in place.").setNegativeButton("Cancel",null).setPositiveButton("Choose folder",(d,w)->{try{startActivityForResult(pick,REQUEST_GAME_TREE);}catch(Exception e){toast("No folder picker available.");}}).show();});
+        ModernUi.dialog(this,"Game file location",panel).show();
     }
+    private void storageOperation(SlotTask task){if(mBusy||gameRunning())return;setBusy(true,"Preparing game folder…");new Thread(()->{String result;try{task.run();String catalog=Installer.prepareAchievements(this,mDataRoot);result="Game folder ready. Original files were kept."+(catalog==null||catalog.isEmpty()?"":" Achievement catalog: "+catalog);}catch(IOException|RuntimeException e){result="Game folder operation did not finish: "+e.getMessage();}String value=result;mMain.post(()->{setBusy(false,null);toast(value);refreshInstall();refreshStatus();});},"GameStorage").start();}
+    private void showSaveData() {
+        if(mBusy)return;if(gameRunning()){toast("Quit the game before managing saves.");return;}
+        new android.app.AlertDialog.Builder(this).setTitle("Save data").setItems(new String[]{"Manage individual slots","Export all saves & achievements","Import full backup"},(dialog,which)->{if(which==0)showSaveSlots();else if(which==1)pickSaveDocument(true);else new android.app.AlertDialog.Builder(this).setTitle("Restore full backup?").setMessage("Validate and replace included save data, keeping a recovery copy. Older save-only backups preserve achievements.").setPositiveButton("Choose ZIP",(d,w)->pickSaveDocument(false)).setNegativeButton("Cancel",null).show();}).show();
+    }
+    private void showSaveSlots(){
+        if(mBusy||gameRunning())return;setBusy(true,"Reading save slots…");new Thread(()->{try{java.util.List<SaveData.Slot> slots=SaveData.slots(SaveData.root(mDataRoot));mMain.post(()->{setBusy(false,null);if(slots.isEmpty()){toast("No save slots found. Make an in-game save first.");return;}String[] labels=new String[slots.size()];for(int i=0;i<labels.length;i++){SaveData.Slot slot=slots.get(i);labels[i]=slot.label()+"\n"+slot.details();}
+        new android.app.AlertDialog.Builder(this).setTitle("Individual save slots").setItems(labels,(d,index)->{mSelectedSlot=slots.get(index).relative;new android.app.AlertDialog.Builder(this).setTitle(slots.get(index).label()).setItems(new String[]{"Back up this slot","Restore this slot from ZIP","Delete this slot"},(choice,action)->{if(action<2)pickSlotDocument(action==0);else new android.app.AlertDialog.Builder(this).setTitle("Delete selected slot?").setMessage("Only this save package and its header are removed. Other slots and achievements are preserved.").setPositiveButton("Delete",(x,w)->slotOperation(()->SaveData.deleteSlot(SaveData.root(mDataRoot),mSelectedSlot),"Selected save removed.")).setNegativeButton("Cancel",null).show();}).show();}).show();});}catch(IOException e){mMain.post(()->{setBusy(false,null);toast(e.getMessage());});}},"ReadSaveSlots").start();
+    }
+    private interface SlotTask{void run()throws IOException;}
+    private void slotOperation(SlotTask work,String message){if(mBusy||gameRunning()){toast("Quit the game and finish the current task first.");return;}setBusy(true,"Updating selected slot…");new Thread(()->{String result;try{work.run();result=message;}catch(IOException e){result="Save operation failed: "+e.getMessage();}String value=result;mMain.post(()->{setBusy(false,null);toast(value);refreshAchievementSummary();});},"ManageSaveSlot").start();}
+    private void pickSlotDocument(boolean export){Intent i=new Intent(export?Intent.ACTION_CREATE_DOCUMENT:Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/zip");if(export)i.putExtra(Intent.EXTRA_TITLE,"XHYN-IV-slot-"+new File(mSelectedSlot).getName()+".zip");try{startActivityForResult(i,export?REQUEST_SLOT_EXPORT:REQUEST_SLOT_IMPORT);}catch(Exception e){toast("No file picker available.");}}
     private void pickSaveDocument(boolean export) {
         Intent intent=new Intent(export?Intent.ACTION_CREATE_DOCUMENT:Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/zip");
@@ -399,13 +446,14 @@ public class LauncherActivity extends Activity {
     // ------------------------------------------------------------- game state
 
     private void refreshStatus() {
-        File game = new File(mDataRoot, "LibertyRecomp/game");
+        if(mLaunchSummary!=null)mLaunchSummary.setText(launchSummary());
+        File game = new File(Installer.installRoot(mDataRoot), "game");
         String[] installed = game.list();
         // The installer's own check once it is loaded; before that, a quick look.
         boolean installedNow = mInstallerReady ? mInstalled
                 : installed != null && installed.length > 0;
         if (installedNow) {
-            mStatus.setText("Game installed. Press Play.");
+            mStatus.setText("Game installed"+observedCompletion());
         } else {
             File[] sources = new File(mDataRoot, "install").listFiles();
             boolean disc = false;
@@ -798,6 +846,7 @@ public class LauncherActivity extends Activity {
             mInspection = null;
             mExpanded = false;
             refreshInstall();
+            refreshAchievementSummary();
             mPlay.requestFocus();
         } else {
             if (result != null) {
@@ -818,33 +867,41 @@ public class LauncherActivity extends Activity {
     }
 
     private void refreshDrivers() {
+        if(!mBusy&&!gameRunning())try{DriverPackages.recoverAll(customRoot());}
+        catch(IOException error){Log.w(TAG,"Driver recovery could not finish",error);}
         String current = currentDriverMode();
         mDrivers.setOnCheckedChangeListener(null);
         mDrivers.clearCheck();
         mDrivers.removeAllViews();
-        mDriverModes.clear();
+        mDriverModes.clear();mDriverTrash.clear();
         String renderer=GpuInfo.renderer();
-        addDriver(DriverBridge.AUTO,"Automatic (recommended)","Turnip for supported Adreno GPUs; system driver otherwise");
-        for(BundledDrivers.Bundle bundle:BundledDrivers.ALL.values()) {
-            if(DriverPolicy.supports(bundle.mode,renderer,Build.VERSION.SDK_INT))
-                addDriver(bundle.mode,bundle.label,bundle.mode.equals("turnip") ? "For Adreno 6xx/7xx" :
-                    "Optional community driver; compatibility needs device testing");
-        }
-        addDriver(DriverBridge.SYSTEM, "System driver",
-                "The device's own Vulkan driver (needs Vulkan 1.2)");
-        File[] packages = customRoot().listFiles();
-        if (packages != null) {
+        addDriver(DriverBridge.AUTO,"Automatic","Bundled Turnip for admitted Adreno GPUs; System otherwise");
+        addDriver(DriverBridge.SYSTEM,"System driver","The device's Vulkan driver; actual required features are checked before use");
+        java.util.List<BundledDrivers.Bundle> bundles=new java.util.ArrayList<>(BundledDrivers.ALL.values());
+        bundles.sort(java.util.Comparator.comparing(bundle->bundle.label));
+        for(BundledDrivers.Bundle bundle:bundles)if(DriverPolicy.supports(bundle.mode,renderer,Build.VERSION.SDK_INT))
+            addDriver(bundle.mode,bundle.label,DriverPolicy.reason(bundle.mode,renderer,Build.VERSION.SDK_INT));
+        java.util.List<File> unavailable=new java.util.ArrayList<>();
+        File[] packages=customRoot().listFiles();
+        if(packages!=null){
             Arrays.sort(packages);
-            for (File dir : packages) {
-                if (!dir.isDirectory() || dir.getName().startsWith(".") || !hasLibrary(dir)) continue;
-                JSONObject meta = readMeta(dir);
-                String name = meta != null ? meta.optString("name", dir.getName()) : dir.getName();
-                String details = meta == null ? "Imported driver" : join(
-                        meta.optString("description"), meta.optString("driverVersion"),
-                        meta.optString("author").isEmpty() ? "" : "by " + meta.optString("author"));
-                addDriver(DriverBridge.CUSTOM_PREFIX + dir.getName(), name,
-                        details.isEmpty() ? "Imported driver" : details);
+            for(File dir:packages){
+                if(!dir.isDirectory()||dir.getName().startsWith(".")||!hasLibrary(dir))continue;
+                JSONObject meta=readMeta(dir);
+                int minimum=meta==null?29:meta.optInt("minApi",29);
+                if(Build.VERSION.SDK_INT<minimum){unavailable.add(dir);continue;}
+                String name=meta==null?dir.getName():meta.optString("name",dir.getName());
+                String details=meta==null?"Imported; device support is unverified":join(meta.optString("description"),meta.optString("driverVersion"),meta.optString("author").isEmpty()?"":"by "+meta.optString("author"));
+                addDriver(DriverBridge.CUSTOM_PREFIX+dir.getName(),name,details.isEmpty()?"Imported; feature checks run before use":details);
             }
+        }
+        for(BundledDrivers.Bundle bundle:bundles)if(!DriverPolicy.supports(bundle.mode,renderer,Build.VERSION.SDK_INT)){
+            RadioButton choice=addDriver(bundle.mode,bundle.label,DriverPolicy.reason(bundle.mode,renderer,Build.VERSION.SDK_INT));choice.setEnabled(false);
+        }
+        for(File dir:unavailable){
+            JSONObject meta=readMeta(dir);
+            RadioButton choice=addDriver(DriverBridge.CUSTOM_PREFIX+dir.getName(),meta==null?dir.getName():meta.optString("name",dir.getName()),"Requires Android API "+(meta==null?29:meta.optInt("minApi",29)));
+            choice.setEnabled(false);
         }
         int index = mDriverModes.indexOf(current);
         if (index < 0) index = 0;
@@ -853,7 +910,7 @@ public class LauncherActivity extends Activity {
         updateDriverNote(index);
     }
 
-    private void addDriver(String mode, String name, String details) {
+    private RadioButton addDriver(String mode, String name, String details) {
         mDriverModes.add(mode);
         RadioButton button = new RadioButton(this);
         button.setId(mDriverModes.size());
@@ -870,23 +927,41 @@ public class LauncherActivity extends Activity {
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         button.setPadding(dp(6), dp(8), dp(6), dp(8));
         button.setBackground(focusBackground(Color.TRANSPARENT));
-        mDrivers.addView(button, new RadioGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if(mode.startsWith(DriverBridge.CUSTOM_PREFIX)){
+            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setBaselineAligned(false);
+            row.addView(button,new LinearLayout.LayoutParams(0,-2,1));button.setOnClickListener(v->mDrivers.check(button.getId()));
+            Button trash=ModernUi.iconButton(this,"trash","Delete "+name);trash.setVisibility(View.INVISIBLE);trash.setOnClickListener(v->confirmRemoveDriver(mode,name));row.addView(trash,new LinearLayout.LayoutParams(dp(40),dp(40)));mDriverTrash.put(mode,trash);
+            mDrivers.addView(row,new RadioGroup.LayoutParams(-1,-2));
+        }else mDrivers.addView(button,new RadioGroup.LayoutParams(-1,-2));
+        return button;
     }
 
     private void onDriverChecked(int id) {
         int index = id - 1;
         if (index < 0 || index >= mDriverModes.size()) return;
-        writeDriverMode(mDriverModes.get(index));
+        if(gameRunning()){toast("Quit the game before changing drivers.");refreshDrivers();return;}
+        if(!writeDriverMode(mDriverModes.get(index))){refreshDrivers();return;}
         updateDriverNote(index);
     }
 
     private void updateDriverNote(int index) {
         String mode = index >= 0 && index < mDriverModes.size() ? mDriverModes.get(index) : "";
-        boolean custom = mode.startsWith(DriverBridge.CUSTOM_PREFIX);
-        mRemove.setEnabled(custom);
-        mRemove.setAlpha(custom ? 1f : 0.4f);
-        mDriverNote.setText(GpuInfo.renderer().isEmpty() ? "GPU could not be identified; use System or import a compatible driver." : GpuInfo.renderer());
+        for(java.util.Map.Entry<String,View> entry:mDriverTrash.entrySet())entry.getValue().setVisibility(entry.getKey().equals(mode)?View.VISIBLE:View.INVISIBLE);
+        for(int i=0;i<mDrivers.getChildCount();i++){View child=mDrivers.getChildAt(i);if(child instanceof LinearLayout){RadioButton radio=(RadioButton)((LinearLayout)child).getChildAt(0);radio.setChecked(radio.getId()==index+1);}}
+        mDriverNote.setText((GpuInfo.renderer().isEmpty() ? "GPU could not be identified" : GpuInfo.renderer())+(BundledDrivers.ALL.containsKey(mode)?"\n"+DriverPolicy.reason(mode,GpuInfo.renderer(),Build.VERSION.SDK_INT):""));
+        try{
+            java.util.Properties observed=DriverState.observation(mDataRoot,mode);
+            if(observed.containsKey("observed")){
+                JSONObject status=new JSONObject(observed.getProperty("native","{}"));
+                String reason=status.optString("selection_error",status.optString("fallback_from",status.optString("error","")));
+                mDriverNote.append("\nLast observed: "+observed.getProperty("loaded","unknown")+" · "+new java.util.Date(Long.parseLong(observed.getProperty("observed","0")))+(reason.isEmpty()?"":"\n"+reason));
+                JSONObject gpu=status.optJSONObject("render_device");
+                if(gpu!=null)mDriverNote.append("\nRendered on "+gpu.optString("name")+" · "+gpu.optString("driver_info",gpu.optString("driver_name","")));
+                else{org.json.JSONArray devices=status.optJSONArray("devices");if(devices!=null)for(int i=0;i<devices.length();i++){JSONObject probe=devices.optJSONObject(i);if(probe!=null)mDriverNote.append("\nProbe: "+probe.optString("name")+(probe.optString("missing_features").isEmpty()?"":" · Missing "+probe.optString("missing_features"))+(probe.optString("compatibility_warnings").isEmpty()?"":"\n"+probe.optString("compatibility_warnings")));}}
+                if(Build.FINGERPRINT.equals(status.optString("device_fingerprint"))&&mode.equals(DriverState.lastWorking(mDataRoot,Build.FINGERPRINT,Build.VERSION.SDK_INT)))mDriverNote.append("\nPreviously published frames on this device. Visual correctness and matched performance remain separate checks.");
+            }
+        }catch(Exception ignored){}
+
     }
 
     private String currentDriverMode() {
@@ -901,29 +976,27 @@ public class LauncherActivity extends Activity {
         return DriverBridge.AUTO;
     }
 
-    private void writeDriverMode(String mode) {
-        try (OutputStream out = new FileOutputStream(new File(mDataRoot, "driver.txt"))) {
-            out.write((mode + "\n").getBytes(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            Log.e(TAG, "writing driver.txt failed", e);
-            toast("Could not save the driver choice: " + e.getMessage());
-        }
+    private boolean writeDriverMode(String mode) {
+        try {DriverState.choose(mDataRoot,mode);return true;}
+        catch(IOException e){Log.e(TAG,"writing driver choice failed",e);toast("Could not save the driver choice: "+e.getMessage());return false;}
     }
 
-    private void removeSelectedDriver() {
-        int index = mDrivers.getCheckedRadioButtonId() - 1;
-        if (index < 0 || index >= mDriverModes.size()) return;
-        String mode = mDriverModes.get(index);
-        if (!mode.startsWith(DriverBridge.CUSTOM_PREFIX)) return;
-        File dir = new File(customRoot(), mode.substring(DriverBridge.CUSTOM_PREFIX.length()));
-        deleteRecursively(dir);
-        writeDriverMode(DriverBridge.AUTO);
-        refreshDrivers();
-        toast("Driver removed. Using automatic selection.");
+    private void confirmRemoveDriver(String mode,String name){
+        if(mBusy){toast("Finish the current task first.");return;}
+        if(!mode.startsWith(DriverBridge.CUSTOM_PREFIX))return;
+        new AlertDialog.Builder(this).setTitle("Delete driver?").setMessage("Remove "+name+"? Automatic selection will be used next time you play.")
+            .setNegativeButton("Cancel",null).setPositiveButton("Delete",(d,w)->{
+                if(mBusy){toast("Finish the current task first.");return;}
+                if(gameRunning()){toast("Quit the game before deleting a driver.");return;}
+                File root=customRoot(),dir=new File(root,mode.substring(DriverBridge.CUSTOM_PREFIX.length()));
+                try{if(!dir.getCanonicalFile().getParentFile().equals(root.getCanonicalFile()))throw new IOException("Invalid driver path");DriverState.forget(mDataRoot,mode);DriverPackages.delete(dir);if(mode.equals(currentDriverMode()))writeDriverMode(DriverBridge.AUTO);refreshDrivers();refreshStatus();toast("Driver deleted.");}
+                catch(IOException error){toast("Could not delete driver: "+error.getMessage());}
+            }).show();
     }
 
     @SuppressWarnings("deprecation")
     private void pickDriverZip() {
+        if(mBusy||gameRunning()){toast("Quit the game and finish the current task before importing a driver.");return;}
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
@@ -940,10 +1013,12 @@ public class LauncherActivity extends Activity {
     @SuppressWarnings("deprecation")
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if(requestCode==REQUEST_GAME_TREE){if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null){final Uri uri=data.getData();storageOperation(()->GameStorage.importTree(this,mDataRoot,uri));}return;}
+        if(requestCode==REQUEST_SLOT_EXPORT||requestCode==REQUEST_SLOT_IMPORT){if(resultCode!=RESULT_OK||data==null||data.getData()==null)return;if(mSelectedSlot==null){toast("Select the save slot again.");return;}final String selected=mSelectedSlot;final Uri uri=data.getData();slotOperation(()->{File root=SaveData.root(mDataRoot);if(requestCode==REQUEST_SLOT_EXPORT){try(OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null)throw new IOException("Cannot open destination.");SaveData.exportSlot(root,selected,out);}}else{try(InputStream in=getContentResolver().openInputStream(uri)){if(in==null)throw new IOException("Cannot open backup.");SaveData.importSlot(root,selected,in);}}},requestCode==REQUEST_SLOT_EXPORT?"Selected slot backed up.":"Selected slot restored.");return;}
         if(requestCode==REQUEST_SAVE_EXPORT||requestCode==REQUEST_SAVE_IMPORT) {
             if(resultCode!=RESULT_OK||data==null||data.getData()==null)return;
             if(gameRunning()){toast("Quit the game before managing saves.");return;}
-            final Uri uri=data.getData();setBusy(true,requestCode==REQUEST_SAVE_EXPORT?"Exporting saves...":"Importing saves...");
+            final Uri uri=data.getData();setBusy(true,requestCode==REQUEST_SAVE_EXPORT?"Exporting saves and achievements...":"Importing backup...");
             new Thread(()->{
                 String result;
                 try {
@@ -953,9 +1028,9 @@ public class LauncherActivity extends Activity {
                     }else try(java.io.InputStream in=getContentResolver().openInputStream(uri)) {
                         if(in==null)throw new IOException("Cannot open save ZIP");SaveData.importZip(root,in);
                     }
-                    result=requestCode==REQUEST_SAVE_EXPORT?"Save data exported.":"Save data imported. Previous saves were kept locally.";
+                    result=requestCode==REQUEST_SAVE_EXPORT?"Saves and achievements exported.":"Backup imported. Replaced data was kept locally.";
                 }catch(IOException|RuntimeException error){result="Save operation failed: "+error.getMessage();}
-                final String message=result;mMain.post(()->{setBusy(false,null);toast(message);});
+                final String message=result;mMain.post(()->{setBusy(false,null);toast(message);refreshAchievementSummary();});
             },"ManageSaves").start();return;
         }
         if(requestCode==REQUEST_DEBUG_EXPORT) {
@@ -983,6 +1058,7 @@ public class LauncherActivity extends Activity {
             return;
         }
         Uri uri = data.getData();
+        if(mBusy||gameRunning()){toast("Quit the game and finish the current task before importing a driver.");return;}
         setBusy(true, "Importing driver...");
         new Thread(() -> {
             String message;
@@ -998,73 +1074,45 @@ public class LauncherActivity extends Activity {
             final String finalMode = mode;
             mMain.post(() -> {
                 setBusy(false, null);
-                if (finalMode != null) writeDriverMode(finalMode);
+                boolean selected=finalMode==null||writeDriverMode(finalMode);
                 refreshDrivers();
-                toast(finalMessage);
+                toast(selected?finalMessage:"Driver imported; the selection could not be saved.");
             });
         }, "DriverImport").start();
     }
 
     /** Unpacks a driver zip into files/drivers/NAME/ and returns "custom:NAME". */
     private String importDriver(Uri uri) throws IOException {
-        File staging = new File(customRoot(), ".import");
-        deleteRecursively(staging);
-        if (!staging.mkdirs()) throw new IOException("cannot create " + staging);
-        long total = 0;
-        List<String> libraries = new ArrayList<>();
+        if(gameRunning())throw new IOException("Quit the game before importing a driver.");
+        File root=customRoot(),staging=null;
+        DriverPackages.recoverAll(root);
+        try {
         try (InputStream raw = getContentResolver().openInputStream(uri)) {
             if (raw == null) throw new IOException("the file could not be opened");
-            try (ZipInputStream zip = new ZipInputStream(raw)) {
-                ZipEntry entry;
-                byte[] buffer = new byte[1 << 16];
-                while ((entry = zip.getNextEntry()) != null) {
-                    if (entry.isDirectory()) continue;
-                    // Packages keep their files at the root or in one folder;
-                    // only the file names matter.
-                    String name = entry.getName().replace('\\', '/');
-                    name = name.substring(name.lastIndexOf('/') + 1);
-                    if (name.isEmpty() || name.startsWith(".") || name.equals("..")) continue;
-                    File out = new File(staging, name);
-                    try (OutputStream output = new FileOutputStream(out)) {
-                        int read;
-                        while ((read = zip.read(buffer)) > 0) {
-                            total += read;
-                            if (total > MAX_DRIVER_BYTES) throw new IOException("the zip is too large");
-                            output.write(buffer, 0, read);
-                        }
-                    }
-                    if (name.endsWith(".so")) libraries.add(name);
-                }
-            }
-        } catch (IOException e) {
-            deleteRecursively(staging);
-            throw e;
+            staging=DriverPackages.stage(root,raw,MAX_DRIVER_BYTES);
         }
-        if (libraries.isEmpty()) {
-            deleteRecursively(staging);
+        File[] libraries=staging.listFiles((dir,name)->name.endsWith(".so"));
+        if (libraries==null||libraries.length==0) {
             throw new IOException("no driver library (.so) in the zip");
         }
         JSONObject meta = readMeta(staging);
+        if(new File(staging,"meta.json").exists()&&meta==null)throw new IOException("Invalid driver metadata.");
         String library = meta != null ? meta.optString("libraryName", "") : "";
-        if (!library.isEmpty() && !new File(staging, library).isFile()) {
-            deleteRecursively(staging);
-            throw new IOException("meta.json names " + library + ", which is not in the zip");
+        if (!library.isEmpty() && (!DriverPackages.filename(library)||!library.endsWith(".so")||!new File(staging, library).isFile())) {
+            throw new IOException("Invalid or missing driver library in meta.json.");
         }
-        if (library.isEmpty() && libraries.size() != 1) {
-            deleteRecursively(staging);
+        if (library.isEmpty() && libraries.length != 1) {
             throw new IOException("several .so files and no meta.json saying which is the driver");
         }
         String base = meta != null && !meta.optString("name").isEmpty()
                 ? meta.optString("name") : displayName(uri);
         String name = sanitize(base);
-        File target = new File(customRoot(), name);
-        deleteRecursively(target);
-        if (!staging.renameTo(target)) {
-            deleteRecursively(staging);
-            throw new IOException("cannot move the driver into place");
-        }
-        Log.i(TAG, "imported driver " + name + " (" + total + " bytes)");
+        String mode=DriverBridge.CUSTOM_PREFIX+name;
+        DriverState.forget(mDataRoot,mode);
+        DriverPackages.activate(root,name,staging);
+        Log.i(TAG, "imported driver " + name);
         return DriverBridge.CUSTOM_PREFIX + name;
+        } finally { if(staging!=null)DriverPackages.delete(staging); }
     }
 
     private String displayName(Uri uri) {
@@ -1094,12 +1142,12 @@ public class LauncherActivity extends Activity {
 
     private static JSONObject readMeta(File dir) {
         File meta = new File(dir, "meta.json");
-        if (!meta.isFile()) return null;
+        if (!meta.isFile()||meta.length()>65536||java.nio.file.Files.isSymbolicLink(meta.toPath())) return null;
         try (InputStream in = new FileInputStream(meta)) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             byte[] buffer = new byte[4096];
             int read;
-            while ((read = in.read(buffer)) > 0) bytes.write(buffer, 0, read);
+            while ((read = in.read(buffer)) > 0) {if(bytes.size()+read>65536)return null;bytes.write(buffer, 0, read);}
             return new JSONObject(bytes.toString("UTF-8").replace("﻿", ""));
         } catch (Exception e) {
             return null;
@@ -1136,21 +1184,8 @@ public class LauncherActivity extends Activity {
         }catch(IOException e){Log.w(TAG,"Graphics preference migration deferred",e);}
     }
     private void showPerformanceTestSettings() {
-        android.content.SharedPreferences perf=perfTestPreferences();
-        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
-        panel.addView(ModernUi.text(this,"Graphics and optional phone performance controls. Compare the same route when testing changes.",14,ModernUi.MUTED));
-        ModernUi.action(this,panel,"Graphics settings",()->{
-            if(gameRunning()){toast("Use Graphics from the in-game menu while playing.");return;}MobileSettingsUi.graphics(this,mDataRoot,null);
-        });
-        LinearLayout advanced=new LinearLayout(this);advanced.setOrientation(LinearLayout.VERTICAL);advanced.setVisibility(View.GONE);
-        ModernUi.action(this,panel,"Advanced phone options",()->advanced.setVisibility(advanced.getVisibility()==View.GONE?View.VISIBLE:View.GONE));
-        android.widget.CheckBox sustained=styledCheck("Sustained performance","Ask Android for steadier long-session performance, where supported.",perf.getBoolean(PERF_SUSTAINED,false));advanced.addView(sustained,matchWrap(dp(12)));
-        android.widget.CheckBox guard=styledCheck("Thermal guard","Temporarily reduce draw distance and back off optional GPU turbo when thermal pressure rises.",perf.getBoolean(PERF_THERMAL_GUARD,false));advanced.addView(guard,matchWrap(dp(6)));
-        android.widget.CheckBox turbo=styledCheck("Prefer peak GPU speed","Adreno only. Higher heat and battery use; may reduce sustained performance.",perf.getBoolean(PERF_GPU_TURBO,false));turbo.setEnabled(DriverPolicy.supports("turnip",GpuInfo.renderer(),Build.VERSION.SDK_INT));advanced.addView(turbo,matchWrap(dp(8)));
-        android.widget.CheckBox safe=styledCheck("Compatibility mode","Disable optional speed shortcuts for troubleshooting.",perf.getBoolean(PERF_SAFE_MODE,false));advanced.addView(safe,matchWrap(dp(6)));panel.addView(advanced);
-        Runnable save=()->perf.edit().putBoolean(PERF_SUSTAINED,sustained.isChecked()).putBoolean(PERF_THERMAL_GUARD,guard.isChecked()).putBoolean(PERF_GPU_TURBO,turbo.isChecked()).putBoolean(PERF_SAFE_MODE,safe.isChecked()).apply();
-        final android.app.AlertDialog[] dialog={null};
-        dialog[0]=ModernUi.dialog(this,"Graphics & performance",panel,"Save changes",()->{save.run();dialog[0].dismiss();});dialog[0].show();
+        if(gameRunning()){toast("Use Settings from the in-game menu while playing.");return;}
+        MobileSettingsUi.graphics(this,mDataRoot,null);
     }
 
     /** A check box in the launcher's style: label, muted note, gamepad focus outline. */
@@ -1219,6 +1254,7 @@ public class LauncherActivity extends Activity {
             // A game process from an earlier session keeps the driver it
             // started with; end it so this launch uses the current choice.
             stopGameProcess();
+            try{SessionHistory.recoverBenchmark(mDataRoot,getFilesDir());}catch(IOException e){Log.w(TAG,"Previous benchmark could not be recovered",e);}
             DebugLog.stopLeftovers(mDataRoot);
             try{DebugLogArchive.clear(mDataRoot,getFilesDir());}catch(IOException e){Log.w(TAG,"Old logs could not be fully removed",e);}
             mMain.post(() -> {
@@ -1235,11 +1271,12 @@ public class LauncherActivity extends Activity {
                     intent.putExtra(LibertyActivity.EXTRA_RENDERER_CAPTURE,mDebugMode==3);
                 }
                 android.content.SharedPreferences perf = perfTestPreferences();
-                intent.putExtra(LibertyActivity.EXTRA_GPU_TURBO, perf.getBoolean(PERF_GPU_TURBO, false));
-                intent.putExtra(LibertyActivity.EXTRA_SUSTAINED, perf.getBoolean(PERF_SUSTAINED, false));
+                java.util.Map<String,String> settings;try{settings=PerformanceLaunchOptions.nextSettings(mDataRoot);}catch(IOException e){settings=java.util.Collections.emptyMap();}
+                intent.putExtra(LibertyActivity.EXTRA_GPU_TURBO, Boolean.parseBoolean(settings.getOrDefault("android_gpu_turbo",Boolean.toString(perf.getBoolean(PERF_GPU_TURBO,false)))));
+                intent.putExtra(LibertyActivity.EXTRA_SUSTAINED, UiPreferences.get(this,"sustained"));
                 intent.putExtra(LibertyActivity.EXTRA_THERMAL_GUARD,
-                        perf.getBoolean(PERF_THERMAL_GUARD, false));
-                intent.putExtra(LibertyActivity.EXTRA_SAFE_MODE, perf.getBoolean(PERF_SAFE_MODE, false));
+                        Boolean.parseBoolean(settings.getOrDefault("android_thermal_guard",Boolean.toString(perf.getBoolean(PERF_THERMAL_GUARD,false)))));
+                intent.putExtra(LibertyActivity.EXTRA_SAFE_MODE,Boolean.parseBoolean(settings.getOrDefault("gta4_safe_mode",Boolean.toString(perf.getBoolean(PERF_SAFE_MODE,false)))));
                 startActivity(intent);
             });
         }, "LaunchGame").start();

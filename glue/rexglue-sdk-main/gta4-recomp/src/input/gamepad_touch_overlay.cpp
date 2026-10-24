@@ -1,7 +1,9 @@
 #include "input/gamepad_touch_overlay.h"
 #include "input/liberty_touch_overlay.h"
 #include "input/context_touch_context.h"
+#include "input/context_touch_draw.h"
 #include "input/gamepad_touch_defaults.h"
+#include "input/touch_theme.h"
 
 #include <algorithm>
 #include <array>
@@ -46,6 +48,8 @@ REXCVAR_DEFINE_DOUBLE(gta4_touch_gamepad_opacity, 1.0, "GTA IV/Input/Touch",
                       "Opacity of the on-screen gamepad (0.3 faint to 1.6 strong)");
 REXCVAR_DECLARE(std::string,gta4_touch_move_mode);
 REXCVAR_DECLARE(double,gta4_touch_move_smoothing);
+REXCVAR_DEFINE_BOOL(gta4_touch_icon_outline,false,"GTA IV/Input/Touch","Add a dark outline following each touch glyph");
+REXCVAR_DEFINE_BOOL(gta4_touch_animations,true,"GTA IV/Input/Touch","Animate touch-button press feedback");
 
 namespace gta4::input {
 namespace {
@@ -62,16 +66,18 @@ struct Control {
 };
 
 constexpr size_t kControlCount = kXboxControlDefaults.size();
+constexpr std::array<const char*, kControlCount> kThemeIcons = {
+    nullptr, nullptr, "up", "down", "left", "right", "lt", "lb", "l3",
+    "a", "b", "x", "y", "rt", "rb", "r3", "view", "xbox_menu"};
 constexpr size_t kLeftStick = 0;
 constexpr size_t kRightStick = 1;
 constexpr float kDeadZone = 0.12f;
 
 // Grey and see-through, so the overlay does not hide the game.
-constexpr ImU32 kFill = IM_COL32(21, 21, 21, 92);
-constexpr ImU32 kFillHeld = IM_COL32(223, 194, 138, 135);
-constexpr ImU32 kRing = IM_COL32(244, 241, 232, 130);
-constexpr ImU32 kLabel = IM_COL32(244, 241, 232, 220);
-constexpr ImU32 kKnob = IM_COL32(225, 225, 225, 130);
+constexpr ImU32 kFill = IM_COL32(18, 18, 18, 96);
+constexpr ImU32 kFillHeld = IM_COL32(50, 50, 50, 150);
+constexpr ImU32 kLabel = IM_COL32(194, 194, 194, 225);
+constexpr ImU32 kKnob = IM_COL32(194, 194, 194, 190);
 
 // The colours above with their alpha scaled by gta4_touch_gamepad_opacity.
 ImU32 Faded(ImU32 color,float multiplier=1.f) {
@@ -86,7 +92,7 @@ struct Finger {
   int control = -1;
 };
 
-struct LayoutEdit {float dx=0,dy=0,scale=1;bool hidden=false;};
+struct LayoutEdit {float dx=0,dy=0,scale=1,opacity=1;bool hidden=false;};
 
 struct State {
   std::mutex mutex;
@@ -95,6 +101,7 @@ struct State {
   std::array<LayoutEdit,kControlCount> layout{};
   std::array<Control, kControlCount> controls{};
   std::array<bool, kControlCount> held{};
+  std::array<float,kControlCount> press_feedback{};
   // Sticks float: the centre is where the finger came down.
   ImVec2 stick_origin[2] = {{0, 0}, {0, 0}};
   float stick_x[2] = {0, 0};  // -1..1, screen space (y down)
@@ -136,7 +143,7 @@ void LoadLayout(State& s) {
     if(!(input>>key>>edit.dx>>edit.dy>>edit.scale>>hidden)||!std::isfinite(edit.dx)||!std::isfinite(edit.dy)||!std::isfinite(edit.scale))continue;
     for(size_t i=0;i<kControlCount;++i)if(key==std::string("xbox/")+kXboxControlDefaults[i].id){
       edit.dx=std::clamp(edit.dx,-2000.f,2000.f);edit.dy=std::clamp(edit.dy,-800.f,800.f);
-      edit.scale=std::clamp(edit.scale,.35f,4.f);edit.hidden=hidden!=0;s.layout[i]=edit;break;
+      edit.scale=std::clamp(edit.scale,.35f,4.f);edit.hidden=hidden!=0;float opacity=1;if(input>>opacity&&std::isfinite(opacity))edit.opacity=std::clamp(opacity,0.f,1.f);s.layout[i]=edit;break;
     }
   }
 }
@@ -211,34 +218,47 @@ ImVec2 LabelOrigin(ImFont* font, float size, const char* label, ImVec2 center) {
   return ImVec2(x, y);
 }
 
-void Draw(ImDrawList* draw, ImFont* font, float font_size, const State& s) {
+void Draw(ImDrawList* draw, ImFont* font, float font_size, State& s) {
   for (size_t i = 0; i < s.controls.size(); ++i) {
     const auto& control = s.controls[i];
+    const auto faded=[opacity=s.layout[i].opacity](ImU32 color,float factor=1.f){return Faded(color,factor*opacity);};
     if (control.r <= 0.0f) continue;
     const bool active = s.held[i];
-    const float radius = control.r;
+    auto& feedback=s.press_feedback[i];
+    feedback+=(float(active)-feedback)*(REXCVAR_GET(gta4_touch_animations)?std::min(1.f,ImGui::GetIO().DeltaTime*18.f):1.f);
+    const float radius = control.r*(1.f-.035f*feedback);
     if (control.kind == Kind::kStick) {
       // The camera stick shows only while it is being used.
       if (control.index == 1 && (!active || SwipeCamera())) continue;
       if(control.index==0&&REXCVAR_GET(gta4_touch_move_mode)=="invisible")continue;
       const ImVec2 center = active ? s.stick_origin[control.index] : ImVec2(control.x, control.y);
       const float camera_alpha=control.index==1?float(REXCVAR_GET(gta4_touch_camera_opacity)):1.f;
-      draw->AddCircleFilled(center, radius, Faded(kFill,camera_alpha), 48);
-      draw->AddCircle(center, radius, Faded(kRing,camera_alpha), 48, std::max(1.0f, radius * 0.018f));
+      draw->AddCircleFilled(center, radius, faded(kFill,camera_alpha), 48);
       const ImVec2 knob(center.x + s.stick_x[control.index] * radius * 0.55f,
                         center.y + s.stick_y[control.index] * radius * 0.55f);
-      draw->AddCircleFilled(knob, radius * 0.34f, Faded(kKnob,camera_alpha), 32);
+      theme::DrawStickGrip(draw, knob, radius, faded(kKnob,camera_alpha));
       continue;
     }
     const ImVec2 center(control.x, control.y);
-    const bool pill=control.kind==Kind::kTrigger || (control.label&&std::strlen(control.label)>1);
-    if(pill) {
-      const ImVec2 lo(center.x-radius*1.18f,center.y-radius*.72f),hi(center.x+radius*1.18f,center.y+radius*.72f);
-      draw->AddRectFilled(lo,hi,Faded(active?kFillHeld:kFill),radius*.45f);
-      draw->AddRect(lo,hi,Faded(kRing),radius*.45f,0,std::max(1.f,radius*.018f));
-    }else {
-      draw->AddCircleFilled(center,radius,Faded(active?kFillHeld:kFill),48);
-      draw->AddCircle(center,radius,Faded(control.label_color?control.label_color:kRing),48,std::max(1.f,radius*.025f));
+    draw->AddCircleFilled(center,radius,faded(active?kFillHeld:kFill),48);
+    ContextTouchIcon image;
+    if (kThemeIcons[i] && ResolveLibertyIcon(kThemeIcons[i], &image)) {
+      if(REXCVAR_GET(gta4_touch_icon_outline))theme::DrawImageOutline(draw,image.texture,center,radius,image.uv_min,image.uv_max,faded(IM_COL32(8,8,8,230)));
+      draw->AddImage(image.texture, ImVec2(center.x-radius, center.y-radius),
+                     ImVec2(center.x+radius, center.y+radius), image.uv_min,
+                     image.uv_max, faded(control.label_color ? control.label_color : kLabel));
+      continue;
+    }
+    if(control.button==rex::input::X_INPUT_GAMEPAD_START){
+      for(int row=-1;row<=1;++row)draw->AddRectFilled(ImVec2(center.x-radius*.44f,center.y+row*radius*.27f-radius*.055f),ImVec2(center.x+radius*.44f,center.y+row*radius*.27f+radius*.055f),faded(kLabel),radius*.05f);
+      continue;
+    }
+    if(control.button==rex::input::X_INPUT_GAMEPAD_BACK){
+      const float q=radius*.36f;
+      draw->AddRectFilled(ImVec2(center.x-q*1.3f,center.y-q*1.3f),ImVec2(center.x+q*.6f,center.y+q*.6f),faded(kLabel),radius*.07f);
+      draw->AddRectFilled(ImVec2(center.x-q*.6f,center.y-q*.6f),ImVec2(center.x+q*1.3f,center.y+q*1.3f),faded(kFill),radius*.07f);
+      draw->AddRectFilled(ImVec2(center.x-q*.4f,center.y-q*.4f),ImVec2(center.x+q*1.3f,center.y+q*1.3f),faded(kLabel),radius*.07f);
+      continue;
     }
     if (control.kind == Kind::kArrow) {
       const float t = radius * 0.42f;
@@ -249,7 +269,7 @@ void Draw(ImDrawList* draw, ImFont* font, float font_size, const State& s) {
         case 2: a = {center.x - t, center.y}; b = {center.x + t * 0.6f, center.y + t}; c = {center.x + t * 0.6f, center.y - t}; break;
         default: a = {center.x + t, center.y}; b = {center.x - t * 0.6f, center.y - t}; c = {center.x - t * 0.6f, center.y + t}; break;
       }
-      draw->AddTriangleFilled(a, b, c, Faded(kLabel));
+      draw->AddTriangleFilled(a, b, c, faded(kLabel));
       continue;
     }
     // Letters fill most of the circle; longer labels are fitted to its width.
@@ -258,7 +278,7 @@ void Draw(ImDrawList* draw, ImFont* font, float font_size, const State& s) {
         : natural.x > 0.0f ? std::min(radius * 0.62f, font_size * radius * 1.35f / natural.x)
                            : font_size;
     draw->AddText(font, size, LabelOrigin(font, size, control.label, center),
-                  Faded(control.label_color ? control.label_color : kLabel), control.label);
+                  faded(control.label_color ? control.label_color : kLabel), control.label);
   }
 }
 

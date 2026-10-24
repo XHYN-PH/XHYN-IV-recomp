@@ -1,5 +1,6 @@
 // Runs the production overlays with real ImGui/CVar code and synthetic SDL fingers.
 #include <cassert>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -11,6 +12,7 @@
 #include <vector>
 #include <SDL3/SDL_touch.h>
 #include <imgui.h>
+#include "input/context_touch_draw.h"
 #include <rex/cvar.h>
 #include <rex/input/input.h>
 #include <rex/input/input_system.h>
@@ -19,6 +21,7 @@
 #include "input/context_touch_context.h"
 #include "input/gamepad_touch_overlay.h"
 #include "input/liberty_touch_overlay.h"
+#include "input/aim_hold_policy.h"
 
 namespace rex::input::mnk {bool ReadVirtualControllerCompatibilityGamepad(uint32_t,X_INPUT_GAMEPAD&){return false;}}
 namespace rex::input {
@@ -67,7 +70,24 @@ static void Release(){fingers.clear();Frame();}
 static void Mode(gta4::input::ContextTouchMode mode){Release();context.base_mode=mode;Frame();}
 
 int main(int argc,char** argv){
-  assert(argc==2);user_folder=argv[1];std::filesystem::create_directories(user_folder);
+  {
+    gta4::input::AimHoldPolicy aim;
+    assert(aim.Update(true,100,400,true));
+    assert(!aim.Update(false,200,400,true)&&!aim.locked());
+    assert(aim.Update(true,300,400,true));
+    assert(aim.Update(true,700,400,true)&&aim.locked());
+    assert(aim.Update(false,710,400,true)&&aim.locked());
+    assert(!aim.Update(true,800,400,true)&&!aim.locked());
+    assert(!aim.Update(true,1400,400,true));
+    assert(!aim.Update(false,1500,400,true));
+    assert(aim.Update(true,1600,400,true));
+    assert(aim.Update(true,2000,400,true)&&aim.locked());
+    assert(!aim.Update(false,2001,400,false)&&!aim.locked());
+  }
+  assert(argc==2);user_folder=argv[1];
+  // Previous runs deliberately leave a hidden/moved Xbox A button behind.
+  // Each run must start with the default fixture before testing saved edits.
+  std::filesystem::remove_all(user_folder);std::filesystem::create_directories(user_folder);
   ImGui::CreateContext();auto& io=ImGui::GetIO();io.DisplaySize={1600,737};io.DeltaTime=1.0f/60;
   io.IniFilename=nullptr;io.Fonts->AddFontDefault();unsigned char* pixels;int w,h;
   io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
@@ -161,6 +181,27 @@ int main(int argc,char** argv){
   transform.revision=2;service.UpdatePresentation(transform,60,24,1480,680,4);
   Frame();
   assert(rex::cvar::SetFlagByName("gta4_touch_layout","gamepad"));Frame();
+  std::vector<std::string> themed_icons;
+  gta4::input::SetLibertyIconResolver([](void* context,std::string_view id,gta4::input::ContextTouchIcon* icon){
+    static_cast<std::vector<std::string>*>(context)->emplace_back(id);
+    icon->texture=static_cast<ImTextureID>(1);return true;
+  },&themed_icons);
+  Frame();
+  for(const auto* name:{"a","b","x","y","lt","rt","lb","rb","l3","r3","view","xbox_menu","up","down","left","right"}){
+    if(std::find(themed_icons.begin(),themed_icons.end(),name)==themed_icons.end()){
+      std::cerr<<"Missing theme glyph: "<<name<<"; requested:";
+      for(const auto& requested:themed_icons)std::cerr<<' '<<requested;
+      std::cerr<<'\n';assert(false);
+    }
+  }
+  const int plain_vertices=ImGui::GetDrawData()->TotalVtxCount;
+  assert(rex::cvar::SetFlagByName("gta4_touch_icon_outline","true"));Frame();
+  assert(ImGui::GetDrawData()->TotalVtxCount>plain_vertices);
+  for(int list=0;list<ImGui::GetDrawData()->CmdListsCount;++list)
+    for(const auto& vertex:ImGui::GetDrawData()->CmdLists[list]->VtxBuffer)
+      assert(std::isfinite(vertex.pos.x)&&std::isfinite(vertex.pos.y)&&std::isfinite(vertex.uv.x)&&std::isfinite(vertex.uv.y));
+  assert(rex::cvar::SetFlagByName("gta4_touch_icon_outline","false"));Frame();
+  gta4::input::SetLibertyIconResolver(nullptr,nullptr);
   assert(rex::cvar::SetFlagByName("gta4_touch_gamepad_scale","1"));
   std::filesystem::create_directories(user_folder/"LibertyRecomp");
   {std::ofstream layout(user_folder/"LibertyRecomp/liberty_touch_layout.txt");layout<<"xbox/a -350 -120 1 0\n";}

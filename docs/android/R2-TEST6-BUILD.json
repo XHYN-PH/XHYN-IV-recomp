@@ -1,0 +1,47 @@
+{
+  "version": "0.5.9.3-xhyn-r2-test6",
+  "version_code": 34,
+  "package": "com.xhyn.ivrecomp",
+  "apk_sha256": "0507caf127222bb5457d69b2b6b2545a044d14a35e2774eb43585cca86292e35",
+  "apk_bytes": 72486757,
+  "signer_sha256": "106de5f3a0f6bdf1cad369e87b8c509b8e34693b2c8eeac3a1c4627ac2a23d49",
+  "native_library_sha256": {
+    "libSDL3.so": "ebe35add31a98e01c05d6612bc847732da1d4642845902db6c08dd17cba56a1f",
+    "libc++_shared.so": "0c52cfab2df0d957d8b346a2bdc5ae8d71feca2591924d77e1cd724d5bf74352",
+    "libc11_threads_compat.so": "b05324a6d8dfd6aeda78d0bdfcff3e2837f0fd1b92dd58c35b51ffe08844c07a",
+    "libhook_impl.so": "a299d6cdee4063b3d22fb1ef7ffca0ce707f9a9aa42ec35e05ea9deee4a5cdff",
+    "libliberty_install.so": "9020822d8ad3955ba24331f134756967852ec3ef7f2d43a5110a9126a4837c18",
+    "libmain.so": "44e119a3e790d566d951cd49ab098771a6bbe8c4418491f81cfafd1f7f8b8c61",
+    "libmain_hook.so": "c3923f61c1166c5b57dba2b3ca5ebcbb007b67fca334a41cba549f5ff2a372d3",
+    "librexgpu-gta4-native.so": "eaef003c09ff03792649813ab862b6858d1d3db2ccde5ae7e88830f0bb8094a2",
+    "librexgpu-xenos.so": "a4f54277fee63ed37f9967bcb4a94df2e2aa8d81f328073a595f8c60ca9c5cf9",
+    "librexruntime.so": "17427d96e0691b10cb556ee67b121af02c682db25e8e01cd50ea7fb389e69b2b",
+    "libvulkan.so": "b6dcb1f61baabc1810a517e39513e8392729838a18aefec183313dddb40314c7"
+  },
+  "bundled_driver_zip_sha256": {
+    "turnip-r6.zip": "5fa2305eb9eff64d9347a670e6ca5ef7c518f60e9e782a4db7ee5588c9852d81",
+    "panvk-rc3.zip": "4ef95dfd5118f1f7854de97ed342a551971c1e339bea3160566a5725a792c85f",
+    "radv-xclipse-1.6.zip": "2b2fd55f24143fff1008789efdb9fe4c1a4b02855fdfe1c68af4d40760cbee3f",
+    "Turnip_Gen8_V38_Patched.zip": "2bbb279a3da7680503a54a51a3051c7a4302c8fb2a089f8b183b4b5d6ba9ac17",
+    "Turnip-710-720-722-v4.3.zip": "45ac070f30086cb67bd6f24600199293192c3fa4810c402b25ac185967a3b5e6",
+    "radv-xclipse-1.8.zip": "0545b1b24817cc0ed4a9e4fc440a7080cbaf69a9ce5d1e4bb22b0e697129c223",
+    "ESMERINGHOY-27.0.0-devel-A7XX-A8XX.zip": "29768adfaaa6fa7ee56cdbc11edd52aba0cb695360ca0fcf99dc751cdbeb0163"
+  },
+  "touch_pngs_verified": 43,
+  "crc_verified": true,
+  "signature_verified": true,
+  "alignment_16kb_verified": true,
+  "gyro_jni_verified": true,
+  "achievement_preparation_jni_verified": true,
+  "device_gameplay_verified": false,
+  "source_tree": "197afc7a0a01ad217eb4dc127153d1de2c9eea06",
+  "local_source_commit": "128e12449f7a771cd86f6a20cbc1665104fc8138",
+  "java_groups": 11,
+  "native_groups": 10,
+  "leak_coverage_verified": false,
+  "shader_cache_variants": {
+    "validated_accepted": 1619,
+    "rejected": 443,
+    "total": 2062
+  }
+}

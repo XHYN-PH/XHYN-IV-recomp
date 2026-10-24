@@ -241,12 +241,13 @@ also turns every crash of the game process into `files/crash_reports/crash-DATE.
 Android keeps about it (ApplicationExitInfo and the tombstone): the signal, the crashing thread's
 backtrace, the last log lines of the process, the device and driver details, and the end of the
 runtime log. The raw tombstone is saved next to it as `.tombstone.pb`. The runtime writes its own
-log files to `files/Liberty Recompiled/logs/`. Since 0.5.7.3 this log is on by default, at the
-`--log_level` from `args.txt`, unless `args.txt` sets `--diagnostics` itself. Every start also
-writes the device, GPU and driver details to `files/last_launch.txt`. Without a PC, a full logcat can be captured with
-*Developer options > Take bug report*. Include these when you report a problem on the
-[Issues](https://github.com/vaduur/LibertyRecompAndroid/issues) page, along with the
-device model, the Android version and your `args.txt`.
+log files to `files/Liberty Recompiled/logs/` when diagnostics are enabled.
+XHYN IV starts with detailed diagnostics off. For a report, choose **Play with logs**,
+reproduce the problem, return to the launcher and choose **Share latest log**.
+The exported ZIP includes the session's device and driver information. Attach it to
+the XHYN testing PR or send it in [Telegram](https://t.me/xhynports), with the device
+model, Android version and a short description of the steps that trigger the problem.
+Without a PC, Android's *Developer options > Take bug report* can also capture logcat.
 
 ## Measuring performance
 

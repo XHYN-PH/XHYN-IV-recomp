@@ -5,6 +5,18 @@
 #include <cstdint>
 #include <optional>
 namespace gta4::android_power {
+struct ThermalPressure { bool hot=false,cool=false; };
+inline ThermalPressure ClassifyThermals(double headroom,int status,double gpu_c,
+                                        double hot_c,double cool_c) noexcept {
+  const bool prediction=std::isfinite(headroom)&&headroom>=0;
+  const bool severity=status>=0;
+  if(prediction||severity){
+    // A severe current reading must not be overruled by a cooler prediction.
+    return {(prediction&&headroom>=.95)||(severity&&status>=3),
+            (!prediction||headroom<=.75)&&(!severity||status<=1)};
+  }
+  return std::isfinite(gpu_c)?ThermalPressure{gpu_c>=hot_c,gpu_c<=cool_c}:ThermalPressure{};
+}
 inline std::atomic<bool> thermal_pressure{false};
 inline int64_t FrameBudgetNanoseconds(uint32_t cap) { return 1'000'000'000ll / std::clamp(cap ? cap : 60u, 10u, 240u); }
 inline int64_t HintTargetNanoseconds(uint32_t cap, double ms) {

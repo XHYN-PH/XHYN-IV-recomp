@@ -4,6 +4,8 @@
 // hold Pause for 1.5 s to edit, drag, then use Save layout.
 #include "input/liberty_touch_overlay.h"
 #include "input/gamepad_touch_overlay.h"
+#include "input/touch_theme.h"
+#include "input/aim_hold_policy.h"
 
 #include <algorithm>
 #include <array>
@@ -35,6 +37,13 @@
 
 #include "input/context_touch_context.h"
 #include "input/context_touch_draw.h"
+#include <rex/diagnostics/policy.h>
+REXCVAR_DECLARE(bool,gta4_touch_animations);
+REXCVAR_DECLARE(bool,gta4_touch_icon_outline);
+REXCVAR_DEFINE_BOOL(gta4_touch_aim_hold_lock,true,"GTA IV/Input/Touch",
+                    "Long-hold the mobile Aim button to keep aiming after release; tap again to unlock");
+REXCVAR_DEFINE_DOUBLE(gta4_touch_aim_hold_seconds,0.4,"GTA IV/Input/Touch",
+                      "Hold duration in seconds before mobile aim locks").range(0.2,1.5);
 
 REXCVAR_DECLARE(double, gta4_touch_gamepad_scale);
 REXCVAR_DECLARE(double, gta4_touch_gamepad_opacity);
@@ -55,7 +64,7 @@ REXCVAR_DEFINE_DOUBLE(gta4_touch_move_smoothing, 0.035, "GTA IV/Input/Touch",
 REXCVAR_DEFINE_BOOL(gta4_touch_radar_top, true, "GTA IV/Input/Touch",
                     "Place the gameplay radar at the top left while touch controls are enabled");
 
-REXCVAR_DEFINE_DOUBLE(gta4_touch_radar_margin,0.0,"GTA IV/Input/Touch","Minimap vertical offset as a fraction of safe height; negative moves up").range(-0.20,0.15);
+REXCVAR_DEFINE_DOUBLE(gta4_touch_radar_margin,-0.06,"GTA IV/Input/Touch","Minimap vertical offset as a fraction of safe height; negative moves up").range(-0.20,0.15);
 #if REX_PLATFORM_ANDROID
 extern "C" void GTA4_AndroidRequestTouchEditor();
 extern "C" void GTA4_AndroidTouchEditorClosed();
@@ -93,7 +102,7 @@ enum class Icon : uint8_t {
 // missing.
 const char* IconFile(Icon icon) {
   switch (icon) {
-    case Icon::kMenu: return "house";
+    case Icon::kMenu: return "menu";
     case Icon::kHouse: return "house";
     case Icon::kPhone: return "phone";
     case Icon::kView: return "view";
@@ -167,9 +176,11 @@ constexpr uint16_t kLT = 0, kRT = 1;
 // crouch/horn, R3 look back, LT aim/brake, RT fire/gas, D-pad weapons/phone.
 const std::vector<Spec>& Layout(Screen screen) {
   static const std::vector<Spec> on_foot = {
+      {"focus", Kind::kButton, Anchor::kCenter, 120, 58, 30, Icon::kEye, "FOCUS / LOOK", X_INPUT_GAMEPAD_RIGHT_THUMB, 0, kWhite},
+      {"radar", Kind::kButton, Anchor::kCenter, 200, 58, 30, Icon::kDown, "RADAR", X_INPUT_GAMEPAD_DPAD_DOWN, 0, kWhite},
       {"pause", Kind::kButton, Anchor::kCenter, 0, 58, 28, Icon::kMenu, "PAUSE", X_INPUT_GAMEPAD_START, 0, kWhite},
       {"phone", Kind::kButton, Anchor::kCenter, 280, 58, 30, Icon::kPhone, "PHONE", X_INPUT_GAMEPAD_DPAD_UP, 0, kWhite},
-      {"view", Kind::kButton, Anchor::kCenter, 360, 58, 30, Icon::kView, "VIEW", X_INPUT_GAMEPAD_BACK, 0, kWhite},
+      {"view", Kind::kButton, Anchor::kCenter, 360, 58, 30, Icon::kView, "CAMERA", X_INPUT_GAMEPAD_BACK, 0, kWhite},
       {"switch", Kind::kButton, Anchor::kCenter, 440, 58, 30, Icon::kGamepad, "XBOX", 0, 0, kWhite},
       {"move", Kind::kStick, Anchor::kLeft, 400, 540, 112, Icon::kNone, "MOVE", 0, 0, kWhite},
       {"crouch", Kind::kButton, Anchor::kLeft, 92, 260, 34, Icon::kCrouch, "CROUCH", X_INPUT_GAMEPAD_LEFT_THUMB, 0, kWhite},
@@ -188,9 +199,12 @@ const std::vector<Spec>& Layout(Screen screen) {
       {"camera", Kind::kStick, Anchor::kRight, 170, 590, 88, Icon::kView, "CAMERA", 1, 0, kWhite},
   };
   static const std::vector<Spec> driving = {
+      {"radar", Kind::kButton, Anchor::kCenter, 200, 58, 30, Icon::kDown, "RADAR", X_INPUT_GAMEPAD_DPAD_DOWN, 0, kWhite},
+      {"cinematic", Kind::kButton, Anchor::kLeft, 92, 490, 30, Icon::kView, "CINEMATIC", X_INPUT_GAMEPAD_B, 0, kWhite},
+      {"radio_previous", Kind::kButton, Anchor::kLeft, 175, 260, 30, Icon::kLeft, "PREV RADIO", X_INPUT_GAMEPAD_DPAD_LEFT, 0, kWhite},
       {"pause", Kind::kButton, Anchor::kCenter, 0, 58, 28, Icon::kMenu, "PAUSE", X_INPUT_GAMEPAD_START, 0, kWhite},
       {"phone", Kind::kButton, Anchor::kCenter, 280, 58, 30, Icon::kPhone, "PHONE", X_INPUT_GAMEPAD_DPAD_UP, 0, kWhite},
-      {"view", Kind::kButton, Anchor::kCenter, 360, 58, 30, Icon::kView, "VIEW", X_INPUT_GAMEPAD_BACK, 0, kWhite},
+      {"view", Kind::kButton, Anchor::kCenter, 360, 58, 30, Icon::kView, "CAMERA", X_INPUT_GAMEPAD_BACK, 0, kWhite},
       {"switch", Kind::kButton, Anchor::kCenter, 440, 58, 30, Icon::kGamepad, "XBOX", 0, 0, kWhite},
       {"steer_left", Kind::kSteer, Anchor::kLeft, 330, 585, 64, Icon::kSteerLeft, "STEER LEFT", 0, 0, kWhite},
       {"steer_right", Kind::kSteer, Anchor::kLeft, 505, 585, 64, Icon::kSteerRight, "STEER RIGHT", 1, 0, kWhite},
@@ -250,6 +264,11 @@ const std::vector<Spec>& Layout(Screen screen) {
       {"hang_up", Kind::kButton, Anchor::kRight, 270, 455, 40, Icon::kHangUp, "HANG UP", X_INPUT_GAMEPAD_B, kRed, kRed},
   };
   static const std::vector<Spec> menu = {
+      {"zoom_in", Kind::kTrigger, Anchor::kRight, 95, 180, 30, Icon::kUp, "ZOOM IN", kRT, 0, kWhite},
+      {"zoom_out", Kind::kTrigger, Anchor::kRight, 175, 180, 30, Icon::kDown, "ZOOM OUT", kLT, 0, kWhite},
+      {"map_move", Kind::kStick, Anchor::kLeft, 450, 520, 75, Icon::kNone, "MOVE MAP", 0, 0, kWhite},
+      {"map_x", Kind::kButton, Anchor::kRight, 95, 350, 30, Icon::kCheck, "X", X_INPUT_GAMEPAD_X, 0, kWhite},
+      {"map_y", Kind::kButton, Anchor::kRight, 175, 350, 30, Icon::kCheck, "Y", X_INPUT_GAMEPAD_Y, 0, kWhite},
       {"prev_tab", Kind::kButton, Anchor::kLeft, 215, 290, 38, Icon::kLB, "PREV TAB", X_INPUT_GAMEPAD_LEFT_SHOULDER, 0, kWhite},
       {"next_tab", Kind::kButton, Anchor::kRight, 215, 290, 38, Icon::kRB, "NEXT TAB", X_INPUT_GAMEPAD_RIGHT_SHOULDER, 0, kWhite},
       {"up", Kind::kButton, Anchor::kLeft, 200, 425, 42, Icon::kUp, "UP", X_INPUT_GAMEPAD_DPAD_UP, 0, kWhite},
@@ -304,7 +323,7 @@ Screen CurrentScreen(bool forced_menu, bool pause_flag_verified, uint32_t* logge
                          uint32_t(context.cutscene) << 4 | uint32_t(context.phone_visible) << 5 |
                          uint32_t(context.playing) << 6 | uint32_t(context.gameplay_allowed) << 7 |
                          uint32_t(forced_menu) << 8 | uint32_t(context.base_mode) << 12;
-  if (logged && *logged != facts) {
+  if (logged && *logged != facts && rex::diagnostics::IsEnabled(rex::diagnostics::Category::kGuestHooks)) {
     *logged = facts;
     REXLOG_WARN("liberty-touch: pause-flag={:08X} menu-screen={} valid={} frontend={} map={} "
                 "loading={} cutscene={} phone={} playing={} gameplay={} forced-menu={} mode={} verified={}",
@@ -344,6 +363,7 @@ struct Placed {
   const Spec* spec;
   ImVec2 center;
   float r;
+  float opacity=1;
 };
 
 struct Finger {
@@ -356,6 +376,8 @@ struct Finger {
 
 struct State {
   std::mutex mutex;
+  AimHoldPolicy aim_hold;
+  std::array<float,64> press_feedback{};
   bool visible = false;
   bool editing = false;
   bool layout_loaded = false;
@@ -372,6 +394,7 @@ struct State {
   // Custom offsets: "screen/id" -> offset in design units.
   std::map<std::string, ImVec2> offsets;
   std::map<std::string,float> sizes;
+  std::map<std::string,float> opacities;
   std::unordered_set<std::string> hidden;
   int editor_screen=0, selected=-1;
   int last_editor_context=0;
@@ -490,7 +513,7 @@ void LoadOffsets(State& s) {
       float scale=1;int hidden=0;
       if(in>>scale>>hidden && std::isfinite(scale)) {
         s.sizes[key]=std::clamp(scale,0.35f,4.0f);
-        if(hidden)s.hidden.insert(key);
+        if(hidden)s.hidden.insert(key);float opacity=1;if(in>>opacity&&std::isfinite(opacity))s.opacities[key]=std::clamp(opacity,0.f,1.f);
       }
     }
   }
@@ -505,7 +528,7 @@ bool SaveOffsets(const State& s) {
   for (const auto& [key, offset] : s.offsets) {
     auto size=s.sizes.find(key);
     file << key << ' ' << offset.x << ' ' << offset.y << ' '
-         << (size==s.sizes.end()?1.0f:size->second) << ' ' << s.hidden.contains(key) << '\n';
+         << (size==s.sizes.end()?1.0f:size->second) << ' ' << s.hidden.contains(key) << ' ' << (s.opacities.contains(key)?s.opacities.at(key):1.f) << '\n';
   }
   file.flush();if(!file)return false;file.close();if(file.fail())return false;
   std::error_code error;std::filesystem::rename(temporary,LayoutPath(),error);
@@ -591,7 +614,7 @@ void Place(State& s,float w,float h) {
     const float r=std::min(spec.r*unit*k*(std::string_view(spec.id)=="camera"?camera_scale:1.f)*(size==s.sizes.end()?1.f:size->second),std::min(safe[2],safe[3])*0.45f);
     px=std::clamp(px,safe[0]+r,safe[0]+safe[2]-r);
     const float py=std::clamp(safe[1]+(spec.y+offset.y)*unit,safe[1]+r,safe[1]+safe[3]-r);
-    s.placed.push_back({&spec, ImVec2(px, py), r});
+    s.placed.push_back({&spec, ImVec2(px, py), r,s.opacities.contains(key)?s.opacities.at(key):1.f});
   }
   s.held.assign(s.placed.size(), false);
 }
@@ -848,15 +871,11 @@ void DrawText(ImDrawList* d, ImFont* font, float size, ImVec2 top_center, const 
   d->AddText(font, size, pos, Alpha(kWhite, alpha * 0.95f), text);
 }
 
-// Reference style: an almost transparent disc, a thin light-grey ring, and a
-// large light-grey icon. Held controls brighten.
-constexpr ImU32 kRing = IM_COL32(225, 225, 225, 170);
-constexpr ImU32 kIconGrey = IM_COL32(222, 222, 222, 205);
+// Borderless discs and neutral glyphs shared with the Xbox theme.
+constexpr ImU32 kIconGrey = IM_COL32(194, 194, 194, 225);
 
 void DrawRing(ImDrawList* d, ImVec2 c, float r, float alpha, bool held) {
-  d->AddCircleFilled(c, r, Alpha(IM_COL32(0, 0, 0, held ? 70 : 28), alpha), 48);
-  d->AddCircle(c, r, Alpha(IM_COL32(0, 0, 0, 60), alpha), 48, std::max(3.0f, r * 0.06f));
-  d->AddCircle(c, r, Alpha(held ? IM_COL32(255, 255, 255, 235) : kRing, alpha), 48, std::max(2.0f, r * 0.035f));
+  d->AddCircleFilled(c, r, Alpha(IM_COL32(18, 18, 18, held ? 150 : 96), alpha), 48);
 }
 
 const char* ButtonHint(const Spec& spec) {
@@ -875,26 +894,34 @@ const char* ButtonHint(const Spec& spec) {
   }
 }
 
-void DrawControl(ImDrawList* d, ImFont* font, const State& s, size_t i, float unit) {
+void DrawControl(ImDrawList* d, ImFont* font, State& s, size_t i, float unit) {
   const Placed& c = s.placed[i];
   const Spec& spec = *c.spec;
-  const float configured_alpha = Opacity()*(std::string_view(spec.id)=="camera"?float(REXCVAR_GET(gta4_touch_camera_opacity)):1.f);
+  const float configured_alpha = c.opacity*Opacity()*(std::string_view(spec.id)=="camera"?float(REXCVAR_GET(gta4_touch_camera_opacity)):1.f);
   const float alpha=s.editing?std::max(.65f,configured_alpha):configured_alpha;
   const bool held = i < s.held.size() && s.held[i];
+  if(spec.icon==Icon::kAim&&s.aim_hold.locked()){
+    const ImVec2 p(c.center.x+c.r*.52f,c.center.y-c.r*.62f);
+    const ImU32 amber=Alpha(IM_COL32(223,194,138,255),alpha);
+    d->AddRect(ImVec2(p.x-4*unit,p.y-7*unit),ImVec2(p.x+4*unit,p.y+2*unit),amber,3*unit,0,2*unit);
+    d->AddRectFilled(ImVec2(p.x-6*unit,p.y-1*unit),ImVec2(p.x+6*unit,p.y+7*unit),amber,2*unit);
+  }
+  float& feedback=s.press_feedback[i%s.press_feedback.size()];
+  feedback+=(float(held)-feedback)*(REXCVAR_GET(gta4_touch_animations)?std::min(1.f,ImGui::GetIO().DeltaTime*18.f):1.f);
+  const float visual_scale=1.f-.035f*feedback;
   const ImU32 hole = IM_COL32(0, 0, 0, 0);
   if (spec.kind == Kind::kStick) {
     if(!s.editing&&spec.button==0&&s.placed_move_mode=="invisible")return;
     ImVec2 center=c.center;
     if(!s.editing&&spec.button==0&&s.placed_move_mode!="fixed")
       for(const auto& [key,f]:s.fingers)if(f.control==int(i)){center=f.origin;break;}
-    DrawRing(d, center, c.r, alpha * 0.9f, false);
+    DrawRing(d, center, c.r, alpha * 0.9f, held);
     const ImVec2 v = s.stick[spec.button];
     const ImVec2 knob(center.x + v.x * c.r * 0.55f, center.y + v.y * c.r * 0.55f);
-    d->AddCircleFilled(knob, c.r * 0.34f, Alpha(IM_COL32(215, 215, 215, held ? 200 : 150), alpha), 40);
-    d->AddCircle(knob, c.r * 0.34f, Alpha(IM_COL32(0, 0, 0, 50), alpha), 40, 2.0f);
+    theme::DrawStickGrip(d, knob, c.r, Alpha(IM_COL32(194, 194, 194, held ? 225 : 170), alpha));
   } else {
-    DrawRing(d, c.center, c.r, alpha, held);
-    const float ir = c.r * 0.66f;
+    DrawRing(d, c.center, c.r*visual_scale, alpha, held);
+    const float ir = c.r * 0.66f*visual_scale;
     const ImU32 tint = Alpha(held ? IM_COL32(255, 255, 255, 240) : kIconGrey, alpha);
     ContextTouchIcon image;
     const char* file = IconFile(spec.icon);
@@ -902,10 +929,12 @@ void DrawControl(ImDrawList* d, ImFont* font, const State& s, size_t i, float un
         file && g_icon_resolver && g_icon_resolver(g_icon_context, file, &image) && image.texture;
     if (drew_image) {
       // Icon PNG: square, about 82% of the button's diameter.
-      const float half = c.r * 0.82f;
+      const float half = c.r * 0.82f*visual_scale;
+      if(REXCVAR_GET(gta4_touch_icon_outline))theme::DrawImageOutline(d,image.texture,c.center,half,image.uv_min,image.uv_max,Alpha(IM_COL32(8,8,8,230),alpha));
       d->AddImage(image.texture, ImVec2(c.center.x - half, c.center.y - half),
                   ImVec2(c.center.x + half, c.center.y + half), image.uv_min, image.uv_max, tint);
     } else {
+      if(REXCVAR_GET(gta4_touch_icon_outline))DrawIcon(Pen{d,Alpha(IM_COL32(8,8,8,230),alpha),std::max(1.f,ir*.055f)},spec.icon,c.center,ir,hole);
       const Pen fill{d, tint, 0.0f};
       // Cut-outs (windows, grooves) show the dark disc behind the icon.
       DrawIcon(fill, spec.icon, c.center, ir, Alpha(IM_COL32(20, 20, 22, 120), alpha));
@@ -972,7 +1001,7 @@ void RequestLibertyLayoutEditorClose() noexcept {editor_close_request.store(true
 void ReloadLibertyTouchLayout() noexcept {
   auto& s=state();std::lock_guard lock(s.mutex);
   s.layout_loaded=false;s.geometry_dirty=true;s.editing=false;s.selected=-1;
-  s.offsets.clear();s.sizes.clear();s.hidden.clear();s.fingers.clear();
+  s.offsets.clear();s.sizes.clear();s.opacities.clear();s.hidden.clear();s.fingers.clear();
   s.stick={ImVec2(0,0),ImVec2(0,0)};s.steer=0;s.smooth_move={0,0};
   s.held.assign(s.held.size(),false);PublishTouchLook(0,0,false);PublishInput(s);
 }
@@ -990,6 +1019,10 @@ void PublishLibertyPauseMenu(uint32_t pause_flag, uint32_t screen) noexcept {
 void SetLibertyIconResolver(LibertyIconResolver resolver, void* context) noexcept {
   g_icon_resolver = resolver;
   g_icon_context = context;
+}
+
+bool ResolveLibertyIcon(std::string_view id, ContextTouchIcon* icon) {
+  return icon && g_icon_resolver && g_icon_resolver(g_icon_context, id, icon) && icon->texture;
 }
 
 bool UpdateAndDrawLibertyTouchOverlay(ImDrawList* draw, ImFont* font, float font_size, float width,
@@ -1087,6 +1120,7 @@ bool UpdateAndDrawLibertyTouchOverlay(ImDrawList* draw, ImFont* font, float font
   // gameplay layout that was active when the player opened our menu.
   if(screen!=Screen::kHidden&&(s.editing||!TouchHostMenuOpen()))s.last_editor_context=int(screen)-1;
   if (screen != s.screen) {
+    s.aim_hold.Reset();
     s.screen = screen;
     s.geometry_dirty=true;
     for (const auto& [key,finger] : s.fingers) s.blocked_fingers.insert(key);
@@ -1219,6 +1253,19 @@ bool UpdateAndDrawLibertyTouchOverlay(ImDrawList* draw, ImFont* font, float font
   for (int i = 0; i < 2; ++i)
     if (!stick_owned[i]) s.stick[i] = ImVec2(0, 0);
   if(!s.swipe_active)PublishTouchLook(0,0,false);
+  {
+    const auto context=GetTouchContextSnapshot();
+    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    bool down=false,has_aim=false;
+    for(size_t i=0;i<s.placed.size();++i)if(s.placed[i].spec->icon==Icon::kAim){has_aim=true;down|=s.held[i];}
+    const double configured=REXCVAR_GET(gta4_touch_aim_hold_seconds);
+    const auto threshold=uint64_t((std::isfinite(configured)?std::clamp(configured,.2,1.5):.4)*1000);
+    const bool allowed=has_aim&&!s.editing&&!TouchHostMenuOpen()&&context.valid&&context.playing&&context.gameplay_allowed&&!context.loading&&!context.cutscene;
+    if(REXCVAR_GET(gta4_touch_aim_hold_lock)){
+      const bool active=s.aim_hold.Update(down,now,threshold,allowed);
+      for(size_t i=0;i<s.placed.size();++i)if(s.placed[i].spec->icon==Icon::kAim)s.held[i]=active;
+    }else s.aim_hold.Reset();
+  }
   if(stick_owned[0]&&!s.editing) {
     const double tau=REXCVAR_GET(gta4_touch_move_smoothing);
     const float dt=std::clamp(ImGui::GetIO().DeltaTime,1.f/240.f,0.1f);
@@ -1302,6 +1349,7 @@ bool ReadLibertyTouchOverlay(uint32_t user,rex::input::X_INPUT_GAMEPAD* output) 
 
 void ResetLibertyTouchOverlay() noexcept {
   auto& s=state(); std::lock_guard lock(s.mutex);
+  s.aim_hold.Reset();
   PublishTouchLook(0,0,false);s.smooth_move={0,0};
   for (const auto& [key,finger]:s.fingers) s.blocked_fingers.insert(key);
   s.fingers.clear();s.held.assign(s.held.size(),false);

@@ -12,7 +12,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 includes = [SDK / p for p in ("src", "include", "gta4-recomp/src", "thirdparty/fmt/include",
     "thirdparty/spdlog/include", "thirdparty/simde", "thirdparty/xxHash",
     "thirdparty/cli11/include", "thirdparty/tomlplusplus/include", "thirdparty/imgui",
-    "thirdparty/sdl3/include")]
+    "thirdparty/sdl3/include", "thirdparty/utfcpp/source")]
 flags = ["-std=c++23", "-O0", "-g1", "-pthread", "-msse4.1", "-fsanitize=address,undefined",
     "-fno-omit-frame-pointer", "-ffunction-sections", "-fdata-sections", "-DFMT_HEADER_ONLY",
     "-DSPDLOG_FMT_EXTERNAL", *["-I" + str(p) for p in includes]]
@@ -46,13 +46,30 @@ touch = ["tools/test_android_touch.cpp", *common,
     "glue/rexglue-sdk-main/gta4-recomp/src/input/gamepad_touch_overlay.cpp",
     *["glue/rexglue-sdk-main/thirdparty/imgui/" + name + ".cpp" for name in
       ("imgui", "imgui_draw", "imgui_tables", "imgui_widgets")]]
-for name, files in (("android-refinements", native), ("android-touch", touch),
+context_draw = ["glue/rexglue-sdk-main/tests/regression/controls/touch_activity_draw_runtime.cpp",
+    *["glue/rexglue-sdk-main/gta4-recomp/src/input/" + name + ".cpp" for name in
+      ("context_touch_activity", "context_touch_activity_layout", "context_touch_layout", "context_touch_draw")],
+    *["glue/rexglue-sdk-main/thirdparty/imgui/" + name + ".cpp" for name in
+      ("imgui", "imgui_draw", "imgui_tables", "imgui_widgets")]]
+profile = ["tools/test_profile_setting_lifetime.cpp", "tools/android_host_test_support.cpp", *common,
+    "glue/rexglue-sdk-main/src/core/byte_stream.cpp", "glue/rexglue-sdk-main/src/core/memory.cpp"]
+mods = ["tools/test_data_mods.cpp", "tools/android_host_test_support.cpp", *common,
+    *["glue/rexglue-sdk-main/src/" + path for path in (
+      "filesystem/device.cpp", "filesystem/entry.cpp", "filesystem/devices/host_path_device.cpp",
+      "filesystem/devices/host_path_entry.cpp", "filesystem/devices/host_path_file.cpp",
+      "core/filesystem.cpp", "core/filesystem_posix.cpp", "core/mapped_memory_posix.cpp",
+      "core/mutex.cpp", "core/utf8.cpp", "core/string_buffer.cpp", "core/filesystem_wildcard.cpp")]]
+for name, files in (("android-profile-lifetime", profile), ("android-data-mods", mods),
+                    ("android-refinements", native), ("android-touch", touch),
+                    ("android-context-draw", context_draw),
+                    ("android-vertex-locations", ["tools/test_vertex_location_remap.cpp"]),
                     ("android-shader-compat", ["tools/test_android_shader_compat.cpp"]),
                     ("android-mobile", ["tools/test_android_mobile.cpp"]),
+                    ("android-achievements",["tools/test_android_achievements.cpp","glue/rexglue-sdk-main/src/system/achievement_manager.cpp","glue/rexglue-sdk-main/src/core/diagnostics_policy.cpp",*common]),
                     ("android-launch", ["tools/test_android_launch.cpp","glue/rexglue-sdk-main/src/core/diagnostics_policy.cpp",*common])):
     objects = [obj(p) for p in files]
     executable = OUT / name
     subprocess.run(["g++", *flags, *objects, "-Wl,--gc-sections", "-o", str(executable)], check=True)
     data = "production-shaders" if name == "android-shader-compat" else "mobile-cache" if name=="android-mobile" else "touch-home"
     subprocess.run([str(executable), str(OUT / data)], check=True,
-                   env={**os.environ, "ASAN_OPTIONS": "detect_leaks=0"})
+                   env={**os.environ, "ASAN_OPTIONS": "detect_leaks=" + os.environ.get("XHYN_HOST_DETECT_LEAKS", "1" if name in ("android-profile-lifetime", "android-data-mods") else "0")})

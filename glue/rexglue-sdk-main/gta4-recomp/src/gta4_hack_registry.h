@@ -35,6 +35,12 @@ struct Entry {
 };
 
 inline constexpr auto kRegistry = std::to_array<Entry>({
+    {"gta4_cheat_achievements",Kind::kGameplay,"false","permit local achievement award events while cheats are used"},
+    {"gta4_touch_aim_hold_lock",Kind::kSetting,"","long-hold mobile aim latch"},
+    {"gta4_touch_aim_hold_seconds",Kind::kSetting,"","mobile aim latch hold duration"},
+    {"gta4_touch_icon_outline",Kind::kSetting,"","optional touch glyph outline"},
+    {"gta4_overlay_edge_gap",Kind::kSetting,"","overlay safe edge gap"},
+    {"gta4_touch_animations",Kind::kSetting,"","touch-button press feedback"},
     {"gta4_safe_mode", Kind::kSetting, "", "safe-mode control"},
     // --- Renderer shortcuts that can change the image when they are wrong ---
     {"gta4_native_fold_depth_clears", Kind::kShortcut, "false", "depth clears as load-op clears (LRZ)"},
@@ -45,6 +51,7 @@ inline constexpr auto kRegistry = std::to_array<Entry>({
     {"gta4_native_shared_key_memo", Kind::kShortcut, "false", "shared constants reused from the previous draw"},
     {"gta4_native_converted_texture_disk_cache",Kind::kShortcut,"false","optional bounded CPU texture disk cache"},
     {"gta4_native_pipeline_replay_budget_ms",Kind::kArchitecture,"","learned pipeline scheduling budget"},
+    {"gta4_native_texture_reuse_extended", Kind::kShortcut, "false", "optional longer texture retention within the same memory limit"},
     {"gta4_native_parallel_texture_decode", Kind::kShortcut, "false", "bounded parallel texture conversion"},
     {"gta4_native_detailed_counters", Kind::kDiagnostic, "", "optional per-draw diagnostics"},
     {"gta4_native_gpu_detile", Kind::kShortcut, "false", "textures untiled on the GPU"},

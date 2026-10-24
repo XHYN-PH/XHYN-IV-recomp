@@ -26,6 +26,10 @@ class HostPathDevice : public Device {
   ~HostPathDevice() override;
 
   bool Initialize() override;
+  bool AddReadOnlyOverlay(const std::filesystem::path& path);
+  struct Overlay { HostPathDevice* device; std::filesystem::path path; };
+  // Initialization only: commit all game/update overlays of one mod together.
+  static bool AddReadOnlyOverlays(const std::vector<Overlay>& overlays);
   void Dump(string::StringBuffer* string_buffer) override;
   Entry* ResolvePath(const std::string_view path) override;
 
@@ -49,6 +53,14 @@ class HostPathDevice : public Device {
 
  private:
   void PopulateEntry(HostPathEntry* parent_entry);
+  struct OverlayEdit {
+    HostPathEntry* parent;
+    size_t index;
+    std::unique_ptr<Entry> previous;
+  };
+  bool MergeReadOnlyOverlay(HostPathEntry* parent, const std::filesystem::path& path,
+                           uint32_t depth, uint32_t& files, uint64_t& bytes,
+                           std::vector<OverlayEdit>* edits);
 
   std::string name_;
   std::filesystem::path host_path_;

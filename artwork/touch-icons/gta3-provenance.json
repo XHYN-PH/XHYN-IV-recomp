@@ -1,0 +1,102 @@
+{
+  "source": "User-provided GTA III mobile APK",
+  "apk_sha256": "d39ec722706aaf42f8a8be8aaee2ceb4d59064ba2f727f30071b857f8109b715",
+  "processing": "Original glyph shapes; remove circular outline/backing and normalize tint; remaining actions use the matching vector set.",
+  "icons": [
+    {
+      "icon": "gas",
+      "source": "assets/es2/accelerate.png",
+      "source_sha256": "e7b58c294544cfcf2684053e56beabf9179ed308d7f749b61354d147b1434f43"
+    },
+    {
+      "icon": "brake",
+      "source": "assets/es2/break.png",
+      "source_sha256": "81337c5e179226a5cf157f2116531c8ca24f5557d3a13a5c560ef571df08275d"
+    },
+    {
+      "icon": "handbrake",
+      "source": "assets/es2/handbreak.png",
+      "source_sha256": "0d5352139c09cc22c6d25ec1564d658c18fd805de6e449a8b4ad97db4dd6db1f"
+    },
+    {
+      "icon": "horn",
+      "source": "assets/es2/horn.png",
+      "source_sha256": "ed2e0c298e5784ca1a79e1019c4080c0b5650c4e271419e4a21ed7591d5a8f46"
+    },
+    {
+      "icon": "jump",
+      "source": "assets/es2/jump.png",
+      "source_sha256": "61fc253f3f13f07ea9b14c41bf019ad5041929cae127ece9ca5b49f4d9c119f0"
+    },
+    {
+      "icon": "run",
+      "source": "assets/es2/run.png",
+      "source_sha256": "0f0ff89bfaa421f97872f86072712005227cdeaf3da5a5cf41a3949a7474e8be"
+    },
+    {
+      "icon": "fist",
+      "source": "assets/es2/punch.png",
+      "source_sha256": "f0c924da371b2401a96011724bb9b9487ac2fb5636a381ae43fa9e4db88930e7"
+    },
+    {
+      "icon": "aim",
+      "source": "assets/es2/target.png",
+      "source_sha256": "6d51cc1a45d9908923dd2738fef70463eab17250a2eed12bd596fbd71ef8876d"
+    },
+    {
+      "icon": "bullet",
+      "source": "assets/es2/shoot.png",
+      "source_sha256": "0a319d1b2ece0921fe1421981c6489867d520272ae507ef9ef64ce68624af90b"
+    },
+    {
+      "icon": "pistol",
+      "source": "assets/es2/shoot.png",
+      "source_sha256": "0a319d1b2ece0921fe1421981c6489867d520272ae507ef9ef64ce68624af90b"
+    },
+    {
+      "icon": "door",
+      "source": "assets/es2/enterandexit.png",
+      "source_sha256": "20489468d9bdff0814d0d00bab08a68e1a1d809b27151f3611ff4750242ca6b1"
+    },
+    {
+      "icon": "eye",
+      "source": "assets/es2/Camera-big.png",
+      "source_sha256": "1eaf6c0b6abb127b82ca43b20bf57e9ea11c48f3162a930a0082c557c015deed"
+    },
+    {
+      "icon": "menu",
+      "source": "assets/es2/pause.png",
+      "source_sha256": "f41c286b6ebd51e95f1bfea7a3c40b7abb6d9c20ffe608b62bd890bffd73c990"
+    },
+    {
+      "icon": "steer_left",
+      "source": "assets/es2/left.png",
+      "source_sha256": "23ad9c4613ed0e5c2652412cd4df9c490307e3d9813ef682acf6823c00072fa9"
+    },
+    {
+      "icon": "steer_right",
+      "source": "assets/es2/right.png",
+      "source_sha256": "a2de8d622af0119960d88757a60b89c4ad5586bcc1572168935f2ead82a76220"
+    },
+    {
+      "icon": "left",
+      "source": "assets/es2/left.png",
+      "source_sha256": "23ad9c4613ed0e5c2652412cd4df9c490307e3d9813ef682acf6823c00072fa9"
+    },
+    {
+      "icon": "right",
+      "source": "assets/es2/right.png",
+      "source_sha256": "a2de8d622af0119960d88757a60b89c4ad5586bcc1572168935f2ead82a76220"
+    },
+    {
+      "icon": "up",
+      "source": "assets/es2/right.png",
+      "rotation": 90
+    },
+    {
+      "icon": "down",
+      "source": "assets/es2/right.png",
+      "rotation": -90
+    }
+  ]
+}

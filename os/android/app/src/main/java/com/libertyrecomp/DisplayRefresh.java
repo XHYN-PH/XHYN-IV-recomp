@@ -13,14 +13,14 @@ final class DisplayRefresh {
         for(Display.Mode mode:display.getSupportedModes())if(mode.getPhysicalWidth()==current.getPhysicalWidth()&&mode.getPhysicalHeight()==current.getPhysicalHeight())compatible.add(mode);
         float[] rates=new float[compatible.size()];for(int i=0;i<rates.length;i++)rates[i]=compatible.get(i).getRefreshRate();
         float target=RefreshPolicy.choose(rates,cap);if(target<=0)return;
-        WindowManager.LayoutParams params=a.getWindow().getAttributes();
+        WindowManager.LayoutParams params=a.getWindow().getAttributes();int previousMode=params.preferredDisplayModeId;
         for(Display.Mode mode:compatible)if(Math.abs(mode.getRefreshRate()-target)<0.1f){params.preferredDisplayModeId=mode.getModeId();break;}
-        params.preferredRefreshRate=target;a.getWindow().setAttributes(params);
+        boolean changed=previousMode!=params.preferredDisplayModeId||Math.abs(params.preferredRefreshRate-target)>.1f;params.preferredRefreshRate=target;if(changed)a.getWindow().setAttributes(params);
         if(surface!=null&&surface.isValid()&&Build.VERSION.SDK_INT>=30)try {
             float frameRate=cap>0?cap:target;
-            if(Build.VERSION.SDK_INT>=31)surface.setFrameRate(frameRate,Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,Surface.CHANGE_FRAME_RATE_ALWAYS);
+            if(Build.VERSION.SDK_INT>=31)surface.setFrameRate(frameRate,Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS);
             else surface.setFrameRate(frameRate,Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
         }catch(IllegalArgumentException|IllegalStateException error){Log.w("LibertyRecomp","Frame-rate request rejected",error);}
-        Log.i("LibertyRecomp","Display: cap="+cap+" requested="+target+" active="+display.getRefreshRate()+" Hz");
+        String report="Display: cap="+cap+" requested="+target+" active="+display.getRefreshRate()+" Hz · seamless changes only";Log.i("LibertyRecomp",report);DebugLog.note(report);
     }
 }

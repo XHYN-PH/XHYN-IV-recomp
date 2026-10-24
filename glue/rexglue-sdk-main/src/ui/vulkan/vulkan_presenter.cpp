@@ -56,6 +56,8 @@
 #include <rex/ui/surface_mac.h>
 #endif
 
+REXCVAR_DEFINE_STRING(gta4_session_present_mode,"Not initialized","GTA IV/Status",
+                      "Active Vulkan presentation mode");
 REXCVAR_DEFINE_BOOL(present_render_pass_clear, true, "UI/Presenter",
                     "Clear render pass during presentation");
 
@@ -1554,6 +1556,10 @@ VkSwapchainKHR VulkanPresenter::PaintContext::CreateSwapchainForVulkanSurface(
       uint32_t(swapchain_create_info.presentMode));
 
   present_queue_family_out = queue_family_index_present;
+  rex::cvar::SetFlagByName("gta4_session_present_mode",
+      swapchain_create_info.presentMode==VK_PRESENT_MODE_IMMEDIATE_KHR?"Immediate":
+      swapchain_create_info.presentMode==VK_PRESENT_MODE_MAILBOX_KHR?"Mailbox":
+      swapchain_create_info.presentMode==VK_PRESENT_MODE_FIFO_RELAXED_KHR?"FIFO relaxed":"FIFO (VSync)");
   image_format_out = swapchain_create_info.imageFormat;
   image_color_space_out = swapchain_create_info.imageColorSpace;
   image_extent_out = swapchain_create_info.imageExtent;

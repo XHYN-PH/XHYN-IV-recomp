@@ -7,6 +7,7 @@
 #include "native_flat_set.h"
 #include "native_gpu_counters.h"
 #include "native_pipeline_stats.h"
+#include "native_benchmark_conditions.h"
 #include "native_command_bytes.h"
 #include "native_owned_commands.h"
 #include "native_snapshot_resource.h"
@@ -178,6 +179,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
     std::array<VkShaderModule, 4> colorless_modules{};
     std::string filename;
     std::vector<NativeVertexInput> vertex_inputs;
+    bool compact_vertex_inputs=false;
     // Reads gl_VertexIndex/gl_InstanceIndex: its draws cannot be concatenated.
     bool uses_vertex_index = false;
     // Bytes of this stage's guest constant bank any of its modules can read
@@ -219,6 +221,9 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
     uint64_t content_hash = 0;
     uint32_t maximum_stream = 0;
     std::vector<VertexElement> elements;
+    std::array<int16_t,40> element_by_location=[] {std::array<int16_t,40> a;a.fill(-1);return a;}();
+    const VertexElement* FindElement(uint32_t location)const {if(location>=element_by_location.size())return nullptr;const auto index=element_by_location[location];return index>=0?&elements[size_t(index)]:nullptr;}
+
   };
 
   struct NativeFixedFunctionState {
@@ -2151,10 +2156,13 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   void SignalGuestFrameComplete(uint32_t device, uint32_t frame);
   void UpdateDynamicDrawDistance();
   MobileFrameStats mobile_frame_stats_;
+  uint64_t session_stats_start_ns_=0, session_stats_last_ns_=0, session_stats_frames_=0;
   BenchmarkFrameStats benchmark_frame_stats_;
   uint32_t benchmark_trigger_=0;
   uint64_t benchmark_start_ns_=0,benchmark_last_csv_ns_=0;
   std::ofstream benchmark_file_;
+  NativeBenchmarkConditions benchmark_conditions_;
+  bool benchmark_capture_overlap_=false,benchmark_capture_omitted_=false;
   NativeGpuCounters gpu_counters_;
   NativePipelineStats pipeline_stats_;
   bool pipeline_stats_attempted_ = false;
@@ -2841,7 +2849,8 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   std::array<uint64_t,4096> recently_evicted_texture_generations_{};
   uint64_t texture_recent_reuploads_=0,texture_evictions_last_window_=0;
   MobileTextureReuseSample<4096> texture_content_reuse_;
-  uint64_t texture_content_reuploads_=0,texture_reupload_age_sum_=0;
+  uint64_t texture_content_reuploads_=0,texture_reupload_age_sum_=0,texture_content_reupload_bytes_=0;
+  std::array<uint64_t,5> texture_reupload_age_bins_{};
   std::array<uint64_t,3> texture_eviction_reasons_{};
   uint64_t texture_image_eviction_count_ = 0;
   uint64_t texture_image_evicted_bytes_ = 0;

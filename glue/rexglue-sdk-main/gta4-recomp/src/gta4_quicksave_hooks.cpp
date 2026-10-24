@@ -1,12 +1,17 @@
 #include "gta4_quicksave_hooks.h"
 #include "input/context_touch_activity.h"
+#include "input/context_touch_context.h"
 #include "gta4_quicksave_policy.h"
+#include "gta4_cheat_policy.h"
 #include "gta4_phone_quicksave_profiles.h"
 
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <bit>
+#include <cmath>
+#include <fstream>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -27,6 +32,11 @@ REXCVAR_DEFINE_BOOL(gta4_quicksave, true, "GTA IV/Gameplay",
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_BOOL(gta4_trace_quicksave, false, "GTA IV/Diagnostics",
                     "Log bounded Quicksave menu and save transaction observations");
+REXCVAR_DEFINE_BOOL(gta4_cheat_achievements,false,"GTA IV/Gameplay",
+                    "Allow local achievement award events while using cheats; no Xbox Live sync");
+REXCVAR_DEFINE_DOUBLE(gta4_completion_percent,-1.0,"GTA IV/Status","Last observed live completion percentage; -1 means unavailable").range(-1.0,100.0);
+REXCVAR_DEFINE_INT32(gta4_completion_episode,-1,"GTA IV/Status","Episode of the observed progress; not a save-slot identifier").range(-1,2);
+REXCVAR_DEFINE_STRING(gta4_cheat_status,"Ready","GTA IV/Status","Last requested cheat result");
 
 namespace gta4::quicksave {
 namespace {
@@ -124,7 +134,14 @@ std::array natives = {NativeEntry{"GET_PLAYER_ID"},
                       NativeEntry{"IS_NETWORK_GAME_RUNNING"},
                       NativeEntry{"NETWORK_IS_SESSION_STARTED"},
                       NativeEntry{"IS_WANTED_LEVEL_GREATER"},
-                      NativeEntry{"PRINT_HELP"}};
+                      NativeEntry{"PRINT_HELP"},NativeEntry{"ACTIVATE_CHEAT"},
+                      NativeEntry{"GET_PROGRESS_PERCENTAGE"},NativeEntry{"GET_CURRENT_EPISODE"},NativeEntry{"SET_CHAR_HEALTH"},NativeEntry{"GET_CHAR_HEALTH"},NativeEntry{"GET_CHAR_ARMOUR"},NativeEntry{"ADD_ARMOUR_TO_CHAR"},NativeEntry{"GET_CAR_CHAR_IS_USING"},NativeEntry{"FIX_CAR"},NativeEntry{"GET_CAR_HEALTH"},NativeEntry{"ADD_SCORE"},NativeEntry{"SET_PLAYER_INVINCIBLE"},NativeEntry{"FORWARD_TO_TIME_OF_DAY"}};
+uint32_t original_award=0,award_thunk=0;
+std::mutex cheat_mutex;
+std::optional<gta4::cheats::Request> pending_cheat;
+uint64_t cheat_serial=0;
+std::atomic<bool> has_pending_cheat{false};
+thread_local bool inside_cheat=false;
 uint32_t NativeAddress(std::string_view name) {
   std::lock_guard lock(native_mutex);
   for (const auto& n : natives)
@@ -164,6 +181,26 @@ std::optional<uint32_t> Invoke(PPCContext& parent, uint8_t* base, std::string_vi
   call.lr = 0x82844BA0;
   function(call, base);
   return Read(base, result);
+}
+void AwardLocalAchievement(PPCContext& ctx,uint8_t* base){
+  // Intercept the award event, not the game's cheat statistics or save flags.
+  // When disabled, run the exact registered original handler.
+  if(REXCVAR_GET(gta4_cheat_achievements)){
+    auto* runtime=rex::Runtime::instance();auto* kernel=runtime?runtime->kernel_state():nullptr;
+    const auto network=Invoke(ctx,base,"IS_NETWORK_GAME_RUNNING");
+    const auto session=Invoke(ctx,base,"NETWORK_IS_SESSION_STARTED");
+    if(kernel&&network&&session&&!*network&&!*session&&Span(base,ctx.r3.u32,12)&&Read(base,ctx.r3.u32+4)>=1){
+      const auto args=Read(base,ctx.r3.u32+8),result=Read(base,ctx.r3.u32);
+      if(Span(base,args,4)&&Span(base,result,4,true)){
+        const auto id=Read(base,args);
+        if(kernel->achievements().FindAchievement(id)){
+          kernel->UnlockAchievement(id);Write(base,result,1);return;
+        }
+      }
+    }
+  }
+  auto* runtime=rex::Runtime::instance();auto* dispatcher=runtime?runtime->function_dispatcher():nullptr;
+  if(auto* original=dispatcher&&original_award?dispatcher->GetFunction(original_award):nullptr)original(ctx,base);
 }
 struct Text {
   std::string_view key, value;
@@ -402,6 +439,7 @@ bool EnsureThunks() {
   return request_thunk && observe_thunk;
 }
 void ResetWorld() {
+  rex::cvar::SetFlagByName("gta4_completion_percent","-1");rex::cvar::SetFlagByName("gta4_completion_episode","-1");
   gta4::input::ResetTouchActivityPrograms();
   std::lock_guard lock(state_mutex);
   world_epoch.fetch_add(1);
@@ -495,12 +533,83 @@ void ObserveNativeRegistration(PPCContext& context, uint8_t* base) {
   const auto name = String(base, context.r3.u32);
   if (name.empty())
     return;
+  if(name=="AWARD_ACHIEVEMENT"){
+    if(context.r4.u32!=award_thunk)original_award=context.r4.u32;
+    auto* runtime=rex::Runtime::instance();auto* dispatcher=runtime?runtime->function_dispatcher():nullptr;
+    if(dispatcher&&!award_thunk)award_thunk=dispatcher->AllocateThunk(&AwardLocalAchievement,uint32_t(context.lr));
+    if(award_thunk)context.r4.u32=award_thunk;
+  }
   std::lock_guard lock(native_mutex);
   for (auto& entry : natives)
     if (entry.name == name) {
       entry.handler = context.r4.u32;
       return;
     }
+}
+bool QueueCheat(uint32_t index){
+  // Base-game native cheat indices, 5 is the nonfunctional money placeholder.
+  const auto reject=[&](const char* reason){rex::cvar::SetFlagByName("gta4_cheat_status",reason);REXLOG_WARN("gta4-cheats: index={} rejected={}",index,reason);return false;};
+  if(!gta4::cheats::SupportedIndex(index))return reject("Unavailable: unsupported cheat");
+  if(!NativeAddress(gta4::cheats::Handler(index)))return reject("Unavailable: this game action is not registered yet");
+  const auto context=gta4::input::GetTouchContextSnapshot();
+  if(!gta4::cheats::CanQueue(context))return reject("Unavailable: return to active single-player gameplay");
+  std::lock_guard lock(cheat_mutex);if(pending_cheat)return reject("Pending: another cheat is waiting for Resume");
+  pending_cheat=gta4::cheats::Request{index,world_epoch.load(),Now()+10000,context.player_identity,context.player_generation,++cheat_serial};
+  has_pending_cheat.store(true,std::memory_order_release);
+  rex::cvar::SetFlagByName("gta4_cheat_status","Queued: waiting for gameplay to resume");
+  REXLOG_INFO("gta4-cheats: request={} action=\"{}\" index={} queued world={} frame={} player={:08X}",pending_cheat->serial,gta4::cheats::Name(index),index,pending_cheat->world,context.epoch,context.player_identity);return true;
+}
+std::string CheatStatus(){return rex::cvar::GetFlagByName("gta4_cheat_status");}
+void PollCompletion(PPCContext& parent,uint8_t* base){
+  static uint64_t next=0,last_write=0;const auto now=Now();if(now<next||inside_cheat)return;next=now+2000;
+  const auto context=gta4::input::GetTouchContextSnapshot();if(context.loading||context.cutscene||!context.player_identity)return;
+  const auto raw=Invoke(parent,base,"GET_PROGRESS_PERCENTAGE"),episode=Invoke(parent,base,"GET_CURRENT_EPISODE");if(!raw||!episode||*episode>2)return;
+  const float percent=std::bit_cast<float>(*raw);if(!std::isfinite(percent)||percent<0||percent>100)return;
+  rex::cvar::SetFlagByName("gta4_completion_percent",std::to_string(percent));rex::cvar::SetFlagByName("gta4_completion_episode",std::to_string(*episode));
+  if(now-last_write<30000)return;last_write=now;auto* runtime=rex::Runtime::instance();if(!runtime||runtime->user_data_root().empty())return;
+  const auto path=runtime->user_data_root()/"last-session-completion.json";auto temporary=path;temporary += ".tmp";
+  std::ofstream file(temporary,std::ios::trunc);file<<"{\"percent\":"<<percent<<",\"episode\":"<<*episode<<",\"scope\":\"last observed session; slot not identified\"}\n";file.flush();if(file){file.close();std::error_code error;std::filesystem::rename(temporary,path,error);}
+}
+void PollCheats(PPCContext& parent,uint8_t* base){
+  PollCompletion(parent,base);
+  if(inside_cheat||!has_pending_cheat.load(std::memory_order_acquire))return;
+  std::optional<gta4::cheats::Request> request;
+  {
+    std::lock_guard lock(cheat_mutex);if(!pending_cheat)return;
+    const auto context=gta4::input::GetTouchContextSnapshot();
+    const auto decision=gta4::cheats::Decide(*pending_cheat,context,Now(),world_epoch.load());
+    if(decision==gta4::cheats::Decision::kCancel){
+      REXLOG_WARN("gta4-cheats: request={} index={} cancelled expired={} world_changed={} loading={} cutscene={}",pending_cheat->serial,pending_cheat->index,Now()>=pending_cheat->expires,pending_cheat->world!=world_epoch.load(),context.loading,context.cutscene);
+      pending_cheat.reset();has_pending_cheat.store(false,std::memory_order_release);rex::cvar::SetFlagByName("gta4_cheat_status","Cancelled: timed out or gameplay state changed");return;
+    }
+    if(decision!=gta4::cheats::Decision::kExecute)return;
+    request=pending_cheat;pending_cheat.reset();has_pending_cheat.store(false,std::memory_order_release);
+  }
+  struct Guard{Guard(){inside_cheat=true;}~Guard(){inside_cheat=false;}}guard;
+  const auto network=Invoke(parent,base,"IS_NETWORK_GAME_RUNNING"),session=Invoke(parent,base,"NETWORK_IS_SESSION_STARTED");
+  const auto episode=Invoke(parent,base,"GET_CURRENT_EPISODE");
+  if(!gta4::cheats::BaseSinglePlayer(network,session,episode)){
+    rex::cvar::SetFlagByName("gta4_cheat_status","Unavailable: base GTA IV single-player is required");
+    REXLOG_WARN("gta4-cheats: index={} rejected single-player check network={} session={} episode={}",request->index,network.value_or(UINT32_MAX),session.value_or(UINT32_MAX),episode.value_or(UINT32_MAX));return;
+  }
+  const auto index=request->index;bool applied=false,verified=false;
+  if(index<16)applied=Invoke(parent,base,"ACTIVATE_CHEAT",{index}).has_value();
+  else {
+    const auto mission=Invoke(parent,base,"GET_MISSION_FLAG");
+    const auto player=Invoke(parent,base,"GET_PLAYER_ID");
+    const auto ped=player?Invoke(parent,base,"GET_PLAYER_CHAR",{*player,0},1):std::nullopt;
+    if(!mission||(*mission&&index!=105)||!player||!ped||!*ped){rex::cvar::SetFlagByName("gta4_cheat_status","Unavailable: extra actions require active free roam");REXLOG_WARN("gta4-cheats: request={} action=\"{}\" rejected=free-roam-required",request->serial,gta4::cheats::Name(index));return;}
+    switch(index){
+      case 100:applied=Invoke(parent,base,"SET_CHAR_HEALTH",{*ped,200}).has_value();if(auto value=Invoke(parent,base,"GET_CHAR_HEALTH",{*ped,0},1))verified=applied&&*value>=200;break;
+      case 101:applied=Invoke(parent,base,"ADD_ARMOUR_TO_CHAR",{*ped,100}).has_value();if(auto value=Invoke(parent,base,"GET_CHAR_ARMOUR",{*ped,0},1))verified=applied&&*value>=100;break;
+      case 102:{const auto vehicle=Invoke(parent,base,"GET_CAR_CHAR_IS_USING",{*ped,0},1);if(!vehicle||!*vehicle){rex::cvar::SetFlagByName("gta4_cheat_status","Unavailable: enter a vehicle before repairing it");REXLOG_WARN("gta4-cheats: request={} action=\"{}\" rejected=no-current-vehicle",request->serial,gta4::cheats::Name(index));return;}applied=Invoke(parent,base,"FIX_CAR",{*vehicle}).has_value();break;}
+      case 103:applied=Invoke(parent,base,"ADD_SCORE",{*player,10000}).has_value();break;
+      case 104:case 105:applied=Invoke(parent,base,"SET_PLAYER_INVINCIBLE",{*player,index==104?1u:0u}).has_value();break;
+      default:{constexpr uint32_t hours[]={6,12,18,0};applied=Invoke(parent,base,"FORWARD_TO_TIME_OF_DAY",{hours[index-106],0}).has_value();break;}
+    }
+  }
+  rex::cvar::SetFlagByName("gta4_cheat_status",std::string(verified?"Value confirmed: ":applied?"Submitted to game: ":"Failed: ")+std::string(gta4::cheats::Name(index))+(applied&&!verified?" · check the effect":""));
+  REXLOG_INFO("gta4-cheats: request={} action=\"{}\" index={} native_called={} handler={:08X} effect_verified={}",request->serial,gta4::cheats::Name(index),index,applied,NativeAddress(gta4::cheats::Handler(index)),verified);
 }
 bool ResolveText(PPCContext& context, uint8_t* base) {
   const auto key = String(base, context.r4.u32, 16);
@@ -637,9 +746,11 @@ extern "C" void sub_82846780(PPCContext& ctx, uint8_t* base) {
 }
 extern "C" void sub_825E87C8(PPCContext& ctx, uint8_t* base) {
   __imp__sub_825E87C8(ctx, base);
+  gta4::quicksave::PollCheats(ctx,base);
   gta4::quicksave::Poll(ctx, base);
 }
 extern "C" void sub_82243260(PPCContext& ctx, uint8_t* base) {
   __imp__sub_82243260(ctx, base);
+  gta4::quicksave::PollCheats(ctx,base);
   gta4::quicksave::Poll(ctx, base);
 }

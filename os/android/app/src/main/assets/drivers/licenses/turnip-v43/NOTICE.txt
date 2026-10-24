@@ -1,0 +1,5 @@
+Unmodified Vauzi-17 Turnip v4.3 Android archive, SHA-256 45ac070f30086cb67bd6f24600199293192c3fa4810c402b25ac185967a3b5e6.
+Release/source recipe: https://github.com/Vauzi-17/710/releases/tag/4.3
+Mesa 27.0.0-devel, upstream release reports Mesa commit d1e369d8a63e.
+Credits: Mesa Project, Vauzi-17 and the contributors credited in the upstream recipe. Repository scripts use GPL-3.0; Mesa components retain their original licenses.
+This fork does not claim authorship of the driver or tested gameplay support for every GPU.

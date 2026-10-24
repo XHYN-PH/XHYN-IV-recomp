@@ -202,6 +202,8 @@ bool VerifyInstance(VkInstance instance, uint32_t requested_api,
   const auto properties = Get<PFN_vkGetPhysicalDeviceProperties>(instance, "vkGetPhysicalDeviceProperties");
   const auto properties2 = Get<PFN_vkGetPhysicalDeviceProperties2>(instance, "vkGetPhysicalDeviceProperties2");
   const auto features = Get<PFN_vkGetPhysicalDeviceFeatures>(instance,"vkGetPhysicalDeviceFeatures");
+  const auto features2 = Get<PFN_vkGetPhysicalDeviceFeatures2>(instance,"vkGetPhysicalDeviceFeatures2");
+  const auto extensions = Get<PFN_vkEnumerateDeviceExtensionProperties>(instance,"vkEnumerateDeviceExtensionProperties");
   if (!enumerate || !properties || !features) {
     error = "Selected loader is missing physical-device query functions";
     return false;
@@ -271,12 +273,27 @@ bool VerifyInstance(VkInstance instance, uint32_t requested_api,
       }
     }
     VkPhysicalDeviceFeatures supported{};features(devices[i],&supported);
-    std::string missing;
+    VkPhysicalDeviceVulkan12Features vk12{};vk12.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    VkPhysicalDeviceDynamicRenderingFeatures dynamic{};dynamic.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+    bool dynamic_available=basic.apiVersion>=VK_API_VERSION_1_3;
+    if(!dynamic_available&&extensions){uint32_t extension_count=0;if(extensions(devices[i],nullptr,&extension_count,nullptr)==VK_SUCCESS&&extension_count<4096){
+      std::vector<VkExtensionProperties> values(extension_count);if(extensions(devices[i],nullptr,&extension_count,values.data())==VK_SUCCESS)
+        for(uint32_t e=0;e<extension_count;++e)dynamic_available|=std::strcmp(values[e].extensionName,VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)==0;
+    }}
+    if(features2&&requested_api>=VK_API_VERSION_1_1&&basic.apiVersion>=VK_API_VERSION_1_2){VkPhysicalDeviceFeatures2 all{};all.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;all.pNext=&vk12;if(dynamic_available)vk12.pNext=&dynamic;features2(devices[i],&all);}
+    std::string missing,warnings;
+    const auto warn=[&](bool unavailable,const char* message){if(unavailable){if(!warnings.empty())warnings+="; ";warnings+=message;}};
+    warn(!supported.shaderInt64,"shaderInt64 unavailable: address fallback remains incomplete");
+    warn(!supported.depthClamp,"depthClamp unavailable: equivalent depth clamping is not certified");
+    warn(!supported.shaderClipDistance,"shaderClipDistance unavailable: current clip-plane fallback omits title clipping");
     const auto require=[&](bool available,const char* name) {
       if(!available) { if(!missing.empty()) missing+=", ";missing+=name; }
     };
     require(basic.apiVersion>=VK_API_VERSION_1_2,"Vulkan 1.2");
-    require(supported.shaderInt64,"shaderInt64");require(supported.depthClamp,"depthClamp");
+    require(features2!=nullptr,"Vulkan feature-query support");
+    require(supported.shaderInt64,"shaderInt64 (address fallback is incomplete)");
+    require(vk12.bufferDeviceAddress,"bufferDeviceAddress");require(vk12.runtimeDescriptorArray,"runtimeDescriptorArray");
+    require(vk12.descriptorBindingPartiallyBound,"descriptorBindingPartiallyBound");require(dynamic.dynamicRendering,"dynamicRendering");
     require(supported.sampleRateShading,"sampleRateShading");require(supported.independentBlend,"independentBlend");
     any_compatible|=missing.empty();last_missing=std::string(basic.deviceName)+": missing "+missing;
     if (i) devices_json += ",";
@@ -287,6 +304,20 @@ bool VerifyInstance(VkInstance instance, uint32_t requested_api,
                     ",\"device_id\":" + std::to_string(basic.deviceID) +
                     ",\"driver_id\":" + std::to_string(driver.driverID) +
                     ",\"driver_name\":" + Quote(driver.driverName) +
+                    ",\"shader_int64\":" + (supported.shaderInt64 ? "true" : "false") +
+                    ",\"shader_cull_distance\":" + (supported.shaderCullDistance ? "true" : "false") +
+                    ",\"independent_blend\":" + (supported.independentBlend ? "true" : "false") +
+                    ",\"buffer_device_address\":" + (vk12.bufferDeviceAddress ? "true" : "false") +
+                    ",\"runtime_descriptor_array\":" + (vk12.runtimeDescriptorArray ? "true" : "false") +
+                    ",\"partially_bound_descriptors\":" + (vk12.descriptorBindingPartiallyBound ? "true" : "false") +
+                    ",\"dynamic_rendering\":" + (dynamic.dynamicRendering ? "true" : "false") +
+                    ",\"max_vertex_attributes\":" + std::to_string(basic.limits.maxVertexInputAttributes) +
+                    ",\"max_vertex_output_components\":" + std::to_string(basic.limits.maxVertexOutputComponents) +
+                    ",\"max_fragment_input_components\":" + std::to_string(basic.limits.maxFragmentInputComponents) +
+                    ",\"compatibility_warnings\":" + Quote(warnings) +
+                    ",\"depth_clamp\":" + (supported.depthClamp ? "true" : "false") +
+                    ",\"shader_clip_distance\":" + (supported.shaderClipDistance ? "true" : "false") +
+                    ",\"sample_rate_shading\":" + (supported.sampleRateShading ? "true" : "false") +
                     ",\"required_features\":" + (missing.empty() ? "true" : "false") +
                     ",\"missing_features\":" + Quote(missing) +
                     ",\"driver_info\":" + Quote(driver.driverInfo) + "}";

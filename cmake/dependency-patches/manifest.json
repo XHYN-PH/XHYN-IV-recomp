@@ -249,14 +249,14 @@
     {
       "name": "libcxxabi-ps4",
       "path": "tools/llvm-project-libcxx",
-      "base_revision": "2078da43e25a4623cab2d0d60decddf709aaea28",
+      "base_revision": "6ffccfa1d7b8d7eaf0f9e4fbbce2e1ca2285d27c",
       "patch": "libcxxabi-ps4.patch",
       "sha256": "c40de4478b89d662b55473b79d0132e334e6466558ff1a462773bb7bcbb7221a",
       "files": [
         {
           "path": "libcxxabi/src/cxa_guard_impl.h",
-          "before_sha256": "0c77f1e80dd8115e7fae1674e7c539b239b72b2b9552b79aaab68fd454d82f6d",
-          "after_sha256": "af0286e4adb6edd044c875ab3173dc2fb0ff810850d9ffdd0b04331019e1c62e"
+          "before_sha256": "a797e74fdd91db19cfe8df5ce8a8a8b5ac1ecc0386fe9675476c786b40d34853",
+          "after_sha256": "d3da2fc5862155faa2e814cf6f993d4e9bae5c1ce91b499b2a9539186d03bb51"
         }
       ]
     },

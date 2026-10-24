@@ -26,8 +26,8 @@ android {
         // 28: ASharedMemory (26) for guest memory and AAudio (27) for audio.
         minSdk        = 29
         targetSdk     = 35
-        versionCode = 27
-        versionName   = "0.5.9.3-xhyn-r1"
+        versionCode = 34
+        versionName   = "0.5.9.3-xhyn-r2-test6"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

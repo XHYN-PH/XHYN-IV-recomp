@@ -21,6 +21,11 @@
 #include <rex/math.h>
 #include <rex/ui/vulkan/device.h>
 #include <rex/ui/vulkan/util.h>
+#include <rex/ui/vulkan/address_int64_rewrite.h>
+#include <rex/cvar.h>
+
+REXCVAR_DEFINE_STRING(vulkan_shader_compatibility_status,"No shader fallback used","GPU/Status",
+                      "Actual shader compatibility result; unsupported operations are rejected");
 
 namespace rex {
 namespace ui {
@@ -277,6 +282,17 @@ VkShaderModule CreateShaderModule(const VulkanDevice* vulkan_device,
   if (rewrite == ClipCullRewriteResult::kRewritten) {
     code = rewritten.data();
     code_size_bytes = rewritten.size() * sizeof(uint32_t);
+  }
+  std::vector<uint32_t> address_rewritten;
+  if(!vulkan_device->properties().shaderInt64){
+    std::string error;
+    auto lowered=RewriteAddressInt64(std::span(code,code_size_bytes/sizeof(uint32_t)),&error);
+    if(!lowered){
+      rex::cvar::SetFlagByName("vulkan_shader_compatibility_status","Address fallback rejected a shader: "+error);
+      REXLOG_ERROR("Vulkan address fallback rejected shader: {} (bytes={})",error,code_size_bytes);return VK_NULL_HANDLE;
+    }
+    address_rewritten=std::move(*lowered);code=address_rewritten.data();code_size_bytes=address_rewritten.size()*sizeof(uint32_t);
+    rex::cvar::SetFlagByName("vulkan_shader_compatibility_status","32-bit address fallback active; GPU shaderInt64 is unavailable");
   }
   VkShaderModuleCreateInfo info{};
   info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;

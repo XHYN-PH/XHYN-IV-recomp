@@ -77,9 +77,12 @@ class AchievementManager {
   void SetUnlockSavePath(std::filesystem::path path);
   void LoadUnlockState();
   void SaveUnlockState() const;
+  // Optional read-only launcher snapshot. The TOML file remains authoritative.
+  void SetCatalogExportPath(std::filesystem::path path);
 
  private:
   static uint64_t CurrentFileTime();
+  void WriteCatalogUnlocked() const;  // save_mutex_ is held
 
   void DispatchCallbacks(
       const std::unordered_map<AchievementListenerHandle, AchievementCallback>& callbacks,
@@ -90,6 +93,7 @@ class AchievementManager {
   std::vector<AchievementInfo> achievements_;
   std::unordered_map<uint32_t, uint64_t> unlocked_achievements_;
   std::filesystem::path unlock_save_path_;
+  std::filesystem::path catalog_export_path_;
   std::unordered_map<AchievementListenerHandle, AchievementCallback> unlock_callbacks_;
   std::unordered_map<AchievementListenerHandle, AchievementCallback> notification_callbacks_;
   AchievementListenerHandle next_listener_handle_ = 1;

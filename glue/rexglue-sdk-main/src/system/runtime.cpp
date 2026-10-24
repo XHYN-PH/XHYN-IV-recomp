@@ -13,6 +13,8 @@
 #include <rex/cvar.h>
 #include <rex/diagnostics/gta4_transition.h>
 #include <rex/filesystem/devices/host_path_device.h>
+#include <rex/filesystem/data_mod_policy.h>
+#include <fstream>
 #include <rex/filesystem/devices/null_device.h>
 #include <rex/filesystem/vfs.h>
 #include <rex/logging.h>
@@ -29,6 +31,8 @@
 #include <rex/system/xthread.h>
 #include <rex/thread.h>
 
+REXCVAR_DEFINE_BOOL(data_file_mods,false,"Runtime","Enable read-only compatible loose data overlays").lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+REXCVAR_DEFINE_STRING(data_file_mod_status,"not started","Runtime/Status","Actual data overlay mount result");
 REXCVAR_DEFINE_STRING(game_data_root, "", "Runtime", "Override game data path");
 REXCVAR_DEFINE_STRING(user_data_root, "", "Runtime", "Override user data path");
 REXCVAR_DEFINE_STRING(update_data_root, "", "Runtime", "Override update data path");
@@ -311,34 +315,101 @@ bool Runtime::SetupVfs() {
   // Mount game_data_root as \Device\Harddisk0\Partition1
   auto mount_path = "\\Device\\Harddisk0\\Partition1";
   auto device = std::make_unique<rex::filesystem::HostPathDevice>(
-      mount_path, abs_game_root, !REXCVAR_GET(allow_game_relative_writes));
+      mount_path, abs_game_root, REXCVAR_GET(data_file_mods)||!REXCVAR_GET(allow_game_relative_writes));
   if (!device->Initialize()) {
     REXSYS_ERROR("Runtime::SetupVfs: Failed to initialize host path device");
     return false;
+  }
+  const bool mods_enabled = REXCVAR_GET(data_file_mods);
+  std::unique_ptr<rex::filesystem::HostPathDevice> update_device;
+  const auto update_mount = "\\Device\\Harddisk0\\PartitionUpdate";
+  if (!update_data_root_.empty() && std::filesystem::exists(update_data_root_)) {
+    update_device = std::make_unique<rex::filesystem::HostPathDevice>(
+        update_mount, std::filesystem::absolute(update_data_root_), true);
+    if (!update_device->Initialize()) {
+      REXSYS_ERROR("Runtime::SetupVfs: Failed to initialize update data");
+      return false;
+    }
+  }
+  size_t mounted = 0, mounted_files = 0, rejected = 0, disabled = 0;
+  std::string report;
+  try {
+    if (mods_enabled) for (const auto& mod : rex::filesystem::data_mods::Scan(abs_game_root.parent_path() / "mods")) {
+      std::string result;
+      if (!mod.enabled) {
+        ++disabled;
+        result = "disabled";
+      } else if (!mod.error.empty()) {
+        ++rejected;
+        result = "rejected: " + mod.error;
+      } else {
+        size_t game_files = 0, update_files = 0;
+        for (const auto& path : mod.files) {
+          if (path.starts_with("game/")) ++game_files;
+          if (path.starts_with("update/")) ++update_files;
+        }
+        std::vector<rex::filesystem::HostPathDevice::Overlay> overlays;
+        if (game_files) overlays.push_back({device.get(), mod.folder / "game"});
+        if (update_files && update_device) overlays.push_back({update_device.get(), mod.folder / "update"});
+        if (update_files && !update_device) {
+          ++rejected;
+          result = "rejected: update files require installed title-update data";
+        } else if (!rex::filesystem::HostPathDevice::AddReadOnlyOverlays(overlays)) {
+          ++rejected;
+          result = "rejected: overlay mount failed; game/update changes rolled back";
+        } else {
+          ++mounted;
+          mounted_files += game_files + update_files;
+          result = "mounted: " + std::to_string(game_files) + " game / " +
+                   std::to_string(update_files) + " update files";
+        }
+      }
+      for (char& c : result) if (static_cast<unsigned char>(c) < 32 || c == 127) c = ' ';
+      REXSYS_INFO("data-mod: {}: {}", mod.folder.filename().string(), result);
+      const auto line = rex::filesystem::data_mods::Identity(rex::filesystem::data_mods::Utf8(mod.folder.filename())) +
+                        "\t" + result + "\n";
+      if (report.size() + line.size() <= 128 * 1024) report += line;
+    }
+  } catch (const std::filesystem::filesystem_error& error) {
+    ++rejected;
+    REXSYS_WARN("data-mod: optional mod scan failed: {}", error.what());
+  }
+  const auto summary = mods_enabled
+      ? "Mounted " + std::to_string(mounted) + " mods / " + std::to_string(mounted_files) +
+        " files; rejected " + std::to_string(rejected) + "; disabled " + std::to_string(disabled)
+      : std::string("disabled");
+  rex::cvar::SetFlagByName("data_file_mod_status", summary);
+  // Reporting an optional mod must never prevent the base game from launching.
+  try {
+    const auto target = abs_game_root.parent_path() / rex::filesystem::data_mods::kReport;
+    const auto temporary = std::filesystem::path(target.string() + ".tmp");
+    if (std::filesystem::is_symlink(std::filesystem::symlink_status(target)) ||
+        std::filesystem::is_symlink(std::filesystem::symlink_status(temporary))) {
+      REXSYS_WARN("data-mod: refusing a symlinked launch report");
+    } else {
+      std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+      output << report;
+      output.close();
+      if (!output) REXSYS_WARN("data-mod: could not write last-launch report");
+      else std::filesystem::rename(temporary, target);
+    }
+  } catch (const std::filesystem::filesystem_error& error) {
+    REXSYS_WARN("data-mod: last-launch report unavailable: {}", error.what());
   }
   if (!file_system_->RegisterDevice(std::move(device))) {
     REXSYS_ERROR("Runtime::SetupVfs: Failed to register host path device");
     return false;
   }
   REXSYS_INFO("  Mounted {} at {}", abs_game_root.string(), mount_path);
-
-  // Register symbolic links for game: and D:
   file_system_->RegisterSymbolicLink("game:", mount_path);
   file_system_->RegisterSymbolicLink("d:", mount_path);
-  REXSYS_DEBUG("  Registered symbolic links: game:, d:");
-
-  // Mount update_data_root as update:\ if provided
-  if (!update_data_root_.empty()) {
-    auto abs_update_root = std::filesystem::absolute(update_data_root_);
-    if (std::filesystem::exists(abs_update_root)) {
-      auto update_mount = "\\Device\\Harddisk0\\PartitionUpdate";
-      auto update_device =
-          std::make_unique<rex::filesystem::HostPathDevice>(update_mount, abs_update_root, true);
-      if (update_device->Initialize() && file_system_->RegisterDevice(std::move(update_device))) {
-        file_system_->RegisterSymbolicLink("update:", update_mount);
-        REXSYS_INFO("  Mounted {} at update:", abs_update_root.string());
-      }
+  if (update_device) {
+    if (!file_system_->RegisterDevice(std::move(update_device))) {
+      REXSYS_ERROR("Runtime::SetupVfs: Failed to register update data");
+      return false;
     }
+    file_system_->RegisterSymbolicLink("update:", update_mount);
+    REXSYS_INFO("  Mounted title-update data at update:");
   }
 
   // Setup NullDevice for raw HDD partition accesses

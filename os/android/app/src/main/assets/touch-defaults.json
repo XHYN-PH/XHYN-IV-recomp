@@ -4,6 +4,30 @@
     "name": "On foot",
     "controls": [
       {
+        "id": "focus",
+        "kind": "button",
+        "anchor": "center",
+        "x": 120.0,
+        "y": 58.0,
+        "r": 30.0,
+        "icon": "Eye",
+        "image": "eye",
+        "hint": "RS",
+        "label": "FOCUS / LOOK"
+      },
+      {
+        "id": "radar",
+        "kind": "button",
+        "anchor": "center",
+        "x": 200.0,
+        "y": 58.0,
+        "r": 30.0,
+        "icon": "Down",
+        "image": "down",
+        "hint": "DOWN",
+        "label": "RADAR"
+      },
+      {
         "id": "pause",
         "kind": "button",
         "anchor": "center",
@@ -11,7 +35,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "house",
+        "image": "menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -37,7 +61,7 @@
         "icon": "View",
         "image": "view",
         "hint": "BACK",
-        "label": "VIEW"
+        "label": "CAMERA"
       },
       {
         "id": "move",
@@ -226,6 +250,42 @@
     "name": "Car / boat",
     "controls": [
       {
+        "id": "radar",
+        "kind": "button",
+        "anchor": "center",
+        "x": 200.0,
+        "y": 58.0,
+        "r": 30.0,
+        "icon": "Down",
+        "image": "down",
+        "hint": "DOWN",
+        "label": "RADAR"
+      },
+      {
+        "id": "cinematic",
+        "kind": "button",
+        "anchor": "left",
+        "x": 92.0,
+        "y": 490.0,
+        "r": 30.0,
+        "icon": "View",
+        "image": "view",
+        "hint": "B",
+        "label": "CINEMATIC"
+      },
+      {
+        "id": "radio_previous",
+        "kind": "button",
+        "anchor": "left",
+        "x": 175.0,
+        "y": 260.0,
+        "r": 30.0,
+        "icon": "Left",
+        "image": "left",
+        "hint": "LEFT",
+        "label": "PREV RADIO"
+      },
+      {
         "id": "pause",
         "kind": "button",
         "anchor": "center",
@@ -233,7 +293,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "house",
+        "image": "menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -259,7 +319,7 @@
         "icon": "View",
         "image": "view",
         "hint": "BACK",
-        "label": "VIEW"
+        "label": "CAMERA"
       },
       {
         "id": "steer_left",
@@ -412,6 +472,42 @@
     "name": "Bike",
     "controls": [
       {
+        "id": "radar",
+        "kind": "button",
+        "anchor": "center",
+        "x": 200.0,
+        "y": 58.0,
+        "r": 30.0,
+        "icon": "Down",
+        "image": "down",
+        "hint": "DOWN",
+        "label": "RADAR"
+      },
+      {
+        "id": "cinematic",
+        "kind": "button",
+        "anchor": "left",
+        "x": 92.0,
+        "y": 490.0,
+        "r": 30.0,
+        "icon": "View",
+        "image": "view",
+        "hint": "B",
+        "label": "CINEMATIC"
+      },
+      {
+        "id": "radio_previous",
+        "kind": "button",
+        "anchor": "left",
+        "x": 175.0,
+        "y": 260.0,
+        "r": 30.0,
+        "icon": "Left",
+        "image": "left",
+        "hint": "LEFT",
+        "label": "PREV RADIO"
+      },
+      {
         "id": "pause",
         "kind": "button",
         "anchor": "center",
@@ -419,7 +515,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "house",
+        "image": "menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -445,7 +541,7 @@
         "icon": "View",
         "image": "view",
         "hint": "BACK",
-        "label": "VIEW"
+        "label": "CAMERA"
       },
       {
         "id": "radio",
@@ -586,6 +682,42 @@
     "name": "Helicopter",
     "controls": [
       {
+        "id": "radar",
+        "kind": "button",
+        "anchor": "center",
+        "x": 200.0,
+        "y": 58.0,
+        "r": 30.0,
+        "icon": "Down",
+        "image": "down",
+        "hint": "DOWN",
+        "label": "RADAR"
+      },
+      {
+        "id": "cinematic",
+        "kind": "button",
+        "anchor": "left",
+        "x": 92.0,
+        "y": 490.0,
+        "r": 30.0,
+        "icon": "View",
+        "image": "view",
+        "hint": "B",
+        "label": "CINEMATIC"
+      },
+      {
+        "id": "radio_previous",
+        "kind": "button",
+        "anchor": "left",
+        "x": 175.0,
+        "y": 260.0,
+        "r": 30.0,
+        "icon": "Left",
+        "image": "left",
+        "hint": "LEFT",
+        "label": "PREV RADIO"
+      },
+      {
         "id": "pause",
         "kind": "button",
         "anchor": "center",
@@ -593,7 +725,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "house",
+        "image": "menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -619,7 +751,7 @@
         "icon": "View",
         "image": "view",
         "hint": "BACK",
-        "label": "VIEW"
+        "label": "CAMERA"
       },
       {
         "id": "radio",
@@ -760,6 +892,30 @@
     "name": "Passenger",
     "controls": [
       {
+        "id": "focus",
+        "kind": "button",
+        "anchor": "center",
+        "x": 120.0,
+        "y": 58.0,
+        "r": 30.0,
+        "icon": "Eye",
+        "image": "eye",
+        "hint": "RS",
+        "label": "FOCUS / LOOK"
+      },
+      {
+        "id": "radar",
+        "kind": "button",
+        "anchor": "center",
+        "x": 200.0,
+        "y": 58.0,
+        "r": 30.0,
+        "icon": "Down",
+        "image": "down",
+        "hint": "DOWN",
+        "label": "RADAR"
+      },
+      {
         "id": "pause",
         "kind": "button",
         "anchor": "center",
@@ -767,7 +923,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "house",
+        "image": "menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -793,7 +949,7 @@
         "icon": "View",
         "image": "view",
         "hint": "BACK",
-        "label": "VIEW"
+        "label": "CAMERA"
       },
       {
         "id": "left_shoulder",
@@ -917,7 +1073,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "house",
+        "image": "menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -1011,6 +1167,66 @@
     "id": "menu",
     "name": "Menus / map",
     "controls": [
+      {
+        "id": "zoom_in",
+        "kind": "trigger",
+        "anchor": "right",
+        "x": 95.0,
+        "y": 180.0,
+        "r": 30.0,
+        "icon": "Up",
+        "image": "up",
+        "hint": "RT",
+        "label": "ZOOM IN"
+      },
+      {
+        "id": "zoom_out",
+        "kind": "trigger",
+        "anchor": "right",
+        "x": 175.0,
+        "y": 180.0,
+        "r": 30.0,
+        "icon": "Down",
+        "image": "down",
+        "hint": "LT",
+        "label": "ZOOM OUT"
+      },
+      {
+        "id": "map_move",
+        "kind": "stick",
+        "anchor": "left",
+        "x": 450.0,
+        "y": 520.0,
+        "r": 75.0,
+        "icon": "None",
+        "image": "",
+        "hint": "LS",
+        "label": "MOVE MAP"
+      },
+      {
+        "id": "map_x",
+        "kind": "button",
+        "anchor": "right",
+        "x": 95.0,
+        "y": 350.0,
+        "r": 30.0,
+        "icon": "Check",
+        "image": "check",
+        "hint": "X",
+        "label": "X"
+      },
+      {
+        "id": "map_y",
+        "kind": "button",
+        "anchor": "right",
+        "x": 175.0,
+        "y": 350.0,
+        "r": 30.0,
+        "icon": "Check",
+        "image": "check",
+        "hint": "Y",
+        "label": "Y"
+      },
       {
         "id": "prev_tab",
         "kind": "button",
@@ -1115,7 +1331,7 @@
         "y": 460.0,
         "r": 38.0,
         "icon": "Menu",
-        "image": "house",
+        "image": "menu",
         "hint": "START",
         "label": "RESUME"
       }
@@ -1133,7 +1349,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "house",
+        "image": "menu",
         "hint": "START",
         "label": "PAUSE"
       },

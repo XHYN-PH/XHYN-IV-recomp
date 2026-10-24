@@ -18,6 +18,8 @@ struct ContextTouchIcon;
 // Loads touch-icons/<name>.png (the context overlay's icon cache).
 using LibertyIconResolver = bool (*)(void* context, std::string_view id, ContextTouchIcon* icon);
 void SetLibertyIconResolver(LibertyIconResolver resolver, void* context) noexcept;
+// Shares the existing bounded image cache with the Xbox button theme.
+bool ResolveLibertyIcon(std::string_view id, ContextTouchIcon* icon);
 
 // Game thread, every input poll: the pause-menu flag and current menu screen.
 void PublishLibertyPauseMenu(uint32_t pause_flag, uint32_t screen) noexcept;

@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,15 +27,15 @@ final class DebugLog {
     }
     static synchronized File start(File root,File fallback,String[] command) {
         stop();stopLeftovers(root);
-        // Keep only the new session, including its runtime log, captures and
-        // launch report. Both storage roots can contain an earlier session.
+        // Automatic one-session cleanup: users do not need to manage old logs.
+        // The small OS exit/session summaries live separately and replace themselves.
         try{DebugLogArchive.clear(root,fallback);}catch(IOException error){Log.w(TAG,"Some old diagnostics could not be removed",error);}
         String stamp=new SimpleDateFormat("yyyyMMdd-HHmmss-SSS",Locale.ROOT).format(new Date());
         String header="XHYN IV debug session "+stamp+"\npid="+android.os.Process.myPid()+"\n";
         for(File base:new File[]{root,fallback}) {
             try {
                 sink=new DebugLogSink(new File(directory(base),"debug-"+stamp+".log"),8*1024*1024,header);
-                prune(directory(base));break;
+                prune(directory(base),sink.file);break;
             } catch(IOException error) { Log.e(TAG,"Cannot create session log in "+base,error); }
         }
         if(sink==null) return null;
@@ -83,11 +82,11 @@ final class DebugLog {
         // message makes a waiting child exit on its broken stdout pipe.
         Log.i(TAG,"Debug capture cleanup");
     }
-    private static void prune(File directory) {
-        File[] files=directory.listFiles((d,n)->n.startsWith("debug-") && n.endsWith(".log") && !n.contains(".runtime"));
-        if(files==null || files.length<=5)return;Arrays.sort(files);
-        for(int i=0;i<files.length-5;++i){
-            final String prefix=files[i].getName();File[] related=directory.listFiles((d,n)->n.equals(prefix) || n.equals(prefix+".1") || n.startsWith(prefix+".runtime"));
+    private static void prune(File directory,File current) {
+        File[] files=directory.listFiles((d,n)->n.matches("debug-[0-9-]+\\.log")&&!n.equals(current.getName()));
+        if(files==null)return;
+        for(File old:files){
+            final String prefix=old.getName();File[] related=directory.listFiles((d,n)->n.equals(prefix) || n.equals(prefix+".1") || n.startsWith(prefix+".runtime"));
             if(related!=null)for(File file:related) {
                 if(file.isDirectory())try(java.util.stream.Stream<java.nio.file.Path> paths=java.nio.file.Files.walk(file.toPath())) {
                     for(java.nio.file.Path path:paths.sorted(java.util.Comparator.reverseOrder()).toArray(java.nio.file.Path[]::new))java.nio.file.Files.deleteIfExists(path);

@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <new>
 #include <string>
 #include <thread>
@@ -342,6 +343,19 @@ void KernelState::LoadAchievementsData() {
     achievement_manager_.SetUnlockSavePath(user_root / "achievements" /
                                            fmt::format("{:08X}.toml", title_id()));
     achievement_manager_.LoadUnlockState();
+#if REX_PLATFORM_ANDROID
+    // Private per-install catalog for the lightweight Java launcher. Icons
+    // come from the user's installed title metadata, never from the APK.
+    const auto folder=user_root/"achievements";
+    std::error_code error;std::filesystem::create_directories(folder/"icons",error);
+    if(!error)for(const auto& a:loaded_achievements()){
+      const auto image=db.GetEntry(util::XdbfSection::kImage,a.image_id);
+      if(!image||image.size>2*1024*1024)continue;
+      std::ofstream out(folder/"icons"/fmt::format("{}.png",a.image_id),std::ios::binary);
+      if(out)out.write(reinterpret_cast<const char*>(image.buffer),image.size);
+    }
+    achievement_manager_.SetCatalogExportPath(folder/"catalog.json");
+#endif
   }
 }
 

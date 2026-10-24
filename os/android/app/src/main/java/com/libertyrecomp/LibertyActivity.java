@@ -98,6 +98,7 @@ public class LibertyActivity extends SDLActivity {
     private static native void nativeFinishTouchEditor();
     private static native void nativeReloadTouchLayout();
     private static native int nativeTouchEditorContext();
+    private static native boolean nativeQueueCheat(int index);
     private static final int REQUEST_TOUCH_EDITOR=719;
     private android.app.AlertDialog mGameMenu;
     private android.widget.ImageButton mControllerButton,mMenuButton;
@@ -105,11 +106,22 @@ public class LibertyActivity extends SDLActivity {
     private volatile PhoneRumble mPhoneRumble;
     private boolean mHostMenuOpen,mForeground,mWindowFocused,mNativeTouchEditor;
     private PerformanceSampler mPerformanceSampler;
+    private SessionRecorder mSessionRecorder;private long mInputTraceUntil,mInputTraceLast;
+    private final Runnable mInputTraceEnd=this::stopInputTrace;
+    private static native boolean nativeSetInputTrace(boolean enabled);
+    private static native float[] nativeTouchViewport();
+    private static native long nativeTouchViewportGeneration();
+    private final android.os.Handler mPhoneUi=new android.os.Handler(android.os.Looper.getMainLooper());
+    private PreparationUi mPreparation;
+    private PhoneGyro mPhoneGyro;private PerformanceHud mPerformanceHud;private boolean mReturnToSettings;
+    private final SessionMenuUi.State mSessionState=new SessionMenuUi.State();
+    private static native void nativeGyroSample(float x,float y);
+    private static native void nativeGyroReset();
     private final MobileSettingsUi.Runtime mRuntimeSettings=new MobileSettingsUi.Runtime() {
         public String get(String key){return nativeGetSetting(key);}
         public boolean apply(String[] keys,String[] values){
             boolean ok=nativeApplySettings(keys,values);
-            if(ok){updateOverlayOpacity();applyDisplayRate();updateRumbleStrength();}return ok;
+            if(ok){updateOverlayOpacity();applyDisplayRate();updateRumbleStrength();updatePhoneFeatures();if(mDebugLog)recordRuntimeSettings("settings-saved");}return ok;
         }
     };
 
@@ -117,9 +129,18 @@ public class LibertyActivity extends SDLActivity {
     protected void onCreate(Bundle savedInstanceState) {
         mPhoneRumble=new PhoneRumble(this);
         prepareEnvironment();
+        if(getIntent()!=null&&getIntent().getBooleanExtra(EXTRA_INPUT_TRACE,false))mSessionState.tab="Diagnostics";
         super.onCreate(savedInstanceState);
         if(!mBrokenLibraries && mLayout!=null) addTouchLayoutSwitch();
-        if(!mBrokenLibraries)updateRumbleStrength();
+        if(!mBrokenLibraries&&mSurface!=null)mSurface.setOnCapturedPointerListener((v,event)->forwardMouse(event,true));
+        if(!mBrokenLibraries){
+            updateRumbleStrength();mPhoneGyro=new PhoneGyro(this,new PhoneGyro.Output(){public void sample(float x,float y){nativeGyroSample(x,y);}public void reset(){nativeGyroReset();}});
+            if(mLayout instanceof android.widget.RelativeLayout)mPerformanceHud=new PerformanceHud(this,(android.widget.RelativeLayout)mLayout,mRuntimeSettings);
+            mPreparation=new PreparationUi(this,mRuntimeSettings);mPreparation.start();
+            mSessionRecorder=new SessionRecorder(this,mDataRoot,mRuntimeSettings,mDebugLogFile);mSessionRecorder.start();
+            updatePhoneFeatures();DebugLog.note("phone-gyro: available="+mPhoneGyro.available());
+            if(mDebugLog)mPhoneUi.postDelayed(()->recordRuntimeSettings("startup"),2500);
+        }
         // A controller-driven game sends no touch events for minutes at a time.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if(mDebugLog){mPerformanceSampler=new PerformanceSampler(this);mPerformanceSampler.start();}
@@ -135,6 +156,32 @@ public class LibertyActivity extends SDLActivity {
         }
     }
 
+    private int mMouseButtons,mMouseTraceEvents;private boolean mRestoreMouseCapture;
+    private void releaseMouse(){
+        if(mSurface==null)return;
+        mRestoreMouseCapture|=mSurface.hasPointerCapture();
+        int held=mMouseButtons;for(int bit:new int[]{1,2,4,8,16})if((held&bit)!=0){held&=~bit;org.libsdl.app.SDLActivity.onNativeMouse(held,android.view.MotionEvent.ACTION_UP,0,0,true);}
+        mMouseButtons=0;if(mSurface.hasPointerCapture())mSurface.releasePointerCapture();
+    }
+    private void restoreMouseCapture(){if(mRestoreMouseCapture&&mSurface!=null&&mForeground&&mWindowFocused&&!mHostMenuOpen){mRestoreMouseCapture=false;mSurface.post(()->{if(!isFinishing()&&mForeground&&mWindowFocused&&!mHostMenuOpen)mSurface.requestPointerCapture();});}}
+    private boolean forwardMouse(android.view.MotionEvent e,boolean relative){
+        if(mHostMenuOpen||!mForeground||!mWindowFocused)return false;
+        int action=e.getActionMasked();
+        if(action==android.view.MotionEvent.ACTION_SCROLL){org.libsdl.app.SDLActivity.onNativeMouse(0,action,e.getAxisValue(android.view.MotionEvent.AXIS_HSCROLL),e.getAxisValue(android.view.MotionEvent.AXIS_VSCROLL),false);return true;}
+        if(action==android.view.MotionEvent.ACTION_MOVE||action==android.view.MotionEvent.ACTION_HOVER_MOVE){
+            for(int n=0;n<e.getHistorySize();n++)org.libsdl.app.SDLActivity.onNativeMouse(0,android.view.MotionEvent.ACTION_MOVE,e.getHistoricalX(n),e.getHistoricalY(n),relative);
+            org.libsdl.app.SDLActivity.onNativeMouse(0,android.view.MotionEvent.ACTION_MOVE,e.getX(),e.getY(),relative);
+        }else if(action==android.view.MotionEvent.ACTION_BUTTON_PRESS||action==android.view.MotionEvent.ACTION_BUTTON_RELEASE||action==android.view.MotionEvent.ACTION_DOWN||action==android.view.MotionEvent.ACTION_UP){
+            int next=e.getButtonState(),changed=mMouseButtons^next;
+            for(int bit:new int[]{1,2,4,8,16})if((changed&bit)!=0){mMouseButtons=(mMouseButtons&~bit)|(next&bit);org.libsdl.app.SDLActivity.onNativeMouse(mMouseButtons,(next&bit)!=0?android.view.MotionEvent.ACTION_DOWN:android.view.MotionEvent.ACTION_UP,relative?0:e.getX(),relative?0:e.getY(),relative);}
+        }else return false;
+        if(android.os.SystemClock.uptimeMillis()<mInputTraceUntil&&mMouseTraceEvents<512&&android.os.SystemClock.uptimeMillis()-mInputTraceLast>=50){mInputTraceLast=android.os.SystemClock.uptimeMillis();mMouseTraceEvents++;DebugLog.note("Mouse event action="+action+" relative="+relative+" buttons="+mMouseButtons+" dx="+e.getX()+" dy="+e.getY());}
+        return true;
+    }
+    @Override public boolean dispatchGenericMotionEvent(android.view.MotionEvent e){
+        if(e.isFromSource(android.view.InputDevice.SOURCE_MOUSE)&&(e.getActionMasked()==android.view.MotionEvent.ACTION_BUTTON_PRESS||e.getActionMasked()==android.view.MotionEvent.ACTION_BUTTON_RELEASE)&&forwardMouse(e,mSurface!=null&&mSurface.hasPointerCapture()))return true;
+        return super.dispatchGenericMotionEvent(e);
+    }
     private android.widget.ImageButton overlayButton(boolean controller,String description,int right) {
         android.widget.ImageButton button=new android.widget.ImageButton(this);
         button.setImageDrawable(new GameButtonIcon(controller));button.setContentDescription(description);
@@ -173,7 +220,12 @@ public class LibertyActivity extends SDLActivity {
     // work, even when called from Android's UI thread, before querying settings.
     public void onNativeFrameLimitChanged(int cap) {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(()->{
-            if(!isFinishing())DisplayRefresh.apply(this,mSurface==null?null:mSurface.getHolder().getSurface(),cap);
+            if(!isFinishing()){
+                DisplayRefresh.apply(this,mSurface==null?null:mSurface.getHolder().getSurface(),cap);
+                // This callback also runs after native startup has loaded saved
+                // CVars. onCreate may have seen their defaults before that.
+                updatePhoneFeatures();
+            }
         });
     }
     private void applyDisplayRate() {
@@ -188,12 +240,31 @@ public class LibertyActivity extends SDLActivity {
     public boolean isPhoneRumbleAvailable(){return mPhoneRumble!=null&&mPhoneRumble.available();}
     public boolean onNativePhoneRumble(int low,int high,float strength){return mPhoneRumble!=null&&mPhoneRumble.motors(low,high,strength);}
     private void setHostMenu(boolean open){
+        if(open)releaseMouse();
         mHostMenuOpen=open;
         if(mPhoneRumble!=null)mPhoneRumble.active(mForeground&&mWindowFocused&&!open);
-        nativeHostMenu(open);
+        nativeHostMenu(open);updatePhoneFeatureActivity();
     }
-    @Override protected void onResume(){super.onResume();mForeground=true;if(mPhoneRumble!=null)mPhoneRumble.active(mWindowFocused&&!mHostMenuOpen);}
-    @Override protected void onPause(){mForeground=false;if(mPhoneRumble!=null)mPhoneRumble.active(false);super.onPause();}
+    private void recordRuntimeSettings(String reason){
+        try{org.json.JSONObject report=new org.json.JSONObject();for(String key:MobileSettingsUi.KEYS)if(!key.startsWith("ui_"))report.put(key,nativeGetSetting(key));
+            report.put("renderer_device",new org.json.JSONObject(nativeGetSetting("gta4_session_device_json")));report.put("shader_compatibility",nativeGetSetting("vulkan_shader_compatibility_status"));report.put("actual_present_mode",nativeGetSetting("gta4_session_present_mode"));report.put("session_stats",new org.json.JSONObject(nativeGetSetting("gta4_session_stats")));report.put("display_hz",getWindowManager().getDefaultDisplay().getRefreshRate());
+            DebugLog.note("runtime-settings: reason="+reason+" "+report);
+        }catch(Exception error){DebugLog.note("runtime-settings: unavailable="+error.getClass().getSimpleName());}
+    }
+    private void updatePhoneFeatures(){
+        if(mPhoneGyro!=null)try{mPhoneGyro.configure(Float.parseFloat(nativeGetSetting("gta4_phone_gyro_sensitivity")),Float.parseFloat(nativeGetSetting("gta4_phone_gyro_smoothing")),"true".equals(nativeGetSetting("gta4_phone_gyro_invert_x")),"true".equals(nativeGetSetting("gta4_phone_gyro_invert_y")));}catch(RuntimeException ignored){}
+        if(mPerformanceHud!=null)mPerformanceHud.configure(nativeGetSetting("gta4_performance_overlay"),nativeGetSetting("gta4_overlay_position"));updatePhoneFeatureActivity();
+    }
+    private void updatePhoneFeatureActivity(){restoreMouseCapture();boolean active=mForeground&&mWindowFocused&&!mHostMenuOpen&&!mNativeTouchEditor;
+        if(mPhoneGyro!=null)mPhoneGyro.active(active&&!"off".equals(nativeGetSetting("gta4_phone_gyro_mode")));
+        if(mPerformanceHud!=null)mPerformanceHud.active(active);
+    }
+    @Override public void onConfigurationChanged(android.content.res.Configuration configuration){
+        super.onConfigurationChanged(configuration);
+        if(!mBrokenLibraries&&mLayout!=null)mLayout.post(()->{if(!isFinishing()){updatePhoneFeatures();applyDisplayRate();}});
+    }
+    @Override protected void onResume(){super.onResume();mForeground=true;SessionMenuUi.foreground(true);if(mSessionRecorder!=null)mSessionRecorder.foreground(true);if(mPhoneRumble!=null)mPhoneRumble.active(mWindowFocused&&!mHostMenuOpen);updatePhoneFeatureActivity();}
+    @Override protected void onPause(){if(mPreparation!=null)mPreparation.cancel();releaseMouse();mForeground=false;SessionMenuUi.foreground(false);if(mSessionRecorder!=null)mSessionRecorder.foreground(false);stopInputTrace();if(mPhoneRumble!=null)mPhoneRumble.active(false);updatePhoneFeatureActivity();super.onPause();}
     @Override @SuppressWarnings("deprecation") public void onBackPressed() {
         if(mBrokenLibraries){super.onBackPressed();return;}
         if(mGameMenu!=null&&mGameMenu.isShowing())mGameMenu.dismiss();else showGameMenu();
@@ -202,13 +273,23 @@ public class LibertyActivity extends SDLActivity {
         if(mNativeTouchEditor){nativeFinishTouchEditor();return;}
         if(mGameMenu!=null&&mGameMenu.isShowing())return;
         setHostMenu(true);mKeepMenuPaused=false;
-        android.widget.LinearLayout panel=new android.widget.LinearLayout(this);panel.setOrientation(android.widget.LinearLayout.VERTICAL);
-        panel.addView(ModernUi.text(this,"Paused",14,ModernUi.MUTED));
-        ModernUi.action(this,panel,"Edit controls",()->{mKeepMenuPaused=true;mGameMenu.dismiss();editCurrentLayout(mXboxTouch);});
-        ModernUi.action(this,panel,"Settings",()->{mKeepMenuPaused=true;mGameMenu.dismiss();showGameSettings();});
-        ModernUi.action(this,panel,"Quit to launcher",()->{mKeepMenuPaused=true;mGameMenu.dismiss();confirmQuit();});
-        mGameMenu=ModernUi.dialog(this,"XHYN IV",panel,"Resume",null,null);
-        mGameMenu.setOnDismissListener(dialog->{if(!mKeepMenuPaused)setHostMenu(false);hideSystemBars();});mGameMenu.show();
+        java.util.Map<String,Runnable> actions=new java.util.LinkedHashMap<>();
+        actions.put("Resume",()->mGameMenu.dismiss());
+        actions.put("Edit mobile controls",()->{mKeepMenuPaused=true;mGameMenu.dismiss();editCurrentLayout(false);});
+        actions.put("Edit Xbox controls",()->{mKeepMenuPaused=true;mGameMenu.dismiss();editCurrentLayout(true);});
+        actions.put("Control settings",()->{mKeepMenuPaused=true;mGameMenu.dismiss();showChildSettings(true);});
+        actions.put("Settings",()->{mKeepMenuPaused=true;mGameMenu.dismiss();showChildSettings(false);});
+        actions.put("Achievements",()->{mKeepMenuPaused=true;mGameMenu.dismiss();android.app.AlertDialog child=AchievementsUi.show(this,mDataRoot,mRuntimeSettings);child.setOnDismissListener(d->showGameMenu());});
+        actions.put("Cheats",()->{mKeepMenuPaused=true;mGameMenu.dismiss();android.app.AlertDialog child=CheatsUi.show(this,mRuntimeSettings,LibertyActivity::nativeQueueCheat,()->setHostMenu(false));child.setOnDismissListener(d->showGameMenu());});
+        actions.put("Recorded results",()->SessionResultsUi.show(this,mDataRoot));
+        if(mDebugLog)actions.put("Input test (30 seconds)",()->{mGameMenu.dismiss();startInputTrace();});
+        actions.put("Quit to launcher",()->{mKeepMenuPaused=true;mGameMenu.dismiss();confirmQuit();});
+        if(mDebugLog){
+            actions.put("Start performance test",this::chooseBenchmarkRoute);
+            if(getIntent()!=null&&getIntent().getBooleanExtra(EXTRA_RENDERER_CAPTURE,false))actions.put("Capture renderer timings",()->{mGameMenu.dismiss();triggerDiagnostic("gta4_profile_native_capture_trigger","Recording a short renderer capture. It adds overhead.");});
+            actions.put("Capture shadow issue",()->{mGameMenu.dismiss();triggerDiagnostic("gta4_shadow_capture_trigger","Recording shadow state for six frames.");});
+        }
+        mGameMenu=SessionMenuUi.show(this,mRuntimeSettings,mDriverMode,mSessionState,actions,()->{if(!mKeepMenuPaused)setHostMenu(false);hideSystemBars();});
     }
     private void showGameSettings() {
         android.widget.LinearLayout panel=new android.widget.LinearLayout(this);panel.setOrientation(android.widget.LinearLayout.VERTICAL);
@@ -227,6 +308,11 @@ public class LibertyActivity extends SDLActivity {
         }
         hub.setOnDismissListener(d->{if(!leaving[0])setHostMenu(false);hideSystemBars();});hub.show();
     }
+    private void startInputTrace(){
+        if(!mDebugLog){android.widget.Toast.makeText(this,"Start Input diagnostics from the launcher first.",android.widget.Toast.LENGTH_LONG).show();return;}
+        mPhoneUi.removeCallbacks(mInputTraceEnd);mMouseTraceEvents=0;mInputTraceLast=0;mInputTraceUntil=android.os.SystemClock.uptimeMillis()+30000;nativeSetInputTrace(true);DebugLog.note("input-test: start duration_seconds=30; test movement, camera, unarmed LMB, RMB+LMB and armed buttons");mPhoneUi.postDelayed(mInputTraceEnd,30000);android.widget.Toast.makeText(this,"Input capture active for 30 seconds.",android.widget.Toast.LENGTH_LONG).show();
+    }
+    private void stopInputTrace(){mPhoneUi.removeCallbacks(mInputTraceEnd);if(mInputTraceUntil==0)return;mInputTraceUntil=0;nativeSetInputTrace(false);DebugLog.note("input-test: complete or lifecycle-cancelled");}
     private void triggerDiagnostic(String key,String message){
         int trigger=0;try{trigger=Integer.parseInt(nativeGetSetting(key));}catch(Exception ignored){}
         boolean ok=nativeApplySettings(new String[]{key},new String[]{Integer.toString(trigger+1)});
@@ -234,21 +320,25 @@ public class LibertyActivity extends SDLActivity {
     }
     private void showChildSettings(boolean touch) {
         final boolean[] editing={false};
-        android.app.AlertDialog child=touch?MobileSettingsUi.touch(this,mDataRoot,mRuntimeSettings,xbox->{editing[0]=true;editCurrentLayout(xbox);}):MobileSettingsUi.graphics(this,mDataRoot,mRuntimeSettings);
-        if(child==null){setHostMenu(false);return;}
-        child.setOnDismissListener(d->{if(!editing[0])setHostMenu(false);hideSystemBars();});
+        android.app.AlertDialog child=touch?MobileSettingsUi.touch(this,mDataRoot,mRuntimeSettings,xbox->{editing[0]=true;mReturnToSettings=true;editCurrentLayout(xbox);}):MobileSettingsUi.graphics(this,mDataRoot,mRuntimeSettings);
+        if(child==null){showGameMenu();return;}
+        child.setOnDismissListener(d->{if(!editing[0])showGameMenu();hideSystemBars();});
     }
     private void editCurrentLayout(boolean xbox) {
         mXboxTouch=xbox;try{TouchLayoutSettings.save(mDataRoot,xbox);}catch(IOException ignored){}
         if(mGameMenu!=null&&mGameMenu.isShowing()){mKeepMenuPaused=true;mGameMenu.dismiss();}
         setHostMenu(true);
-        if(!xbox){
-            mNativeTouchEditor=true;
-            if(mControllerButton!=null)mControllerButton.setEnabled(false);
-            nativeEditLayout(nativeTouchEditorContext());hideSystemBars();return;
-        }
-        nativeSetTouchLayout(true);
+        nativeSetTouchLayout(xbox);
         Intent editor=new Intent(this,TouchEditorActivity.class);editor.putExtra("context",nativeTouchEditorContext());editor.putExtra("xbox",xbox);
+        try{
+            long generation=nativeTouchViewportGeneration();float[] viewport=nativeTouchViewport();
+            if(generation>0&&generation==nativeTouchViewportGeneration()&&TouchViewport.valid(viewport)){
+                String token=java.util.UUID.randomUUID().toString();java.util.Map<String,String> effective=new java.util.LinkedHashMap<>();
+                for(String key:ViewportIdentity.KEYS){String value=mRuntimeSettings.get(key);if(value!=null&&!value.isEmpty())effective.put(key,value);}
+                TouchViewport.save(mDataRoot,viewport,generation,token,ViewportIdentity.display(this),ViewportIdentity.settings(effective));
+                editor.putExtra("viewport_token",token);editor.putExtra("viewport_generation",generation);
+            }
+        }catch(IOException e){DebugLog.note("Touch viewport calibration unavailable: "+e.getMessage());}
         startActivityForResult(editor,REQUEST_TOUCH_EDITOR);
     }
     public void onNativeTouchEditorRequested(){
@@ -260,17 +350,19 @@ public class LibertyActivity extends SDLActivity {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(()->{
             if(isFinishing()||isDestroyed()||!mNativeTouchEditor)return;
             mNativeTouchEditor=false;if(mControllerButton!=null)mControllerButton.setEnabled(true);
-            showGameMenu();
+            restoreAfterEditor();
         });
     }
+    private void restoreAfterEditor(){if(mReturnToSettings){mReturnToSettings=false;showChildSettings(true);}else showGameMenu();}
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
-        if(request==REQUEST_TOUCH_EDITOR){if(result==RESULT_OK)nativeReloadTouchLayout();showGameMenu();hideSystemBars();}
+        if(request==REQUEST_TOUCH_EDITOR){if(result==RESULT_OK)nativeReloadTouchLayout();restoreAfterEditor();hideSystemBars();}
     }
+    void quitForRestart(){ DebugLog.note("Quit for settings restart"); DebugLog.stop(); finishAffinity(); }
     private void confirmQuit() {
         new android.app.AlertDialog.Builder(this).setTitle("Quit to launcher?")
-            .setMessage("Unsaved game progress will be lost.").setNegativeButton("Keep playing",(d,w)->setHostMenu(false))
-            .setOnCancelListener(d->setHostMenu(false)).setPositiveButton("Quit",(d,w)->{
+            .setMessage("Unsaved game progress will be lost.").setNegativeButton("Cancel",(d,w)->showGameMenu())
+            .setOnCancelListener(d->showGameMenu()).setPositiveButton("Quit",(d,w)->{
                 DebugLog.note("Player quit to launcher");DebugLog.stop();
                 Intent launcher=new Intent(this,LauncherActivity.class);launcher.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(launcher);finish();
@@ -281,8 +373,10 @@ public class LibertyActivity extends SDLActivity {
     }
 
     @Override protected void onDestroy() {
+        if(mPreparation!=null)mPreparation.close();
+        mPhoneUi.removeCallbacksAndMessages(null);if(mPhoneGyro!=null)mPhoneGyro.close();if(mPerformanceHud!=null)mPerformanceHud.close();
         if(mPhoneRumble!=null)mPhoneRumble.close();
-        if(mPerformanceSampler!=null)mPerformanceSampler.stop();
+        if(mPerformanceSampler!=null)mPerformanceSampler.stop();if(mSessionRecorder!=null)mSessionRecorder.close();stopInputTrace();
         try{super.onDestroy();}finally{DebugLog.stop();}
     }
 
@@ -392,7 +486,8 @@ public class LibertyActivity extends SDLActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        mWindowFocused=hasFocus;
+        if(!hasFocus)releaseMouse();
+        mWindowFocused=hasFocus;updatePhoneFeatureActivity();
         if(mPhoneRumble!=null)mPhoneRumble.active(mForeground&&hasFocus&&!mHostMenuOpen);
         if (hasFocus) {
             hideSystemBars();
@@ -417,6 +512,8 @@ public class LibertyActivity extends SDLActivity {
         File external = getExternalFilesDir(null);
         File dataRoot = external != null ? external : getFilesDir();
         mDataRoot = dataRoot;
+        configureDriverChoice(dataRoot);
+        try{MobileConfig.ensureDefaults(MobileConfig.file(dataRoot));PendingSettings.activate(dataRoot);}catch(IOException e){throw new IllegalStateException("Cannot prepare settings",e);}
         mXboxTouch=TouchLayoutSettings.xbox(dataRoot);
         mDebugLog=getIntent()!=null && getIntent().getBooleanExtra(EXTRA_DEBUG_LOG,false);
         if(mDebugLog) {
@@ -431,16 +528,19 @@ public class LibertyActivity extends SDLActivity {
         } catch (IOException e) {
             Log.e(TAG, "copying bundled resources failed", e);
         }
-        try { syncTouchIcons(this,new File(new File(dataRoot,"LibertyRecomp"),"touch-icons")); }
-        catch(IOException error) { Log.w(TAG,"Touch icons unavailable; using vector icons",error); }
+        try { syncTouchIcons(this); }
+        catch(IOException error) { Log.w(TAG,"Touch icons unavailable; using vector icons",error);DebugLog.note("Touch icon preparation failed: "+error.getMessage());android.widget.Toast.makeText(this,"Could not prepare button icons. Using fallback artwork.",android.widget.Toast.LENGTH_LONG).show(); }
         setenv("XDG_DATA_HOME", dataRoot.getAbsolutePath());
         setenv("HOME", dataRoot.getAbsolutePath());
         setenv("REX_RESOURCES_DIR", resources.getAbsolutePath());
         // Preserve upstream's conservative Turnip mode by default on supported
         // Adreno devices. Explicit choices and env.txt keep their precedence.
-        boolean defaultSysmem=getIntent()!=null && DriverPolicy.supports("turnip",
+        String profileMode=mDriverMode.equals(DriverBridge.AUTO)?DriverPolicy.automatic(getIntent()==null?"":getIntent().getStringExtra(EXTRA_GPU_RENDERER),Build.VERSION.SDK_INT):mDriverMode;
+        boolean turnipSelected=DriverBridge.isTurnip(dataRoot,profileMode);
+        boolean defaultSysmem=turnipSelected&&getIntent()!=null && DriverPolicy.supports("turnip",
             getIntent().getStringExtra(EXTRA_GPU_RENDERER),Build.VERSION.SDK_INT);
-        if(getIntent()!=null && getIntent().getBooleanExtra(EXTRA_TURNIP_SYSMEM,defaultSysmem)) setenv("TU_DEBUG","sysmem");
+        if(turnipSelected&&getIntent()!=null && getIntent().getBooleanExtra(EXTRA_TURNIP_SYSMEM,defaultSysmem)) setenv("TU_DEBUG","sysmem");
+        try{if(turnipSelected)for(java.util.Map.Entry<String,String> option:TurnipSettingsUi.environment(dataRoot,profileMode).entrySet())setenv(option.getKey(),option.getValue());}catch(IOException e){Log.w(TAG,"Driver options unavailable",e);}
         applyEnvironmentFile(new File(dataRoot, "env.txt"));
         File argsFile = new File(dataRoot, "args.txt");
         if (!argsFile.isFile()) {
@@ -463,7 +563,7 @@ public class LibertyActivity extends SDLActivity {
             arguments.add("--gta4_touch_gamepad_opacity="+controls.getFloatExtra(EXTRA_TOUCH_OPACITY,1f));
             arguments.add("--gta4_touch_swipe_sensitivity="+controls.getFloatExtra(EXTRA_TOUCH_SENSITIVITY,1f));
         }
-        DebugLaunchOptions.apply(arguments,mDebugLog,getIntent()!=null && getIntent().getBooleanExtra(EXTRA_INPUT_TRACE,false),mDebugLogFile);
+        DebugLaunchOptions.apply(arguments,mDebugLog,false,mDebugLogFile);
         if(mDebugLog&&getIntent()!=null&&getIntent().getBooleanExtra(EXTRA_RENDERER_CAPTURE,false))DebugLaunchOptions.rendererCapture(arguments);
         // Saved choices override bundled startup defaults, not deliberate
         // settings from a different Android preferences store.
@@ -475,7 +575,12 @@ public class LibertyActivity extends SDLActivity {
             }
         }catch(IOException failure){Log.w(TAG,"Reading mobile settings failed",failure);}
         arguments.add("--gta4_native_benchmark_trigger=0");
+        arguments.add("--gta4_native_benchmark_watchlist="+String.join(",",MobileSettingsUi.KEYS));
         arguments.add("--gta4_shadow_capture_trigger=0");arguments.add("--gta4_trace_shadow_targets=0");
+        arguments.add("--gta4_session_paused=false");
+        arguments.add("--gta4_native_preparation_cancel=false");arguments.add("--gta4_native_preparation_status=");
+        arguments.add("--gta4_completion_percent=-1");arguments.add("--gta4_completion_episode=-1");
+        PerformanceLaunchOptions.canonicalAntiAliasing(arguments);
         // Apply after saved settings so a previous debug session cannot re-arm logging.
         if(!mDebugLog)DebugLaunchOptions.apply(arguments,false,false,null);
         addInstallSources(new File(dataRoot, "install"), arguments);
@@ -493,6 +598,8 @@ public class LibertyActivity extends SDLActivity {
                 Log.w(TAG, "bad " + argument);
             }
         }
+        try{arguments.add("--data_file_mods="+MobileConfig.read(MobileConfig.file(dataRoot)).getOrDefault("data_file_mods","false"));}catch(IOException e){Log.w(TAG,"Mod setting unavailable",e);}
+        arguments.add("--game_data_root="+new File(GameStorage.installRoot(dataRoot),"game").getAbsolutePath());
         arguments.add("--gta4_touch_layout="+(mXboxTouch?"gamepad":"liberty"));
         java.util.LinkedHashMap<String,String> unique=new java.util.LinkedHashMap<>();int positional=0;
         for(String argument:arguments) {
@@ -502,6 +609,28 @@ public class LibertyActivity extends SDLActivity {
         }
         mArguments=unique.values().toArray(new String[0]);
         if(mDebugLog)DebugLog.note("Effective arguments: "+java.util.Arrays.toString(mArguments));
+        if(mDebugLog)Log.i(TAG, "data=" + dataRoot + " resources=" + resources
+                + " args=" + mArguments.length + " driver=" + mDriverMode);
+    }
+
+    private void chooseBenchmarkRoute(){
+        if(!mDebugLog){android.widget.Toast.makeText(this,"Use Play with logs to record a benchmark.",android.widget.Toast.LENGTH_LONG).show();return;}
+        android.widget.LinearLayout body=new android.widget.LinearLayout(this);body.setOrientation(android.widget.LinearLayout.VERTICAL);
+        body.addView(ModernUi.text(this,"Name the fixed route or scene you will repeat. The run has 30 seconds of warm-up and 60 seconds of measurement. Keep menus closed during the run.",13,ModernUi.MUTED));
+        android.widget.EditText route=new android.widget.EditText(this);route.setHint("Route or scene");route.setTextColor(ModernUi.TEXT);route.setSingleLine(true);body.addView(route);
+        final android.app.AlertDialog[] prompt={null};
+        prompt[0]=ModernUi.dialog(this,"Benchmark route",body,"Choose cache condition",()->{
+            String name=route.getText().toString().trim();if(name.isEmpty()){route.setError("Enter a route or scene name.");return;}
+            if(name.length()>64){route.setError("Use 64 characters or fewer.");return;}
+            prompt[0].dismiss();
+            ModernUi.choose(this,"Starting cache condition (warm-up follows)",new String[]{"Unspecified","Cold cache (prepared separately)","Warm cache"},0,which->{
+                if(mSessionRecorder!=null)mSessionRecorder.benchmarkStarted(new String[]{"unspecified","cold","warm"}[which],name);
+                mGameMenu.dismiss();triggerDiagnostic("gta4_native_benchmark_trigger","30 seconds warm-up, then 60 seconds measured. Follow the labelled route without opening menus.");
+            });
+        });prompt[0].show();
+    }
+
+    private void configureDriverChoice(File dataRoot){
         String driver = readFirstLine(new File(dataRoot, "driver.txt"));
         mDriverText = driver;
         String lower = driver == null ? "" : driver.toLowerCase(Locale.ROOT);
@@ -515,8 +644,6 @@ public class LibertyActivity extends SDLActivity {
         } else if (!lower.isEmpty() && !lower.equals(DriverBridge.TURNIP)) {
             Log.w(TAG, "unknown driver.txt value \"" + driver + "\", using automatic selection");
         }
-        if(mDebugLog)Log.i(TAG, "data=" + dataRoot + " resources=" + resources
-                + " args=" + mArguments.length + " driver=" + mDriverMode);
     }
 
     /**
@@ -623,16 +750,19 @@ public class LibertyActivity extends SDLActivity {
     }
 
     /** Copy the small immutable icon set once per APK update. */
-    private static void syncTouchIcons(Context context,File target) throws IOException {
+    private static void syncTouchIcons(Context context) throws IOException {
         String stamp;
         try {
             PackageInfo info=context.getPackageManager().getPackageInfo(context.getPackageName(),0);
             stamp=info.versionCode+":"+info.lastUpdateTime;
         } catch(Exception error) { stamp="unknown"; }
-        File marker=new File(target,".version");
-        if(marker.isFile() && stamp.equals(new String(Files.readAllBytes(marker.toPath()),StandardCharsets.UTF_8))) return;
-        copyAssetTree(context.getAssets(),"touch-icons",target);
-        Files.write(marker.toPath(),stamp.getBytes(StandardCharsets.UTF_8));
+        // Native Android GetUserFolder returns getFilesDir(), regardless of
+        // XDG_DATA_HOME. The external data root hid every PNG from the renderer.
+        File target=TouchIconAssets.sync(context.getFilesDir(),new TouchIconAssets.Source(){
+            public String[] names()throws IOException{return context.getAssets().list("touch-icons");}
+            public InputStream open(String name)throws IOException{return context.getAssets().open("touch-icons/"+name);}
+        },stamp);
+        Log.i(TAG,"Touch icon set ready: "+target);DebugLog.note("Touch icon set ready: "+target);
     }
 
     private static void copyAssetTree(AssetManager assets, String path, File target)

@@ -29,12 +29,39 @@
 #include "input/user_music_player.h"
 #include "input/gamepad_touch_overlay.h"
 #include "input/liberty_touch_overlay.h"
+#include "input/phone_gyro_policy.h"
+#include <chrono>
 #include "gta4_touch_coordinator.h"
+#include "gta4_quicksave_hooks.h"
 #include "network/community_multiplayer.h"
 #include "network/gta4_microphone_permission.h"
 
 REXCVAR_DEFINE_DOUBLE(gta4_phone_rumble_strength,0.5,"GTA IV/Input/Touch",
                       "Phone vibration strength; zero disables game rumble").range(0.0,1.0);
+
+REXCVAR_DEFINE_STRING(gta4_phone_gyro_mode,"off","GTA IV/Input/Touch","Phone gyro camera: off, aiming only, or active gameplay").allowed({"off","aim","always"});
+REXCVAR_DEFINE_DOUBLE(gta4_phone_gyro_sensitivity,1.0,"GTA IV/Input/Touch","Phone gyro camera sensitivity").range(0.1,5.0);
+REXCVAR_DEFINE_DOUBLE(gta4_phone_gyro_smoothing,0.03,"GTA IV/Input/Touch","Phone gyro smoothing in seconds").range(0.0,0.1);
+REXCVAR_DEFINE_BOOL(gta4_phone_gyro_invert_x,false,"GTA IV/Input/Touch","Invert horizontal phone gyro camera");
+REXCVAR_DEFINE_BOOL(gta4_phone_gyro_invert_y,false,"GTA IV/Input/Touch","Invert vertical phone gyro camera");
+REXCVAR_DEFINE_STRING(gta4_performance_overlay,"off","GTA IV/Interface","Performance overlay detail").allowed({"off","fps","detailed"});
+REXCVAR_DEFINE_STRING(gta4_overlay_position,"top_right","GTA IV/Interface","Performance overlay corner").allowed({"top_left","top_center","top_right","bottom_left","bottom_center","bottom_right","custom"});
+REXCVAR_DEFINE_INT32(gta4_overlay_text_size,12,"GTA IV/Interface","Overlay text size in sp").range(9,24);
+REXCVAR_DEFINE_DOUBLE(gta4_overlay_opacity,1.0,"GTA IV/Interface","Overlay opacity").range(0.2,1.0);
+REXCVAR_DEFINE_DOUBLE(gta4_overlay_x,0.5,"GTA IV/Interface","Custom overlay horizontal placement").range(0.0,1.0);
+REXCVAR_DEFINE_DOUBLE(gta4_overlay_y,0.1,"GTA IV/Interface","Custom overlay vertical placement").range(0.0,1.0);
+REXCVAR_DEFINE_BOOL(gta4_overlay_ram,true,"GTA IV/Interface","Show overlay RAM");
+REXCVAR_DEFINE_BOOL(gta4_overlay_thermal,true,"GTA IV/Interface","Show overlay thermal status");
+REXCVAR_DEFINE_INT32(gta4_overlay_edge_gap,2,"GTA IV/Interface","Overlay safe-edge gap in dp").range(0,40);
+REXCVAR_DEFINE_BOOL(gta4_overlay_compact,false,"GTA IV/Interface","One-line overlay metrics");
+REXCVAR_DEFINE_BOOL(gta4_session_paused,false,"GTA IV/Status","Host menu owns gameplay pause");
+extern "C" JNIEXPORT void JNICALL
+Java_com_libertyrecomp_LibertyActivity_nativeGyroSample(JNIEnv*,jclass,jfloat x,jfloat y){
+ const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+ gta4::input::phone_gyro.Publish(x,y,now);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_libertyrecomp_LibertyActivity_nativeGyroReset(JNIEnv*,jclass){gta4::input::phone_gyro.Reset();}
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_libertyrecomp_LibertyActivity_nativeSetTouchLayout(JNIEnv*, jclass, jboolean xbox) {
@@ -42,6 +69,9 @@ Java_com_libertyrecomp_LibertyActivity_nativeSetTouchLayout(JNIEnv*, jclass, jbo
 }
 namespace {
 const std::set<std::string_view> mobile_settings={
+  "gta4_native_preparation_cancel","gta4_native_texture_reuse_extended","gta4_native_depth_clip_fallback",
+  "mnk_mode","mnk_sensitivity","mnk_invert_y","gta4_native_output_dither","gta4_disable_tlad_film_grain",
+  "gta4_overlay_text_size","gta4_overlay_opacity","gta4_overlay_x","gta4_overlay_y","gta4_overlay_ram","gta4_overlay_thermal","gta4_overlay_compact","gta4_overlay_edge_gap","gta4_touch_icon_outline",
   "gta4_native_anti_aliasing","gta4_present_mode","gta4_frame_limit","gta4_draw_distance_scale",
   "gta4_native_water_reflection_interval","gta4_native_environment_reflection_interval","gta4_motion_blur",
   "gta4_native_benchmark_trigger","gta4_profile_native_capture_trigger","gta4_shadow_capture_trigger","gta4_trace_shadow_targets",
@@ -49,8 +79,11 @@ const std::set<std::string_view> mobile_settings={
   "gta4_touch_swipe_sensitivity","gta4_touch_move_smoothing","gta4_touch_radar_top",
   "gta4_touch_camera_scale","gta4_touch_camera_opacity","gta4_touch_radar_margin",
   "gta4_touch_button_hints","gta4_touch_labels",
-  "gta4_phone_rumble_strength",
-  "gta4_native_smaa_quality","gta4_native_shadow_interval","gta4_reflection_capture_distance","gta4_dynamic_draw_distance"};
+  "gta4_phone_rumble_strength","achievement_notifications","gta4_touch_animations","gta4_cheat_achievements",
+  "gta4_touch_aim_hold_lock","gta4_touch_aim_hold_seconds",
+  "android_thermal_guard","audio_mute","gta4_performance_overlay","gta4_overlay_position",
+  "gta4_phone_gyro_mode","gta4_phone_gyro_sensitivity","gta4_phone_gyro_smoothing","gta4_phone_gyro_invert_x","gta4_phone_gyro_invert_y",
+  "gta4_native_pipeline_lookahead","gta4_native_smaa_quality","gta4_native_shadow_interval","gta4_reflection_capture_distance","gta4_dynamic_draw_distance"};
 std::string JavaString(JNIEnv* env,jstring s) {
   if(!s)return {};
   const char* chars=env->GetStringUTFChars(s,nullptr);if(!chars)return {};
@@ -107,6 +140,23 @@ void AndroidRegisterMobileSettingsCallbacks() {
   });
   NotifyAndroidFrameLimit(rex::cvar::GetFlagByName("gta4_frame_limit"));
 }
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_libertyrecomp_LibertyActivity_nativeTouchViewport(JNIEnv* env,jclass) {
+  rex::input::TouchPresentationState p{};
+  if(!rex::input::GetTouchPresentationState(&p)||!p.valid||p.logical_width<=0||p.logical_height<=0)return nullptr;
+  const jfloat values[6]={p.logical_safe_x/p.logical_width,p.logical_safe_y/p.logical_height,(p.logical_safe_x+p.logical_safe_width)/p.logical_width,(p.logical_safe_y+p.logical_safe_height)/p.logical_height,p.logical_width,p.logical_height};
+  auto result=env->NewFloatArray(6);if(result)env->SetFloatArrayRegion(result,0,6,values);return result;
+}
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_libertyrecomp_LibertyActivity_nativeTouchViewportGeneration(JNIEnv*,jclass) {
+  rex::input::TouchPresentationState p{};
+  return rex::input::GetTouchPresentationState(&p)&&p.valid?static_cast<jlong>(p.generation):0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_libertyrecomp_LibertyActivity_nativeSetInputTrace(JNIEnv*,jclass,jboolean enabled) {
+  const auto value=enabled==JNI_TRUE?"true":"false";
+  return rex::cvar::SetFlagByName("input_trace",value)&&rex::cvar::SetFlagByName("gta4_native_input_trace",value)?JNI_TRUE:JNI_FALSE;
+}
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_libertyrecomp_LibertyActivity_nativeGetSetting(JNIEnv* env,jclass,jstring name) {
   const auto key=JavaString(env,name);
@@ -117,7 +167,7 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_libertyrecomp_LibertyActivity_nativeApplySettings(JNIEnv* env,jclass,jobjectArray keys,jobjectArray values) {
   if(!keys||!values)return JNI_FALSE;
   const auto count=env->GetArrayLength(keys);
-  if(count>64||count!=env->GetArrayLength(values))return JNI_FALSE;
+  if(count>128||count!=env->GetArrayLength(values))return JNI_FALSE;
   std::vector<std::pair<std::string,std::string>> changes;
   for(jsize i=0;i<count;++i) {
     auto k=static_cast<jstring>(env->GetObjectArrayElement(keys,i));auto v=static_cast<jstring>(env->GetObjectArrayElement(values,i));
@@ -135,7 +185,7 @@ Java_com_libertyrecomp_LibertyActivity_nativeApplySettings(JNIEnv* env,jclass,jo
       return JNI_FALSE;
     }
   }
-  if(changes.size()==1&&(changes[0].first=="gta4_native_benchmark_trigger"||changes[0].first=="gta4_profile_native_capture_trigger"||changes[0].first=="gta4_shadow_capture_trigger"||changes[0].first=="gta4_trace_shadow_targets"))return JNI_TRUE;
+  if(changes.size()==1&&(changes[0].first=="gta4_native_preparation_cancel"||changes[0].first=="gta4_native_benchmark_trigger"||changes[0].first=="gta4_profile_native_capture_trigger"||changes[0].first=="gta4_shadow_capture_trigger"||changes[0].first=="gta4_trace_shadow_targets"))return JNI_TRUE;
   std::filesystem::path data_root;
   if(const auto* external=SDL_GetAndroidExternalStoragePath();external&&*external)data_root=external;
   if(data_root.empty())data_root=rex::filesystem::GetUserFolder();
@@ -152,6 +202,9 @@ Java_com_libertyrecomp_LibertyActivity_nativeApplySettings(JNIEnv* env,jclass,jo
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_libertyrecomp_LibertyActivity_nativeHostMenu(JNIEnv*,jclass,jboolean open) {
+  rex::cvar::SetFlagByName("gta4_session_paused",open==JNI_TRUE?"true":"false");
+  gta4::input::phone_gyro.Reset();
+  if(open==JNI_TRUE)gta4::input::ResetLibertyTouchOverlay();
   gta4::input::SetTouchHostMenu(open==JNI_TRUE);
   GTA4_SetTouchTitleInputOwned(open==JNI_TRUE);
 }
@@ -176,6 +229,10 @@ Java_com_libertyrecomp_LibertyActivity_nativeReloadTouchLayout(JNIEnv*,jclass) {
 extern "C" JNIEXPORT jint JNICALL
 Java_com_libertyrecomp_LibertyActivity_nativeTouchEditorContext(JNIEnv*,jclass) {
   return gta4::input::LibertyTouchEditorContext();
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_libertyrecomp_LibertyActivity_nativeQueueCheat(JNIEnv*,jclass,jint index){
+  return index>=0&&gta4::quicksave::QueueCheat(uint32_t(index))?JNI_TRUE:JNI_FALSE;
 }
 extern "C" void GTA4_AndroidRequestTouchEditor() {
   auto* env=static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());auto activity=static_cast<jobject>(SDL_GetAndroidActivity());

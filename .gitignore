@@ -673,6 +673,12 @@ build-codegen/
 *.sh
 *.py
 /tools/*.py
+!/tools/check_android_native.py
+!/tools/check_android_ui.py
+!/tools/generate_touch_theme.py
+!/tools/analyze_android_session.py
+!/tools/verify_r2_test4_apk.py
+!glue/rexglue-sdk-main/gta4-recomp/tools/check_hack_registry.py
 !glue/rexglue-sdk-main/gta4-recomp/tools/derive_draw_distance_hooks.py
 !glue/rexglue-sdk-main/gta4-recomp/tools/derive_frontend_advanced_menu_layout.py
 !glue/rexglue-sdk-main/gta4-recomp/tools/verify_gta4_keyboard_consumers.py
@@ -754,6 +760,7 @@ CMakeUserPresets.json
 !/.github/workflows/
 /.github/workflows/*
 !/.github/workflows/repository-checks.yml
+!/.github/workflows/android-checks.yml
 !/.github/workflows/build-macos.yml
 
 # Reproducible touch regression runner and arithmetic fixtures.
@@ -794,3 +801,7 @@ CMakeUserPresets.json
 !/tools/tests/test_metal_shader_archive.py
 !/tools/vulkan/*.py
 !/glue/rexglue-sdk-main/cmake/fidelityfx_shader_compiler.py
+
+# R2 Test 3 verification and layout preview
+!/tools/preview_r2_test3_ui.py
+!/tools/verify_r2_test3_apk.py

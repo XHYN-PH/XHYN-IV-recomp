@@ -13,6 +13,8 @@
 #include "input/context_touch_controls.h"
 #include "input/context_touch_context.h"
 #include "input/liberty_touch_overlay.h"
+#include "input/phone_gyro_policy.h"
+#include <chrono>
 #include "input/user_music_player.h"
 
 #include <rex/cvar.h>
@@ -1423,6 +1425,14 @@ InputEpoch CaptureEpoch(const PPCContext& entry_context, uint8_t* base,
   NativeInputState state{};
   const bool physical_native_valid = rex::input::mnk::ConsumeNativeInputState(&state);
   auto touch_look=gta4::input::ConsumeTouchLook();
+#if REX_PLATFORM_ANDROID
+  const auto phone_context=gta4::input::GetTouchContextSnapshot();
+  const auto gyro_mode=rex::cvar::GetFlagByName("gta4_phone_gyro_mode");
+  const bool phone_gyro_allowed=!GTA4_TouchTitleInputOwned()&&phone_context.valid&&phone_context.playing&&phone_context.gameplay_allowed&&!phone_context.frontend&&!phone_context.phone_visible&&!phone_context.loading&&!phone_context.cutscene&&(gyro_mode=="always"||(gyro_mode=="aim"&&phone_context.aiming));
+  const auto gyro_now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+  const auto gyro=gta4::input::phone_gyro.Consume(gyro_now,phone_gyro_allowed);
+  if(gyro.active){touch_look.x+=gyro.x;touch_look.y+=gyro.y;touch_look.active=true;}
+#endif
   if(GTA4_TouchTitleInputOwned())touch_look={};
   if(!physical_native_valid)state={};
   if(touch_look.active) {

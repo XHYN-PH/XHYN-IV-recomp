@@ -231,18 +231,10 @@ void PowerLoop() {
       }
       headroom = thermal && api.thermal_headroom ? api.thermal_headroom(thermal, 10) : __builtin_nanf("");  // 10 s ahead
       gpu_temperature = GpuTemperature();
-      bool hot = false, cool = false;
-      if (headroom == headroom) {
-        hot = headroom >= 0.95f;
-        cool = headroom <= 0.75f;
-      } else if (thermal && api.thermal_status && api.thermal_status(thermal) >= 0) {
-        const int status = api.thermal_status(thermal);
-        hot = status >= 3;
-        cool = status <= 1;
-      } else if (gpu_temperature == gpu_temperature) {
-        hot = gpu_temperature >= REXCVAR_GET(android_thermal_guard_hot_c);
-        cool = gpu_temperature <= REXCVAR_GET(android_thermal_guard_cool_c);
-      }
+      const auto pressure=gta4::android_power::ClassifyThermals(headroom,
+          thermal&&api.thermal_status?api.thermal_status(thermal):-1,gpu_temperature,
+          REXCVAR_GET(android_thermal_guard_hot_c),REXCVAR_GET(android_thermal_guard_cool_c));
+      const bool hot=pressure.hot,cool=pressure.cool;
       const bool recovered=recovery_hold.Update(uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()),hot,cool);
       const bool guard=REXCVAR_GET(android_thermal_guard);
       if(!guard||recovered)gta4::android_power::thermal_pressure.store(false,std::memory_order_relaxed);

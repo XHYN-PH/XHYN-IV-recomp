@@ -55,6 +55,7 @@ final class Installer {
 
     static native String nativeInspect(String path);
     static native String nativeInstallState(String gameRoot);
+    static native String nativePrepareAchievements(String gameRoot, String userRoot);
     static native String nativeInstall(String game, String update, String tlad, String tbogt,
                                        String installRoot);
     static native long[] nativeProgress();
@@ -85,7 +86,7 @@ final class Installer {
 
     /** The folder the game is installed into (files/LibertyRecomp). */
     static File installRoot(File dataRoot) {
-        return new File(dataRoot, "LibertyRecomp");
+        return GameStorage.installRoot(dataRoot);
     }
 
     /** Null when the installed game can start, otherwise why not. */
@@ -119,6 +120,11 @@ final class Installer {
             try {
                 error = nativeInstall(nz(game), nz(update), nz(tlad), nz(tbogt),
                         root.getAbsolutePath());
+                if (error == null || error.isEmpty()) {
+                    String metadata = nativePrepareAchievements(new File(root, "game").getAbsolutePath(),
+                            new File(dataRoot, "LibertyRecomp/saves").getAbsolutePath());
+                    if (metadata != null && !metadata.isEmpty()) Log.w(TAG, metadata);
+                }
             } catch (Throwable e) {
                 error = "The installer stopped: " + e.getMessage();
             }
@@ -131,6 +137,18 @@ final class Installer {
 
     static boolean running() {
         return sRunning;
+    }
+
+    /** Called on a worker after the launcher has blocked other file actions. */
+    static String prepareAchievements(Context context, File dataRoot) {
+        if (!load(context)) return "Achievement preparation is unavailable: " + loadError();
+        if (sRunning) return "Wait for installation to finish.";
+        try {
+            return nativePrepareAchievements(new File(installRoot(dataRoot), "game").getAbsolutePath(),
+                    new File(dataRoot, "LibertyRecomp/saves").getAbsolutePath());
+        } catch (Throwable error) {
+            return "Achievement preparation stopped: " + error.getMessage();
+        }
     }
 
     /** Null while nothing finished; "" after a success; the error otherwise. */

@@ -1,0 +1,2 @@
+Unmodified upstream driver archive. Source and redistribution terms: https://github.com/StevenMXZ/Adreno-Tools-Drivers
+See drivers/xhyn-bundled-provenance.json for pinned release and hashes. Device support in upstream does not establish game compatibility.

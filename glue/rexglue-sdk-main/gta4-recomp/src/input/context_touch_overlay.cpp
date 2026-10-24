@@ -1,6 +1,7 @@
 #include "input/context_touch_overlay.h"
 
 #include <algorithm>
+#include <rex/logging.h>
 #include <cctype>
 #include <fstream>
 #include <vector>
@@ -53,6 +54,7 @@ bool ContextTouchOverlay::ResolveIcon(void* context, std::string_view id, Contex
         }
       }
     }
+    REXLOG_INFO("touch-icon: name={} bitmap_loaded={} vector_fallback={}",key,bool(texture),!texture);
     found = self.icons_.emplace(key, std::move(texture)).first;
   }
   if (!found->second) return false;

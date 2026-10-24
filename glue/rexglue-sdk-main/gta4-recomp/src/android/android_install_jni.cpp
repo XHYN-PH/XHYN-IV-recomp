@@ -14,6 +14,8 @@
 #include <mutex>
 #include <string>
 
+#include <rex/runtime.h>
+
 #include "install/gta4_installer.h"
 #include "install/gta4_source_inspector.h"
 
@@ -83,6 +85,38 @@ JNIEXPORT jstring JNICALL Java_com_libertyrecomp_Installer_nativeInstallState(JN
   const bool ready =
       gta4::install::IsInstallReady(std::filesystem::path(FromJava(env, root_value)), &reason);
   return ToJava(env, ready ? std::string() : (reason.empty() ? "not installed" : reason));
+}
+
+// Load title metadata without launching a guest thread, GPU, audio or input.
+// Use the normal title loader so the catalog, icons and persisted unlocks have
+// exactly the same identity and format as a subsequent gameplay launch.
+JNIEXPORT jstring JNICALL Java_com_libertyrecomp_Installer_nativePrepareAchievements(
+    JNIEnv* env, jclass, jstring game_value, jstring user_value) {
+  std::unique_lock lock(g_install_mutex, std::try_to_lock);
+  if (!lock.owns_lock()) return ToJava(env, "An installation is already running.");
+  const std::filesystem::path game(FromJava(env, game_value));
+  const std::filesystem::path user(FromJava(env, user_value));
+  std::string reason;
+  if (user.empty() || !gta4::install::IsInstallReady(game, &reason)) {
+    return ToJava(env, reason.empty() ? "Install valid game files first." : reason);
+  }
+  try {
+    if (rex::Runtime::instance()) return ToJava(env, "The metadata loader is already active.");
+    rex::Runtime runtime(game, user, game.parent_path() / "update");
+    rex::RuntimeConfig config;
+    config.tool_mode = true;
+    if (XFAILED(runtime.Setup(std::move(config))) ||
+        XFAILED(runtime.LoadXexImage("game:\\default.xex"))) {
+      return ToJava(env, "Could not read achievement metadata from the installed game.");
+    }
+    if (runtime.kernel_state()->loaded_achievements().empty() ||
+        !std::filesystem::is_regular_file(user / "achievements" / "catalog.json")) {
+      return ToJava(env, "The installed game did not provide an achievement catalog.");
+    }
+    return ToJava(env, "");
+  } catch (const std::exception& error) {
+    return ToJava(env, std::string("Achievement preparation failed: ") + error.what());
+  }
 }
 
 // Installs into install_root (the LibertyRecomp folder; the game lands in

@@ -62,8 +62,10 @@ final class DebugLogArchive {
                     else if(f.isDirectory()&&new File(f,"capture-complete.txt").isFile())profile(zip,f,"session/"+f.getName()+"/",0);
                 }
             }
+            File diagnostics=SessionHistory.directory(primary);
+            for(String name:new String[]{"last-session.properties","previous-exit.properties"}){File f=new File(diagnostics,name);if(f.isFile()&&!java.nio.file.Files.isSymbolicLink(f.toPath())&&f.length()<=65536)add(zip,f,"context/"+name);}
             zip.putNextEntry(new ZipEntry("README.txt"));
-            zip.write(("XHYN IV diagnostics. Selected session: "+session+"\nOnly this session is included. Large text logs retain startup and the latest entries with an omission marker. Publisher frame rate is not a measurement of displayed frames; publisher wall time includes waits. CSV benchmark data is kept complete.\n").getBytes(StandardCharsets.UTF_8));
+            zip.write(("XHYN IV diagnostics. Selected session: "+session+"\nOnly the selected session logs are included. The context folder contains timestamped last-session and historical Android exit summaries, which may describe a different session. Large text logs retain startup and the latest entries with an omission marker. Publisher frame rate is not a measurement of displayed frames; publisher wall time includes waits. CSV benchmark data is kept complete.\n").getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
         }
     }

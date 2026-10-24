@@ -1,0 +1,2 @@
+Unmodified upstream driver archive. Source and redistribution terms: https://github.com/JimVulkan/radv-xclipse
+See drivers/xhyn-bundled-provenance.json for pinned release and hashes. Device support in upstream does not establish game compatibility.

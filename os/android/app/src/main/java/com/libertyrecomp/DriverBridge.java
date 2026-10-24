@@ -41,6 +41,33 @@ final class DriverBridge {
     private static boolean sInitialized;
     /** What the first initialization returned; the proxy is set up once per process. */
     private static String sStatus;
+    private static String sLoadedMode=SYSTEM;
+    static synchronized String loadedMode(){return sLoadedMode;}
+    static boolean isTurnip(File data,String mode){
+        mode=DriverState.normalize(mode);
+        BundledDrivers.Bundle bundle=BundledDrivers.ALL.get(mode);
+        if(bundle!=null)return bundle.library.contains("freedreno");
+        if(mode.startsWith(CUSTOM_PREFIX))try{return customLibrary(new File(data,"drivers/"+mode.substring(CUSTOM_PREFIX.length()))).contains("freedreno");}catch(IOException ignored){}
+        return false;
+    }
+    static synchronized boolean rememberWorking(Context context,File data){
+        if(!sInitialized)return false;
+        try{JSONObject status=new JSONObject(sStatus);if(!status.optBoolean("ok")||!status.optBoolean("published_frames"))return false;
+            DriverState.working(data,sLoadedMode,Build.FINGERPRINT,Build.VERSION.SDK_INT,sStatus);
+            return true;
+        }catch(IOException|JSONException error){Log.w(TAG,"Could not retain the last observed working driver",error);}
+        return false;
+    }
+    static synchronized boolean observeRenderer(File data,String device){
+        if(!sInitialized||device==null||device.length()>16384)return false;
+        try{JSONObject active=new JSONObject(device);if(active.optString("name").isEmpty())return false;
+            JSONObject report=new JSONObject(sStatus);report.put("render_device",active);report.put("published_frames",true);sStatus=report.toString();
+            DriverState.observe(data,report.optString("requested_mode",SYSTEM),sLoadedMode,sStatus);
+            return true;
+        }catch(IOException|JSONException error){Log.w(TAG,"Could not retain actual renderer identity",error);}
+        return false;
+    }
+    static synchronized String status(){return sStatus==null?"{}":sStatus;}
 
     private DriverBridge() {}
 
@@ -56,6 +83,8 @@ final class DriverBridge {
         if (sInitialized) {
             return sStatus;
         }
+        String requested=DriverState.normalize(mode),selectionError="";
+        mode=requested;
         String nativeDir = context.getApplicationInfo().nativeLibraryDir;
         boolean unknownKgsl=(renderer==null || renderer.isEmpty()) &&
                 (new File("/dev/kgsl-3d0").exists() || new File("/sys/class/kgsl").exists());
@@ -74,7 +103,7 @@ final class DriverBridge {
             }
         } catch(IOException | RuntimeException error) {
             Log.e(TAG,"Selected driver unavailable; using the system driver",error);
-            custom=false;library="";
+            custom=false;library="";selectionError=error.getMessage()==null?"Driver package unavailable":error.getMessage();
         }
         if (!driverDir.isDirectory() && !driverDir.mkdirs()) {
             Log.w(TAG, "cannot create " + driverDir);
@@ -85,6 +114,15 @@ final class DriverBridge {
         String status = nativeInit(nativeDir, driverDir.getAbsolutePath(),
                 custom ? library : "", custom, custom);
         sInitialized = true;
+        try{
+            JSONObject report=new JSONObject(status);
+            sLoadedMode="custom".equals(report.optString("mode"))?mode:SYSTEM;
+            report.put("requested_mode",requested);report.put("loaded_mode",sLoadedMode);report.put("device_fingerprint",Build.FINGERPRINT);report.put("android_api",Build.VERSION.SDK_INT);
+            if(!selectionError.isEmpty())report.put("selection_error",selectionError);
+            status=report.toString();
+            File data=context.getExternalFilesDir(null);if(data==null)data=context.getFilesDir();
+            DriverState.observe(data,requested,sLoadedMode,status);
+        }catch(JSONException|IOException error){Log.w(TAG,"Driver observation could not be saved",error);}
         sStatus = status;
         boolean ok = false;
         try {
@@ -130,38 +168,48 @@ final class DriverBridge {
             throw new IOException("bad custom driver name: " + name);
         }
         File external=context.getExternalFilesDir(null);
-        File source=new File(external!=null ? external : context.getFilesDir(),"drivers/"+name);
+        File sourceRoot=new File(external!=null ? external : context.getFilesDir(),"drivers");
+        DriverPackages.recover(sourceRoot,name);
+        File source=new File(sourceRoot,name);
         File[] files = source.listFiles();
         if (files == null || files.length == 0) {
             throw new IOException("no custom driver files in " + source);
         }
-        File destination = new File(new File(context.getFilesDir(), "drivers"), "custom-" + name);
-        deleteRecursively(destination);
-        if (!destination.mkdirs()) {
-            throw new IOException("cannot create " + destination);
-        }
-        for (File file : files) {
-            if (!file.isFile()) continue;
-            try (InputStream in = new java.io.FileInputStream(file);
-                 OutputStream out = new FileOutputStream(new File(destination, file.getName()))) {
-                copy(in, out);
+        File root=new File(context.getFilesDir(),"drivers");
+        java.nio.file.Files.createDirectories(root.toPath());
+        File staged=java.nio.file.Files.createTempDirectory(root.toPath(),".custom-").toFile();
+        try {
+            long total=0;
+            for (File file : files) {
+                if(java.nio.file.Files.isSymbolicLink(file.toPath())||!file.isFile()||!DriverPackages.filename(file.getName()))
+                    throw new IOException("Invalid custom driver file.");
+                total+=file.length();if(total>256L*1024*1024)throw new IOException("Driver package is too large.");
+                try(InputStream in=new FileInputStream(file);FileOutputStream out=new FileOutputStream(new File(staged,file.getName()))){copy(in,out);out.getFD().sync();}
             }
+            customLibrary(staged);
+            return DriverPackages.activate(root,"custom-"+name,staged);
+        } finally {
+            DriverPackages.delete(staged);
         }
-        return destination;
     }
 
     /** meta.json libraryName, else the only .so in the package. */
     private static String customLibrary(File dir) throws IOException {
         File meta = new File(dir, META);
         if (meta.isFile()) {
+            if(meta.length()>65536||java.nio.file.Files.isSymbolicLink(meta.toPath()))throw new IOException("Invalid driver metadata.");
             try (InputStream in = new java.io.FileInputStream(meta)) {
                 java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
                 copy(in, bytes);
                 JSONObject metadata=new JSONObject(bytes.toString("UTF-8"));
                 if(metadata.optInt("minApi",29)>Build.VERSION.SDK_INT) throw new IOException("Driver requires a newer Android version");
                 String name=metadata.optString("libraryName","");
-                if (!name.isEmpty() && !name.contains("/") && !name.contains("\\") && !name.contains("..") && new File(dir,name).isFile()) return name;
-            } catch (JSONException ignored) {
+                if (!name.isEmpty()) {
+                    if(!DriverPackages.filename(name)||!name.endsWith(".so")||!new File(dir,name).isFile())throw new IOException("Invalid driver library path.");
+                    return name;
+                }
+            } catch (JSONException error) {
+                throw new IOException("Invalid driver metadata.",error);
             }
         }
         File[] libraries = dir.listFiles((d, n) -> n.endsWith(".so"));
@@ -193,9 +241,7 @@ final class DriverBridge {
                 for(java.util.Map.Entry<String,String> file:bundle.files.entrySet())
                     extract(zip,file.getKey(),new File(staging,file.getKey()),file.getValue());
             }
-            deleteRecursively(destination);
-            if(!staging.renameTo(destination)) throw new IOException("Cannot activate "+destination);
-            return destination;
+            return DriverPackages.activate(parent,destination.getName(),staging);
         } finally { if(!archive.delete()) archive.deleteOnExit();deleteRecursively(staging); }
     }
 

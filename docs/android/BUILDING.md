@@ -1,6 +1,6 @@
 # Building the Android APK
 
-The XHYN release APK is built on Linux. The original Windows/Git Bash scripts are also retained below. The Linux release packager requires a private signing key; keys and passwords must stay outside the repository.
+The XHYN release APK is built on Linux. The helper scripts also support Linux host tools; Windows/Git Bash instructions are retained below. The Linux release packager requires a private signing key; keys and passwords must stay outside the repository.
 
 The generated C++ for the game is checked in, as it is upstream, so building needs no game files.
 
@@ -40,7 +40,14 @@ python3 os/android/scripts/package_release.py \
   --output out/XHYN-IV.apk
 ```
 
+For the helper-script route on Linux, `setup_host_tools.sh` accepts `HOST_DXC`, `HOST_DXC_LIB`, `HOST_GLSLANG` and `HOST_SPIRV_VAL` overrides. `env.sh` honors `ANDROID_SDK_ROOT`/`ANDROID_HOME` and `ANDROID_NDK_HOME`/`ANDROID_NDK`; adb is optional for compilation. The documented direct CMake route above was used for the verified R2 candidate. The registry checker validates duplicate entries and safe-value structure; it does not prove that every behavior-changing CVar has correct safe-mode semantics.
+
 Adjust build parallelism to available RAM. This compiles large generated sources and may take a long time. The packager stages and strips the native libraries, compiles Java/resources, checks native dependencies, aligns the APK for 16 KiB pages and signs it. The default key alias is `xhyn`; use `--alias` for a different alias.
+
+To prepare a reviewable build before the existing release key is available, use
+`python3 os/android/scripts/package_release.py --unsigned --output out/XHYN-IV-unsigned.apk`.
+This still builds the complete package from the fresh libraries and verifies alignment.
+The unsigned APK cannot be installed until it is signed; it is not a published release.
 
 Generate and protect your own signing key for personal builds. A build signed with a different key cannot update an installed XHYN release. Export saves before replacing an installation; uninstalling removes its data. Never commit a keystore, password file or signing credentials.
 

@@ -11,6 +11,9 @@ System.
 | --- | --- | --- |
 | Turnip 26.3.0 R6 | Original LibertyRecompAndroid pinned bundle | 10 |
 | PanVK Kbase RC3 | [zenithblue-oss/panvk-kbase-android](https://github.com/zenithblue-oss/panvk-kbase-android/releases/tag/panvk-kbase-v0.1.0-rc3) | 15 |
+| V38 Patched (Mesa 27.0.0-devel) | [StevenMXZ v27.0.0-R1](https://github.com/StevenMXZ/Adreno-Tools-Drivers/releases/tag/v27.0.0-R1) | 10 |
+| Vauzi v4.3 (Mesa 27.0.0-devel) | [Vauzi-17 v4.3](https://github.com/Vauzi-17/710/releases/tag/4.3) | 10 |
+| RADV Xclipse 1.8 | [JimVulkan/radv-xclipse](https://github.com/JimVulkan/radv-xclipse/releases/tag/v1.8.0) | 14 |
 | RADV Xclipse 1.6 | [JimVulkan/radv-xclipse](https://github.com/JimVulkan/radv-xclipse/releases/tag/v.1.6.0) | 14 |
 
 PanVK and RADV are experimental options for matching Mali/Immortalis and Xclipse
@@ -21,6 +24,41 @@ notices and license texts are included in `assets/drivers/licenses/panvk`.
 RADV’s upstream notice remains inside its archive.
 
 No driver can add missing kernel support or make every Android GPU compatible.
-The renderer still requires Vulkan 1.2, shaderInt64, depthClamp,
-sampleRateShading and independentBlend. Clip/cull-distance compatibility is a
-separate shader fallback and does not emulate clipping.
+The renderer requires Vulkan 1.2, shaderInt64, sampleRateShading, independentBlend,
+bufferDeviceAddress, runtimeDescriptorArray, partially bound descriptors and
+dynamicRendering. The loader probe reports these features and device limits.
+The actual selected render device is recorded separately after initialization.
+
+The address-only uint32-pair rewrite remains research code. A structural check
+of all 2,062 early/late title variants accepted 1,619 and rejected 443, including
+signed64 and other unreviewed operations. Accepted outputs passed SPIR-V
+validation; this is not GPU execution or arithmetic certification. Automatic
+device admission still requires shaderInt64, so an incomplete rewrite cannot
+silently substitute missing title shaders. Complete coverage and device
+validation are required before relaxing that requirement.
+
+Full equivalent depthClamp emulation is not complete. The ordinary-depth-
+clipping experiment now defaults Off and is explicitly a visual compromise.
+Turning it on does not prevent near/far clipping or certify shadows. Existing
+clip/cull-distance rewriting can omit title clip planes; it is not equivalent
+fragment clipping. Mali/Xclipse correctness remains open pending a reviewed
+shader/pipeline fallback and device validation.
+
+The v4.3 standard archive remains unmodified and hash pinned. Its upstream
+release reports Mesa commit `d1e369d8a63e`; the package includes changes for
+Adreno 613, 710, 720 and 722 and is exposed as a candidate across admitted Adreno
+6xx/7xx/8xx families. Family admission is followed by native capability checks.
+The UI lists unavailable PanVK/RADV bundles with their GPU/API admission reason.
+It does not auto-select the new candidate or replace a saved/imported choice.
+
+V38 is labelled by its actual Mesa development version, with its community
+package name retained. The current upstream build recipe differs from the
+historical V38 recipe and defaults to mutable Mesa main. Exact reproduction of
+the original V38 binary and any newly tuned XHYN derivative remain unverified.
+The existing V38 binary is preserved byte for byte; it is not relabelled as our
+own build. Requested `TU_DEBUG` settings and user env.txt precedence do not prove
+that a patch forcing SYSMEM can be overridden. A forced GMEM test still requires
+an effective-mode diagnostic or a matching source/binary recipe.
+
+
+ESMERINGHOY 27.0.0-devel (A7XX/A8XX) is now a separate source-built candidate. See drivers/esmeringhoy/source.lock.json and its build recipe for the exact Mesa revision, reviewed patch output, compiler target, original credits and untested device status. Original V38 and Vauzi archives remain unchanged. No measured performance improvement is claimed.

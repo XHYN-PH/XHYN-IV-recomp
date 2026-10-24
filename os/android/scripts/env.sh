@@ -1,14 +1,16 @@
 #!/bin/bash
 # Shared environment for the LibertyRecomp Android scripts. Source it:
 #   . os/android/scripts/env.sh
-# Written for Git Bash on Windows; every path can be overridden from outside.
+# Supports Linux, macOS and Git Bash; every tool path may be overridden.
 
 _scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export APP_DIR="$(cd "$_scripts_dir/.." && pwd)"
 export REPO="$(cd "$APP_DIR/../.." && pwd)"
 
 if [ -z "${ANDROID_HOME:-}" ]; then
-  if [ -n "${LOCALAPPDATA:-}" ]; then
+  if [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+    ANDROID_HOME="$ANDROID_SDK_ROOT"
+  elif [ -n "${LOCALAPPDATA:-}" ]; then
     ANDROID_HOME="$(cygpath -u "$LOCALAPPDATA")/Android/Sdk"
   else
     ANDROID_HOME="$HOME/Android/Sdk"
@@ -17,8 +19,15 @@ fi
 export ANDROID_HOME
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export NDK_VER="${NDK_VER:-29.0.14206865}"
-export ANDROID_NDK="${ANDROID_NDK:-$ANDROID_HOME/ndk/$NDK_VER}"
-export JAVA_HOME="${JAVA_HOME:-/c/Program Files/Android/Android Studio/jbr}"
+export ANDROID_NDK="${ANDROID_NDK:-${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/$NDK_VER}}"
+if [ -z "${JAVA_HOME:-}" ]; then
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) JAVA_HOME='/c/Program Files/Android/Android Studio/jbr' ;;
+    Darwin) JAVA_HOME="$(/usr/libexec/java_home)" ;;
+    *) _java_bin="$(command -v java)"; JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$_java_bin")")")" ;;
+  esac
+fi
+export JAVA_HOME
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) _host=windows-x86_64 ;;
@@ -50,8 +59,8 @@ export GAME_DIR="$FILES/LibertyRecomp/game"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
 # Whichever single device is attached, unless SERIAL is set.
-if [ -z "${SERIAL:-}" ]; then
-  _ready=$(adb devices 2>/dev/null | awk 'NR>1 && $2=="device" {print $1}')
+if [ -z "${SERIAL:-}" ] && command -v adb >/dev/null 2>&1; then
+  _ready=$(adb devices 2>/dev/null | awk 'NR>1 && $2=="device" {print $1}' || true)
   if [ "$(printf '%s\n' "$_ready" | grep -c .)" = "1" ]; then
     SERIAL="$_ready"
   fi

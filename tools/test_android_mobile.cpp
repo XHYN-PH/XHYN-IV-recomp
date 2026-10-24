@@ -10,10 +10,63 @@
 #include <rex/graphics/gta4_native/mobile_memory.h>
 #include <rex/graphics/gta4_native/mobile_render_policy.h>
 #include "gta4_aspect_policy.h"
+#include "gta4_cheat_policy.h"
+#include "input/phone_gyro_policy.h"
+#include "android/android_power_policy.h"
 #include <rex/graphics/gta4_native/immutable_snapshot.h>
 #include <rex/graphics/gta4_native/converted_texture_disk_cache.h>
 using namespace rex::graphics::gta4_native;
 int main(int argc,char** argv) {
+  {
+    gta4::input::PhoneGyroBuffer gyro;
+    gyro.Publish(1,2,100);gyro.Publish(3,-1,110);auto d=gyro.Consume(120,true);assert(d.active&&d.x==4&&d.y==1);assert(!gyro.Consume(121,true).active);
+    gyro.Publish(1,1,200);assert(!gyro.Consume(351,true).active);
+    gyro.Publish(4,5,400);assert(!gyro.Consume(401,false).active&&!gyro.Consume(402,true).active);
+    gyro.Publish(NAN,2,500);assert(!gyro.Consume(501,true).active);
+    gyro.Publish(10000,-10000,600);d=gyro.Consume(601,true);assert(d.x==128&&d.y==-128);
+    gyro.Publish(1,1,700);gyro.Reset();assert(!gyro.Consume(701,true).active);
+    gyro.Publish(1,1,800);assert(!gyro.Consume(799,true).active);
+  }
+
+  {
+    using gta4::android_power::ClassifyThermals;
+    assert(ClassifyThermals(.6,3,40,65,50).hot&&!ClassifyThermals(.6,3,40,65,50).cool);
+    assert(ClassifyThermals(1.0,0,40,65,50).hot);
+    assert(ClassifyThermals(.7,1,70,65,50).cool);
+    assert(!ClassifyThermals(.8,0,40,65,50).cool);
+    assert(ClassifyThermals(NAN,3,NAN,65,50).hot);
+    assert(ClassifyThermals(NAN,-1,70,65,50).hot);
+    assert(ClassifyThermals(NAN,-1,45,65,50).cool);
+    assert(!ClassifyThermals(NAN,-1,NAN,65,50).hot&&!ClassifyThermals(NAN,-1,NAN,65,50).cool);
+  }
+  {
+    using namespace gta4::cheats;
+    unsigned supported=0;
+    for(uint32_t id=0;id<100;++id)supported+=SupportedIndex(id);
+    assert(supported==15&&!SupportedIndex(UINT32_MAX));
+    for(uint32_t id=100;id<=109;++id)assert(SupportedIndex(id)&&!Name(id).empty()&&!Handler(id).empty());assert(!SupportedIndex(110));
+    gta4::input::TouchContextSnapshot context;
+    Request request{2,7,10000};
+    context.epoch=7;
+    assert(!CanQueue(context)&&Decide(request,context,1,7)==Decision::kWait);
+    context.valid=context.playing=true;
+    assert(CanQueue(context)&&Decide(request,context,1,7)==Decision::kWait);
+    context.gameplay_allowed=true;
+    assert(Decide(request,context,1,7)==Decision::kExecute);
+    context.loading=true;assert(!CanQueue(context)&&Decide(request,context,1,7)==Decision::kCancel);
+    context.loading=false;context.frontend=true;assert(!CanQueue(context));
+    context.frontend=false;context.cutscene=true;assert(!CanQueue(context));context.cutscene=false;
+    assert(Decide(request,context,10000,7)==Decision::kCancel);
+    context.epoch=8;assert(Decide(request,context,1,7)==Decision::kExecute);
+    context.epoch=500;assert(Decide(request,context,1,7)==Decision::kExecute);
+    assert(Decide(request,context,1,8)==Decision::kCancel);
+    request.player_identity=42;context.player_identity=42;assert(Decide(request,context,1,7)==Decision::kExecute);
+    context.player_identity=43;assert(Decide(request,context,1,7)==Decision::kCancel);
+    request.player_identity=0;request.index=5;assert(Decide(request,context,1,7)==Decision::kCancel);
+    assert(BaseSinglePlayer(0,0,0));
+    assert(!BaseSinglePlayer(1,0,0)&&!BaseSinglePlayer(0,1,0)&&!BaseSinglePlayer(0,0,1));
+    assert(!BaseSinglePlayer({},0,0)&&!BaseSinglePlayer(0,{},0)&&!BaseSinglePlayer(0,0,{}));
+  }
   for(uint32_t cap:{20u,24u,25u,30u,40u,45u,60u,90u,120u}){double t=MobileAdaptiveTarget(cap);assert(t==cap&&!MobileAdaptiveSlow(cap,t)&&MobileAdaptiveRecovered(cap,t));assert(MobileAdaptiveSlow(t*.85,t)&&!MobileAdaptiveRecovered(t*.90,t));}
   assert(MobileAdaptiveTarget(0)==60);
   assert(!MobileDecodeParallel(2,128,1<<20)&&!MobileDecodeParallel(4,128,128<<10)&&MobileDecodeParallel(4,128,512<<10)&&MobileDecodeParallel(8,128,128<<10)&&!MobileDecodeParallel(8,15,1<<20));

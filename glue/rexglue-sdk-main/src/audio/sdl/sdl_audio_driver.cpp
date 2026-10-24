@@ -64,12 +64,13 @@ SDLAudioDriver::~SDLAudioDriver() {
 }
 
 bool SDLAudioDriver::Initialize() {
+  low_latency_=REXCVAR_GET(audio_low_latency);
   // Prevent SDL from interfering with timer resolution (causes FPS drops)
   SDL_SetHintWithPriority(SDL_HINT_TIMER_RESOLUTION, "0", SDL_HINT_OVERRIDE);
 
   // Set audio category for proper OS audio handling
   SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playback");
-  SDL_SetHint(SDL_HINT_ANDROID_LOW_LATENCY_AUDIO, REXCVAR_GET(audio_low_latency) ? "1" : "0");
+  SDL_SetHint(SDL_HINT_ANDROID_LOW_LATENCY_AUDIO, low_latency_ ? "1" : "0");
 
   // Set app name for audio device identification
   SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, "rexglue");
@@ -293,11 +294,11 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
     std::unique_lock<std::mutex> guard(driver->frames_mutex_);
     if (const auto now = std::chrono::steady_clock::now(); now >= driver->next_starvation_report_) {
       if (driver->silent_fills_) {
-        REXAPU_WARN("audio: {} of {} blocks were silence (no guest frame ready), {} queued",
-                    driver->silent_fills_, driver->silent_fills_ + driver->filled_blocks_, driver->frames_queued_.size());
+        REXAPU_WARN("audio: {} of {} blocks were silence (no guest frame ready), {} queued low_latency={} window_ms={}",
+                    driver->silent_fills_, driver->silent_fills_ + driver->filled_blocks_, driver->frames_queued_.size(),driver->low_latency_,std::chrono::duration_cast<std::chrono::milliseconds>(now-driver->starvation_window_start_).count());
       }
       driver->silent_fills_ = driver->filled_blocks_ = 0;
-      driver->next_starvation_report_ = now + std::chrono::seconds(10);
+      driver->starvation_window_start_=now;driver->next_starvation_report_ = now + std::chrono::seconds(10);
     }
     if (driver->frames_queued_.empty()) {
       ++driver->silent_fills_;

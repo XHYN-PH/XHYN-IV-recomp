@@ -12,7 +12,8 @@ JOBS="${1:-$(( $(nproc) > 3 ? $(nproc) - 2 : 1 ))}"
 [ -d "$ANDROID_NDK" ] || { echo "no NDK at $ANDROID_NDK"; exit 1; }
 
 python "$APP_DIR/scripts/materialize_symlinks.py"
-"$APP_DIR/scripts/setup_host_tools.sh"
+bash "$APP_DIR/scripts/setup_host_tools.sh"
+. "$REPO/out/host-tools/paths.sh"
 
 # Portable ARMv8-A; outlined atomics select LSE at runtime where supported.
 CPU_FLAGS="-march=${ANDROID_CPU_ARCH:-armv8-a} -moutline-atomics -fno-emulated-tls"
@@ -21,19 +22,20 @@ if [ ! -f "$BUILD_DIR/build.ninja" ] || ! grep -Fq -- "$CPU_FLAGS" "$BUILD_DIR/C
   cmake -S "$REPO" -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_C_FLAGS="$CPU_FLAGS" \
     -DCMAKE_CXX_FLAGS="$CPU_FLAGS" \
-    -DCMAKE_TOOLCHAIN_FILE="$REPO/toolchains/android.cmake" \
+    -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_NDK="$ANDROID_NDK" \
     -DANDROID_ABI=arm64-v8a \
-    -DANDROID_PLATFORM=android-28 \
+    -DANDROID_PLATFORM=android-29 \
     -DANDROID_STL=c++_shared \
     -DLIBERTY_RECOMP_TARGET_PLATFORM=android \
     -DLIBERTY_RECOMP_ANDROID_RUNTIME_ASSETS=ON \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-    -DREXGLUE_ENABLE_TRACY=OFF \
-    -DGTA4_NATIVE_SPIRV_VAL="$(cygpath -m "$ANDROID_NDK/shader-tools/windows-x86_64/spirv-val.exe")" \
-    -DGTA4_NATIVE_GLSLANG_VALIDATOR="$(cygpath -m "$REPO/out/host-tools/glslang/bin/glslangValidator.exe")" \
-    -DGTA4_NATIVE_DXC_LIBRARY_PATH="$(cygpath -m "$REPO/out/host-tools/dxc/bin/x64")"
+    -DREXGLUE_ENABLE_TRACY=OFF -DCMAKE_CXX_SCAN_FOR_MODULES=OFF \
+    -DGTA4_NATIVE_SPIRV_VAL="$HOST_SPIRV_VAL" \
+    -DGTA4_NATIVE_GLSLANG_VALIDATOR="$HOST_GLSLANG" \
+    -DGTA4_NATIVE_DXC_EXECUTABLE="$HOST_DXC" \
+    -DGTA4_NATIVE_DXC_LIBRARY_PATH="$HOST_DXC_LIB"
 fi
 
 # Calls between unhooked recompiled functions bypass the weak sub_X aliases so
@@ -44,14 +46,14 @@ fi
 # them crashed in game code. DIRECT_CALLS_ENABLE=1 turns them on.
 DIRECT_CALLS="$REPO/glue/rexglue-sdk-main/gta4-recomp/tools/direct_calls.py"
 if [ "${DIRECT_CALLS_ENABLE:-0}" = "1" ]; then
-  python "$(cygpath -m "$DIRECT_CALLS")" apply
+  python "$(winpath "$DIRECT_CALLS")" apply
 else
-  python "$(cygpath -m "$DIRECT_CALLS")" undo
+  python "$(winpath "$DIRECT_CALLS")" undo
 fi
 echo "== building with $JOBS jobs"
 # Every behaviour-changing cvar must be in the hack registry (safe mode).
 python "$REPO/glue/rexglue-sdk-main/gta4-recomp/tools/check_hack_registry.py" || { echo "!! hack registry check failed"; exit 1; }
-cmake --build "$BUILD_DIR" --target LibertyRecomp -- -j"$JOBS" || { echo "!! native build failed"; exit 1; }
+cmake --build "$BUILD_DIR" --target LibertyRecomp liberty_install -- -j"$JOBS" || { echo "!! native build failed"; exit 1; }
 
 echo "== staging libraries"
 mkdir -p "$JNILIBS"
@@ -75,7 +77,7 @@ echo "== checks"
 # A hook added after the hooked list was taken must not be bypassed.
 NM_OUT="$(mktemp)"
 "$NDK_BIN/llvm-nm" --defined-only "$BUILD_DIR/glue/gta4-recomp/libmain.so" > "$NM_OUT"
-python "$(cygpath -m "$DIRECT_CALLS")" check "$(cygpath -m "$NM_OUT")" || {
+python "$(winpath "$DIRECT_CALLS")" check "$(winpath "$NM_OUT")" || {
   echo "!! run: direct_calls.py hooks <llvm-nm libmain.so> && direct_calls.py apply, then rebuild"; exit 1; }
 rm -f "$NM_OUT"
 "$NDK_BIN/llvm-nm" -D --defined-only "$JNILIBS/libmain.so" | grep -E ' SDL_main$' >/dev/null || {

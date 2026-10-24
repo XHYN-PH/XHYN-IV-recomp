@@ -67,6 +67,7 @@ VkShaderModule Gta4NativeGraphicsSystem::GetTemporalShaderModule(
   const auto words = temporal_shader_archive_.Find(hash, stage, overridden, late);
   if (words.empty()) return VK_NULL_HANDLE;
   std::vector<uint32_t> module(words.begin(), words.end());
+  if(shader&&shader->compact_vertex_inputs){std::vector<uint32_t> locations;for(const auto& input:shader->vertex_inputs)locations.push_back(input.location);if(!RemapNativeVertexLocations(module,locations))return VK_NULL_HANDLE;}
   RemapSpirvDrawDescriptorSets(module);
   if (REXCVAR_GET(gta4_native_loop_watchdog)) {
     if (auto guarded = AddSpirvLoopWatchdog(module, 16384)) module = std::move(guarded->words);

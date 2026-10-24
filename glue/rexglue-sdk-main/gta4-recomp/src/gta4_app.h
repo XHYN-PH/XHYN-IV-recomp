@@ -80,7 +80,7 @@ class GTA4App final : public rex::ReXApp {
     }
     native_config_path_ = liberty_root / "native.toml";
     paths.config_path = native_config_path_;
-    paths.marketplace_content_root = liberty_root / "dlc";
+    paths.marketplace_content_root = paths.game_data_root.parent_path() / "dlc";
 
     if (paths.update_data_root.empty() && !paths.game_data_root.empty()) {
       error.clear();

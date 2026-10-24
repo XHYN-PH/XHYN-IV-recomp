@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="SessionPanelAnimation">
+        <item name="android:windowEnterAnimation">@anim/session_panel_in</item>
+        <item name="android:windowExitAnimation">@anim/session_panel_out</item>
+    </style>
+</resources>

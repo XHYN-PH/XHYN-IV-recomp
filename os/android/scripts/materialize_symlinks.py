@@ -34,7 +34,7 @@ def materialize(repo):
             continue
         rel = row.split(b'\t', 1)[1].decode()
         link = repo / rel
-        if not link.is_file() or link.stat().st_size > 4096:
+        if link.is_symlink() or not link.is_file() or link.stat().st_size > 4096:
             continue
         target = (link.parent / link.read_text(encoding='utf-8', errors='replace').strip()).resolve()
         if target.is_dir():

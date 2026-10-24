@@ -128,6 +128,7 @@
 #include "native_pipeline_compiler.h"
 #include "native_pipeline_recipe.h"
 #include "native_spirv_reflection.h"
+#include "native_vertex_location_remap.h"
 #include "native_stencil_volume_policy.h"
 #include "hdr_present_ps.h"
 #include "native_msaa_policy.h"
@@ -148,8 +149,19 @@
 
 
 
+REXCVAR_DEFINE_BOOL(gta4_native_texture_reuse_extended,false,"GTA IV/Performance","Retain age-evicted textures longer only below existing soft memory limits");
+REXCVAR_DEFINE_INT32(gta4_native_startup_prepare_seconds,3,"GTA IV/Performance","Bounded preparation of learned pipeline shaders before gameplay; zero skips").range(0,20);
+REXCVAR_DEFINE_BOOL(gta4_native_preparation_cancel,false,"GTA IV/Status","Skip remaining startup graphics preparation");
+REXCVAR_DEFINE_STRING(gta4_native_preparation_status,"","GTA IV/Status","Known startup work, not every game shader");
+REXCVAR_DEFINE_BOOL(gta4_native_depth_clip_fallback,false,"GTA IV/Compatibility","Experimental ordinary depth clipping on devices without depthClamp");
 REXCVAR_DEFINE_STRING(gta4_native_pipeline_status,"Waiting for graphics","GTA IV/Status",
                       "Current session pipeline cache and preparation status");
+REXCVAR_DEFINE_STRING(gta4_session_device_json,"{}","GTA IV/Status","Physical device and enabled capabilities actually selected by the renderer");
+REXCVAR_DEFINE_STRING(gta4_session_stats,"{}","GTA IV/Status",
+                      "Low-rate publisher and texture statistics for the host menu");
+
+REXCVAR_DEFINE_BOOL(gta4_native_pipeline_lookahead, REX_PLATFORM_ANDROID, "GTA IV/Performance",
+                    "Bounded pipeline lookahead on the frame recorder owner thread");
 
 REXCVAR_DEFINE_BOOL(gta4_native_parallel_texture_decode, true, "GTA IV/Graphics/Native Renderer",
                     "Use one bounded helper for large CPU texture conversions");
@@ -555,6 +567,7 @@ REXCVAR_DEFINE_BOOL(gta4_native_frame_stats, false, "GTA IV/Diagnostics",
                     "Compact publisher frame statistics every two seconds; no GPU timestamp queries");
 REXCVAR_DEFINE_UINT32(gta4_native_benchmark_trigger, 0, "GTA IV/Diagnostics",
                       "Increment to start a 90-second benchmark (30 seconds warm-up, 60 measured)");
+REXCVAR_DEFINE_STRING(gta4_native_benchmark_watchlist,"","GTA IV/Diagnostics","Configuration keys observed during an opt-in benchmark").lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_UINT32(gta4_native_pipeline_replay_budget_ms, 2, "GTA IV/Performance",
                       "CPU scheduling budget per learned pipeline replay batch in milliseconds")
     .range(1,20);
@@ -3389,6 +3402,7 @@ struct Gta4NativeGraphicsSystem::NativePipelineCompilerState {
   std::atomic<uint64_t> shader_generation{1};
   uint64_t replay_scanned_generation = 0;
   bool replay_retry = false;
+  size_t failures = 0;
   std::atomic<uint64_t> checkpoint_tick{0};
   static constexpr size_t kMaximumRecipes = 4096;
 };
@@ -6687,11 +6701,14 @@ void Gta4NativeGraphicsSystem::RenderWorkerMain() {
          command.type == CommandType::kRegisterReflectionTarget ||
          command.type == CommandType::kTextureLock);
     if (recorder_sync) {
-      const uint64_t wait_begin = profile::CpuTick();
+      const bool measure_wait = REXCVAR_GET(gta4_native_detailed_counters);
+      const uint64_t wait_begin = measure_wait ? profile::CpuTick() : 0;
       WaitForFrameRecorderIdle();
-      pipeline_sync_wait_ticks_ += profile::CpuTick() - wait_begin;
-      ++pipeline_sync_type_counts_[std::min<size_t>(size_t(command.type), 63)];
-      ++pipelined_sync_waits_;
+      if (measure_wait) {
+        pipeline_sync_wait_ticks_ += profile::CpuTick() - wait_begin;
+        ++pipeline_sync_type_counts_[std::min<size_t>(size_t(command.type), 63)];
+        ++pipelined_sync_waits_;
+      }
       SwapAssemblyFrame();
       RunReleaseEffects(assembly_release_effects_);
       if (assembly_modern_frame_pending_) {
@@ -7057,9 +7074,10 @@ void Gta4NativeGraphicsSystem::RenderWorkerMain() {
         if (pipelined_recording_) {
           // Hand the assembled frame to the recorder and start on the next.
           MarkFrameTimeline(present.submitted_frame, kTimelineWorkerPresent);
-          const uint64_t handoff_wait_begin = profile::CpuTick();
+          const bool measure_wait = REXCVAR_GET(gta4_native_detailed_counters);
+          const uint64_t handoff_wait_begin = measure_wait ? profile::CpuTick() : 0;
           WaitForFrameRecorderIdle();
-          pipeline_present_wait_ticks_ += profile::CpuTick() - handoff_wait_begin;
+          if (measure_wait) pipeline_present_wait_ticks_ += profile::CpuTick() - handoff_wait_begin;
           MarkFrameTimeline(present.submitted_frame, kTimelineWorkerHandoff);
           SwapAssemblyFrame();
           recording_release_effects_.swap(assembly_release_effects_);
@@ -7381,24 +7399,62 @@ void Gta4NativeGraphicsSystem::FinishPresent(NativeCommand& command,
   const uint64_t begin=collect?tick_ns():0;
   if(collect)mobile_frame_stats_.Start(begin);
   const bool published = PublishFrame(present, command.present_source, command.environmental_data);
+  {
+    const uint64_t now=tick_ns();
+#if REX_PLATFORM_ANDROID
+    const bool host_paused=rex::cvar::Query<bool>("gta4_session_paused");
+#else
+    const bool host_paused=false;
+#endif
+    if(host_paused){session_stats_start_ns_=0;session_stats_frames_=0;session_stats_last_ns_=now;}
+    const bool fresh_window=host_paused||!session_stats_start_ns_||(session_stats_last_ns_&&now-session_stats_last_ns_>2000000000ull);
+    if(fresh_window){
+      session_stats_start_ns_=now;session_stats_frames_=0;
+    }
+    session_stats_last_ns_=now;
+    if(published&&!fresh_window)++session_stats_frames_;
+    if(!host_paused&&now-session_stats_start_ns_>=1000000000ull){
+      const double seconds=double(now-session_stats_start_ns_)/1e9;
+      rex::cvar::SetFlagByName("gta4_session_stats",fmt::format(
+          "{{\"fps\":{:.2f},\"frame_ms\":{:.2f},\"texture_bytes\":{},\"texture_budget\":{},\"evictions\":{},\"pipelines\":{},\"sample_ns\":{},\"aa\":\"{}\",\"scene_samples\":{}}}",
+          session_stats_frames_/seconds,session_stats_frames_?seconds*1000/session_stats_frames_:0,
+          texture_heap_usage_,texture_heap_budget_,texture_image_eviction_count_,native_pipelines_.size(),now,
+          AntiAliasingModeName(g_renderer_active_anti_aliasing.load(std::memory_order_acquire)),
+          GetAntiAliasingRoute(g_renderer_active_anti_aliasing.load(std::memory_order_acquire)).scene_sample_count));
+      session_stats_start_ns_=now;session_stats_frames_=0;
+    }
+  }
   if(collect) {
     const uint64_t now=tick_ns();const auto wall=now-begin;
     mobile_frame_stats_.Record(now,wall,published);
     const uint32_t trigger=REXCVAR_GET(gta4_native_benchmark_trigger);
     if(trigger!=benchmark_trigger_) {
       benchmark_trigger_=trigger;benchmark_start_ns_=benchmark_last_csv_ns_=now;benchmark_frame_stats_.Reset();
+      benchmark_conditions_.Start(REXCVAR_GET(gta4_native_benchmark_watchlist));
+      benchmark_capture_overlap_=false;benchmark_capture_omitted_=false;
       if(benchmark_file_.is_open())benchmark_file_.close();
       const auto log=rex::cvar::GetFlagByName("log_file");
       if(!log.empty()) {
+        std::ofstream(log+".benchmark.status.txt",std::ios::trunc)<<"incomplete: benchmark starting\n";
+        for(const char* suffix:{".benchmark.result.properties",".benchmark.conditions.txt"}){std::error_code ignored;std::filesystem::remove(log+suffix,ignored);}
         benchmark_file_.open(log+".benchmark.csv",std::ios::trunc);
         if(benchmark_file_)benchmark_file_<<"elapsed_seconds,published_fps,interval_p50_ms,interval_p95_ms,interval_max_ms,publish_wall_p95_ms,failed,phase,measurement_elapsed_seconds\n";
         std::ofstream snapshot(log+".benchmark.settings.txt",std::ios::trunc);
-        for(const auto* key:{"gta4_frame_limit","resolution","gta4_native_upscaler","gta4_effective_upscaling","gta4_fsr1_quality","gta4_native_anti_aliasing","gta4_draw_distance_scale","gta4_draw_distance_dynamic_factor","gta4_dynamic_draw_distance","gta4_shadow_map_base_size","gta4_shadow_distance_scale","gta4_native_shadow_interval","gta4_native_water_reflection_interval","gta4_native_environment_reflection_interval","android_perf_hint","android_thermal_guard","android_gpu_turbo"})snapshot<<key<<'='<<rex::cvar::GetFlagByName(key)<<'\n';
+        benchmark_conditions_.WriteStart(snapshot);snapshot<<"run.trigger="<<trigger<<'\n';
         std::ofstream(log+".benchmark.status.txt",std::ios::trunc)<<"incomplete: benchmark started; 30 seconds warm-up, 60 seconds measured\n";
       }
       REXLOG_INFO("gta4-benchmark: start warmup_seconds=30 measurement_seconds=60; follow the same route and settings");
     }
     const uint64_t elapsed=benchmark_start_ns_?now-benchmark_start_ns_:0;
+    if(benchmark_start_ns_){
+      benchmark_conditions_.Sample();
+      bool capture=native_gpu_profile_state_.capture_armed&&!native_gpu_profile_state_.capture_complete;
+      for(const auto& frame:native_gpu_profile_state_.frames){
+        capture|=frame.active||frame.pending;
+        if(frame.active||frame.pending)benchmark_capture_omitted_|=frame.dropped_spans!=0||frame.dropped_attribution_regions!=0;
+      }
+      benchmark_capture_overlap_|=capture;
+    }
     if(benchmark_start_ns_&&elapsed>=30000000000ull&&elapsed<90000000000ull) {
       benchmark_frame_stats_.Start(begin);benchmark_frame_stats_.Record(now,wall,published);
     }
@@ -7410,6 +7466,7 @@ void Gta4NativeGraphicsSystem::FinishPresent(NativeCommand& command,
           texture_heap_usage_,texture_heap_budget_,texture_image_eviction_count_,texture_image_eviction_count_-texture_evictions_last_window_,texture_recent_reuploads_,rex::cvar::GetFlagByName("gta4_native_upscaler"),rex::cvar::GetFlagByName("gta4_effective_upscaling"),rex::cvar::GetFlagByName("gta4_frame_limit"));
       REXLOG_INFO("texture-cache-stats: eviction_age={} pressure={} recovery={} content_reuploads={} mean_reupload_age_frames={:.1f} retained_under_budget={} (bounded direct-mapped sample; zero hits do not prove zero reuse)",texture_eviction_reasons_[0],texture_eviction_reasons_[1],texture_eviction_reasons_[2],texture_content_reuploads_,texture_content_reuploads_?double(texture_reupload_age_sum_)/texture_content_reuploads_:0.0,texture_retention_preserved_);
       const double pipeline_ms_per_tick=1000.0/double(rex::chrono::Clock::QueryHostTickFrequency());
+      REXLOG_INFO("texture-reuse-stats: sampled_reupload_allocation_bytes={} age_frames_lt30={} lt120={} lt600={} lt1800={} ge1800={} (bounded content sample; allocation bytes are not transfer bytes)",texture_content_reupload_bytes_,texture_reupload_age_bins_[0],texture_reupload_age_bins_[1],texture_reupload_age_bins_[2],texture_reupload_age_bins_[3],texture_reupload_age_bins_[4]);
       REXLOG_INFO("pipeline-cache-stats: ready={} created_window={} compile_jobs_ms={:.2f} wait_ms={:.2f} (compiler jobs may overlap; wait is CPU wall time)",
           native_pipelines_.size(),pipeline_diagnostic_creates_,pipeline_diagnostic_compile_ticks_*pipeline_ms_per_tick,pipeline_diagnostic_wait_ticks_*pipeline_ms_per_tick);
       pipeline_diagnostic_creates_=pipeline_diagnostic_slow_logs_=0;
@@ -7424,10 +7481,25 @@ void Gta4NativeGraphicsSystem::FinishPresent(NativeCommand& command,
     }
     if(benchmark_start_ns_&&elapsed>=90000000000ull) {
       const auto stats=benchmark_frame_stats_.Take(now);
-      REXLOG_INFO("gta4-benchmark: complete measured_s={:.2f} published_fps={:.2f} interval_p50_ms={:.2f} interval_p95_ms={:.2f} interval_max_ms={:.2f} failed={} (interval quantiles cover up to 32768 measured samples)",
-          stats.seconds,stats.published_fps,stats.interval_p50_ms,stats.interval_p95_ms,stats.interval_max_ms,stats.failed);
+      REXLOG_INFO("gta4-benchmark: complete measured_s={:.2f} published_fps={:.2f} interval_p50_ms={:.2f} interval_p95_ms={:.2f} interval_max_ms={:.2f} failed={} over_50ms={} capture_overlap={} conditions_mixed={} (interval quantiles cover up to 32768 measured samples)",
+          stats.seconds,stats.published_fps,stats.interval_p50_ms,stats.interval_p95_ms,stats.interval_max_ms,stats.failed,stats.over_50ms,benchmark_capture_overlap_,benchmark_conditions_.Mixed());
       const auto session_log=rex::cvar::GetFlagByName("log_file");
-      if(!session_log.empty())std::ofstream(session_log+".benchmark.status.txt",std::ios::trunc)<<"complete: 60-second measurement finished; interval_samples="<<stats.interval_samples<<"\n";
+      if(!session_log.empty()){
+        std::ofstream conditions(session_log+".benchmark.conditions.txt",std::ios::trunc);
+        benchmark_conditions_.WriteEnd(conditions);
+        conditions<<"run.trigger="<<benchmark_trigger_<<"\nrun.finished_ms="
+                  <<std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()<<'\n';
+        conditions<<"capture.overlap="<<(benchmark_capture_overlap_?"true":"false")<<"\ncapture.omissions="<<(benchmark_capture_omitted_?"present":benchmark_capture_overlap_?"unknown":"not_applicable")<<"\n";
+        conditions.close();
+        std::ofstream result(session_log+".benchmark.result.properties",std::ios::trunc);
+        result<<"benchmark.measured_s="<<stats.seconds<<"\nbenchmark.published_fps="<<stats.published_fps
+              <<"\nbenchmark.interval_p50_ms="<<stats.interval_p50_ms<<"\nbenchmark.interval_p95_ms="<<stats.interval_p95_ms
+              <<"\nbenchmark.interval_max_ms="<<stats.interval_max_ms<<"\nbenchmark.failed="<<stats.failed
+              <<"\nbenchmark.over_50ms="<<stats.over_50ms<<'\n';result.close();
+        std::ofstream(session_log+".benchmark.status.txt",std::ios::trunc)
+          <<(stats.seconds>=59&&stats.interval_samples?"complete: measurement finished; interval_samples=":"incomplete: measurement window was interrupted; interval_samples=")
+          <<stats.interval_samples<<"\n";
+      }
       benchmark_start_ns_=0;if(benchmark_file_.is_open())benchmark_file_.close();
     }
   }else if(mobile_frame_stats_.Active()){mobile_frame_stats_.Reset();}
@@ -8200,6 +8272,8 @@ void Gta4NativeGraphicsSystem::RegisterVertexDeclaration(
   declaration->generation = next_vertex_declaration_generation_++;
   declaration->maximum_stream = command.maximum_stream;
   declaration->elements.assign(command.elements, command.elements + command.element_count);
+  for(size_t i=0;i<declaration->elements.size();++i){const auto& element=declaration->elements[i];const auto location=ConvertVertexUsageToLocation(element.usage,element.usage_index);if(location<declaration->element_by_location.size()&&declaration->element_by_location[location]<0)declaration->element_by_location[location]=int16_t(i);}
+
   declaration->content_hash = XXH3_64bits_withSeed(
       declaration->elements.data(), declaration->elements.size() * sizeof(VertexElement),
       declaration->maximum_stream);
@@ -8713,6 +8787,18 @@ void Gta4NativeGraphicsSystem::RegisterShader(const RegisterShaderCommand& comma
       apply_relaxed(stock_late_spirv);
       stock_late_spirv_size = stock_late_spirv.size() * sizeof(uint32_t);
     }
+    std::vector<NativeVertexInput> legacy_vertex_inputs;
+    std::vector<uint32_t> compact_locations;
+    bool compact_vertex_inputs=false;
+    if(command.stage==ShaderStage::kVertex){
+      if(!ReflectVertexInputs(stock_early_spirv,legacy_vertex_inputs))return;
+      const auto limit=vulkan_device->properties().maxVertexInputAttributes;
+      if(legacy_vertex_inputs.size()>limit){REXLOG_ERROR("Vertex shader requires {} attributes; device allows {}",legacy_vertex_inputs.size(),limit);return;}
+      compact_vertex_inputs=std::any_of(legacy_vertex_inputs.begin(),legacy_vertex_inputs.end(),[limit](const auto& input){return input.location>=limit;});
+      if(compact_vertex_inputs){for(const auto& input:legacy_vertex_inputs)compact_locations.push_back(input.location);std::sort(compact_locations.begin(),compact_locations.end());compact_locations.erase(std::unique(compact_locations.begin(),compact_locations.end()),compact_locations.end());
+        if(!RemapNativeVertexLocations(stock_early_spirv,compact_locations)||!RemapNativeVertexLocations(stock_late_spirv,compact_locations))return;
+      }
+    }
     VkShaderModule stock_early_module = ui::vulkan::util::CreateShaderModule(
         vulkan_device, stock_early_spirv.data(), stock_early_spirv_size);
     if (!stock_early_module) {
@@ -8732,6 +8818,7 @@ void Gta4NativeGraphicsSystem::RegisterShader(const RegisterShaderCommand& comma
 
     auto resource = std::make_unique<NativeShader>();
     resource->stage = command.stage;
+    resource->compact_vertex_inputs=compact_vertex_inputs;
     resource->hash = command.hash;
     resource->watchdog_loops = watchdog_loops;
     resource->specialization_constants_mask = cache_entry->specConstantsMask;
@@ -8775,7 +8862,7 @@ void Gta4NativeGraphicsSystem::RegisterShader(const RegisterShaderCommand& comma
       }
     }
     if (command.stage == ShaderStage::kVertex &&
-        !ReflectVertexInputs(stock_early_spirv, resource->vertex_inputs)) {
+        !(resource->vertex_inputs=legacy_vertex_inputs,true)) {
       if (stock_late_module) {
         profile::CpuCall(profile::CpuOp::kDriverDestruction, [&] { return dfn.vkDestroyShaderModule(device, stock_late_module, nullptr); });
       }
@@ -8916,6 +9003,7 @@ void Gta4NativeGraphicsSystem::RegisterShader(const RegisterShaderCommand& comma
         apply_ubo_constants(override_late_spirv);
         apply_relaxed(override_early_spirv);
         apply_relaxed(override_late_spirv);
+        if(compact_vertex_inputs&&(!RemapNativeVertexLocations(override_early_spirv,compact_locations)||!RemapNativeVertexLocations(override_late_spirv,compact_locations))){REXLOG_ERROR("Cannot compact override vertex interface");return;}
         const size_t effective_early_size = override_early_spirv.size() * sizeof(uint32_t);
         const size_t effective_late_size = override_late_spirv.size() * sizeof(uint32_t);
         VkShaderModule override_early_module = ui::vulkan::util::CreateShaderModule(
@@ -13061,7 +13149,12 @@ void Gta4NativeGraphicsSystem::AnalyzeCompletedNativeGpuProfile(
     return;
   }
   auto& query_results = frame.query_results;
-  for(auto& query : query_results) query = {};
+  if(frame.query_count>query_results.size()){
+    REXLOG_ERROR("gta4-native-perf: query result count exceeds allocated capacity");CancelNativeGpuProfileFrame(slot);return;
+  }
+  // Only the submitted range is consumed below. Clearing the complete maximum
+  // capacity adds avoidable memory traffic to every detailed frame.
+  std::fill_n(query_results.begin(),frame.query_count,NativeGpuProfileQueryResult{});
   const uint64_t query_readback_begin=profile::CpuTick();
   const VkResult result = vulkan_device->functions().vkGetQueryPoolResults(
       vulkan_device->device(), frame.pool, 0, frame.query_count,
@@ -13071,7 +13164,7 @@ void Gta4NativeGraphicsSystem::AnalyzeCompletedNativeGpuProfile(
   frame.detail.readback_ticks=profile::CpuTick()-query_readback_begin;
   frame.detail.query_result = int32_t(result);
   if (result != VK_SUCCESS && result != VK_NOT_READY) {
-    for(auto& query : query_results) query = {};
+    std::fill_n(query_results.begin(),frame.query_count,NativeGpuProfileQueryResult{});
     frame.sample_builder.SetFlags(performance::kFrameFlagGpuPartial);
   }
   frame.detail.query_count=frame.query_count;
@@ -16461,12 +16554,9 @@ bool Gta4NativeGraphicsSystem::CreateTextureDetileObjects() {
       VK_SUCCESS) {
     return false;
   }
-  VkShaderModuleCreateInfo module_info{};
-  module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  module_info.codeSize = sizeof(gta4_native_texture_detile_cs);
-  module_info.pCode = gta4_native_texture_detile_cs;
-  VkShaderModule module = VK_NULL_HANDLE;
-  if (dfn.vkCreateShaderModule(device, &module_info, nullptr, &module) != VK_SUCCESS) {
+  VkShaderModule module = ui::vulkan::util::CreateShaderModule(
+      vulkan_device, gta4_native_texture_detile_cs, sizeof(gta4_native_texture_detile_cs));
+  if (module == VK_NULL_HANDLE) {
     return false;
   }
   VkComputePipelineCreateInfo pipeline_info{};
@@ -17236,6 +17326,22 @@ bool Gta4NativeGraphicsSystem::InitializeNativeRendererObjects() {
     REXLOG_ERROR("gta4-native: Vulkan dynamic rendering is required by the native backend");
     return false;
   }
+  {
+    const auto& capabilities=vulkan_device->properties();
+    VkPhysicalDeviceDriverProperties driver{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+    VkPhysicalDeviceProperties2 physical{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};physical.pNext=&driver;
+    vulkan_device->vulkan_instance()->functions().vkGetPhysicalDeviceProperties2(vulkan_device->physical_device(),&physical);
+    const auto quote=[](const char* value){std::string out="\"";for(const unsigned char c:std::string_view(value)){if(c=='"'||c=='\\'){out+='\\';out+=char(c);}else if(c<32)out+=fmt::format("\\u{:04x}",unsigned(c));else out+=char(c);}out+='"';return out;};
+    rex::cvar::SetFlagByName("gta4_session_device_json",fmt::format(
+        "{{\"name\":{},\"driver_name\":{},\"driver_info\":{},\"api_version\":{},\"driver_version\":{},\"driver_id\":{},"
+        "\"depth_clamp\":{},\"shader_int64\":{},\"shader_clip_distance\":{},\"shader_cull_distance\":{},"
+        "\"sample_rate_shading\":{},\"independent_blend\":{},\"buffer_device_address\":{},\"runtime_descriptor_array\":{},"
+        "\"partially_bound_descriptors\":{},\"dynamic_rendering\":{},\"max_vertex_attributes\":{},\"max_vertex_output_components\":{},\"max_fragment_input_components\":{}}}",
+        quote(physical.properties.deviceName),quote(driver.driverName),quote(driver.driverInfo),physical.properties.apiVersion,physical.properties.driverVersion,uint32_t(driver.driverID),
+        capabilities.depthClamp,capabilities.shaderInt64,capabilities.shaderClipDistance,capabilities.shaderCullDistance,
+        capabilities.sampleRateShading,capabilities.independentBlend,capabilities.bufferDeviceAddress,capabilities.runtimeDescriptorArray,
+        capabilities.descriptorBindingPartiallyBound,capabilities.dynamicRendering,capabilities.maxVertexInputAttributes,capabilities.maxVertexOutputComponents,capabilities.maxFragmentInputComponents));
+  }
   if (CachedDiagnosticsEnabled(rex::diagnostics::Category::kNativeProfiler) &&
       !native_gpu_profile_state_.support_checked && !InitializeNativeGpuProfiler()) {
     REXLOG_WARN("gta4-native-perf: GPU timestamps are unavailable; continuing without them");
@@ -17294,7 +17400,71 @@ bool Gta4NativeGraphicsSystem::InitializeNativeRendererObjects() {
   native_pipeline_compiler_->compiler = std::make_unique<NativePipelineCompilerState::Compiler>(
       64, [this] { ScheduleNativePipelineCheckpoint(); });
   LoadNativePipelineRecipes();
-  ReplayNativePipelineRecipes();
+  const int preparation_seconds = REXCVAR_GET(gta4_native_startup_prepare_seconds);
+  const auto preparation_started = std::chrono::steady_clock::now();
+  const auto deadline = preparation_started + std::chrono::seconds(preparation_seconds);
+  std::vector<std::pair<ShaderStage, uint64_t>> known;
+  size_t prepared = 0;
+  const auto status = [&](bool active, const char* requested_outcome, const char* reason) {
+    const auto progress = native_pipeline_compiler_->compiler->GetProgress();
+    const size_t replay = native_pipeline_compiler_->replay.size();
+    const size_t remaining = replay + progress.queued + progress.completed + (progress.active ? 1 : 0);
+    const size_t shaders_remaining = known.size() - prepared;
+    const bool cancelled = REXCVAR_GET(gta4_native_preparation_cancel);
+    const bool expired = !active && !requested_outcome && !cancelled && remaining + shaders_remaining > 0 &&
+                         std::chrono::steady_clock::now() >= deadline;
+    const char* outcome = requested_outcome;
+    if (!active && !requested_outcome) {
+      outcome = cancelled ? "cancelled" : expired ? "budget_expired" :
+          remaining + shaders_remaining + native_pipeline_compiler_->failures ? "partial" : "ready";
+    }
+    rex::cvar::SetFlagByName("gta4_native_preparation_status", fmt::format(
+        "{{\"active\":{},\"outcome\":\"{}\",\"reason\":\"{}\",\"skipped\":{},"
+        "\"shaders\":{},\"known_shaders\":{},\"remaining_shaders\":{},\"ready\":{},"
+        "\"queued\":{},\"compiling\":{},\"unpublished\":{},\"pending\":{},\"remaining\":{},"
+        "\"failed\":{},\"elapsed_ms\":{},\"cancelled\":{},\"budget_expired\":{}}}",
+        active, outcome, reason, std::string_view(outcome) == "skipped", prepared, known.size(),
+        shaders_remaining, native_pipelines_.size(), progress.queued, progress.active ? 1 : 0,
+        progress.completed, replay, remaining, native_pipeline_compiler_->failures,
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - preparation_started).count(), cancelled, expired));
+    if (!active) REXLOG_INFO(
+        "graphics-preparation: outcome={} ready={} queued={} compiling={} unpublished={} "
+        "recipes={} shaders_remaining={} failed={}; unseen pipelines still compile on demand",
+        outcome, native_pipelines_.size(), progress.queued, progress.active ? 1 : 0,
+        progress.completed, replay, shaders_remaining, native_pipeline_compiler_->failures);
+  };
+  if (REXCVAR_GET(gta4_native_pipeline_prewarm) && preparation_seconds > 0 &&
+      !native_pipeline_compiler_->replay.empty()) {
+    for (const auto& item : native_pipeline_compiler_->replay) {
+      known.emplace_back(ShaderStage::kVertex, item.key.vertex_shader_hash);
+      if (item.key.pixel_shader_hash) known.emplace_back(ShaderStage::kPixel, item.key.pixel_shader_hash);
+    }
+    std::sort(known.begin(), known.end());
+    known.erase(std::unique(known.begin(), known.end()), known.end());
+    status(true, "preparing", "");
+    for (const auto& [stage, hash] : known) {
+      if (REXCVAR_GET(gta4_native_preparation_cancel) || std::chrono::steady_clock::now() >= deadline) break;
+      RegisterShaderCommand command;
+      command.shader = 0; command.stage = stage; command.hash = hash;
+      RegisterShader(command);
+      ++prepared;
+      status(true, "preparing", "");
+    }
+    shader_handles_.erase(0);
+    while (!REXCVAR_GET(gta4_native_preparation_cancel) && std::chrono::steady_clock::now() < deadline) {
+      ReplayNativePipelineRecipes();
+      const auto progress = native_pipeline_compiler_->compiler->GetProgress();
+      status(true, "preparing", "");
+      if (!progress.queued && !progress.active && !native_pipeline_compiler_->replay_retry) break;
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    DrainNativePipelineCompiles();
+    status(false, nullptr, "");
+  } else {
+    status(false, "skipped", !REXCVAR_GET(gta4_native_pipeline_prewarm) || preparation_seconds <= 0
+        ? "disabled" : "no learned recipes");
+  }
   return true;
 }
 
@@ -17628,9 +17798,16 @@ VkPipeline Gta4NativeGraphicsSystem::PublishNativePipeline(
     profile::CpuCall(profile::CpuOp::kDriverDestruction, [&] { return device->functions().vkDestroyPipeline(device->device(), pipeline, nullptr); });
     return it->second.pipeline;
   }
+  size_t queued_preparation=0,active_preparation=0,awaiting_preparation=0;
+  if(native_pipeline_compiler_&&native_pipeline_compiler_->compiler){
+    const auto preparation=native_pipeline_compiler_->compiler->GetProgress();
+    queued_preparation=preparation.queued;active_preparation=preparation.active?1:0;
+    awaiting_preparation=native_pipeline_compiler_->replay.size();
+  }
   rex::cvar::SetFlagByName("gta4_native_pipeline_status",fmt::format(
-      "{} graphics pipelines ready. {} New effects may still need preparation.",
-      native_pipelines_.size(),REXCVAR_GET(gta4_native_pipeline_prewarm)?"Preparation enabled.":"Preparation off."));
+      "{} pipelines ready · {} queued · {} compiling · {} learned recipes awaiting preparation. {} New effects may still need first-use compilation.",
+      native_pipelines_.size(),queued_preparation,active_preparation,
+      awaiting_preparation,REXCVAR_GET(gta4_native_pipeline_prewarm)?"Preparation on.":"Preparation off."));
   if(REXCVAR_GET(gta4_native_frame_stats)){
     ++pipeline_diagnostic_creates_;
     const double ms=double(compile_ticks)*1000.0/rex::chrono::Clock::QueryHostTickFrequency();
@@ -17672,6 +17849,7 @@ void Gta4NativeGraphicsSystem::DrainNativePipelineCompiles() {
     return;
   }
   for (auto& [key, result] : native_pipeline_compiler_->compiler->TakeCompleted()) {
+    if (result.result != VK_SUCCESS || !result.pipeline) ++native_pipeline_compiler_->failures;
     PublishNativePipeline(key, result.pipeline, result.ticks);
   }
 }
@@ -19064,7 +19242,11 @@ Gta4NativeGraphicsSystem::NativeTextureImage* Gta4NativeGraphicsSystem::GetOrCre
   }
   if(REXCVAR_GET(gta4_native_frame_stats)&&!texture->gpu_produced){
     const auto identity=MobileTextureContentIdentity(texture->content_hash,uint32_t(texture->info.format),texture->info.width+1,texture->info.height+1);
-    if(const auto age=texture_content_reuse_.Reuploaded(identity,active_texture_frame_)){++texture_content_reuploads_;texture_reupload_age_sum_+=*age;}
+    if(const auto age=texture_content_reuse_.Reuploaded(identity,active_texture_frame_)){
+      ++texture_content_reuploads_;texture_reupload_age_sum_+=*age;
+      texture_content_reupload_bytes_+=result->allocation_size;
+      ++texture_reupload_age_bins_[*age<30?0:*age<120?1:*age<600?2:*age<1800?3:4];
+    }
   }
   native_texture_images_.emplace(texture->generation, std::move(image));
   // Publication/protection and descriptor allocation have succeeded. From here
@@ -20598,7 +20780,8 @@ void Gta4NativeGraphicsSystem::EvictNativeTextureImages(uint32_t submitted_frame
     constrain(configured_limit_bytes);
     if(heap<budgets.heap_count&&budgets.available)constrain(budgets.budget[heap]/4);
     const uint64_t resident=heap<native_texture_usage.size()?native_texture_usage[heap]:UINT64_MAX;
-    return MobileTextureRetentionFrames(frame_cap,resident,soft,pressure||mobile_memory.pressure());
+    const auto ordinary=MobileTextureRetentionFrames(frame_cap,resident,soft,pressure||mobile_memory.pressure());
+    return REXCVAR_GET(gta4_native_texture_reuse_extended)&&soft&&resident<soft&&!pressure&&!mobile_memory.pressure()?std::min(uint32_t(3600),ordinary*2):ordinary;
   };
   auto consider = [&](uint64_t generation, const NativeTextureImage* image) {
     if (!image || !image->source ||
@@ -22045,9 +22228,7 @@ VkPipeline Gta4NativeGraphicsSystem::GetOrCreatePipeline(
       !vulkan_device->properties().shaderClipDistance) {
     return reject("shader-clip-distance-unsupported");
   }
-  if (fixed_function_state.depth_clamp_enable && !vulkan_device->properties().depthClamp) {
-    return reject("depth-clamp-unsupported");
-  }
+  if(fixed_function_state.depth_clamp_enable&&!vulkan_device->properties().depthClamp&&!REXCVAR_GET(gta4_native_depth_clip_fallback))return reject("depth-clamp-unsupported");
   if (fixed_function_state.negative_one_to_one_clip_space &&
       !vulkan_device->properties().depthClipControl) {
     return reject("negative-one-to-one-depth-clip-unsupported");
@@ -22374,20 +22555,15 @@ VkPipeline Gta4NativeGraphicsSystem::GetOrCreatePipeline(
   }
   attributes.reserve(state.vertex_shader_resource->vertex_inputs.size());
   for (const NativeVertexInput& shader_input : state.vertex_shader_resource->vertex_inputs) {
-    if (shader_input.location >= vertex_limits.maxVertexInputAttributes) {
+    const uint32_t effective_location=state.vertex_shader_resource->compact_vertex_inputs
+        ? uint32_t(&shader_input-state.vertex_shader_resource->vertex_inputs.data()) : shader_input.location;
+    if (effective_location >= vertex_limits.maxVertexInputAttributes) {
       return reject("vertex-input-location-limit");
     }
-    const VertexElement* matching_element = nullptr;
-    for (const VertexElement& element : state.vertex_declaration_resource->elements) {
-      if (ConvertVertexUsageToLocation(element.usage, element.usage_index) ==
-          shader_input.location) {
-        matching_element = &element;
-        break;
-      }
-    }
+    const VertexElement* matching_element=state.vertex_declaration_resource->FindElement(shader_input.location);
 
     VkVertexInputAttributeDescription attribute{};
-    attribute.location = shader_input.location;
+    attribute.location = effective_location;
     if (!matching_element) {
       attribute.binding = kDefaultVertexBinding;
       attribute.format =
@@ -22514,7 +22690,7 @@ VkPipeline Gta4NativeGraphicsSystem::GetOrCreatePipeline(
 
   VkPipelineRasterizationStateCreateInfo rasterization{};
   rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-  rasterization.depthClampEnable = key.depth_clamp_enable ? VK_TRUE : VK_FALSE;
+  rasterization.depthClampEnable = key.depth_clamp_enable && vulkan_device->properties().depthClamp ? VK_TRUE : VK_FALSE;
   rasterization.polygonMode =
       key.polygon_mode == uint32_t(NativePolygonMode::kLine) ? VK_POLYGON_MODE_LINE
                                                             : VK_POLYGON_MODE_FILL;
@@ -24296,14 +24472,7 @@ bool Gta4NativeGraphicsSystem::GetRequiredVertexStreams(
   }
 
   for (const NativeVertexInput& shader_input : state.vertex_shader_resource->vertex_inputs) {
-    const VertexElement* matching_element = nullptr;
-    for (const VertexElement& element : state.vertex_declaration_resource->elements) {
-      if (ConvertVertexUsageToLocation(element.usage, element.usage_index) ==
-          shader_input.location) {
-        matching_element = &element;
-        break;
-      }
-    }
+    const VertexElement* matching_element=state.vertex_declaration_resource->FindElement(shader_input.location);
     if (!matching_element) {
       continue;
     }
@@ -29775,6 +29944,17 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
   const profile::CpuScope profile_scope(profile::CpuOp::kRecordFrame);
 
   SCOPE_profile_cpu_i("gpu", "GTA4 Native RecordNativeFrame");
+  // Assembly cannot touch recorder-owned pipeline/surface maps while recording
+  // is pipelined. Prepare on the recorder instead, before the first draw, using
+  // immutable retained commands and the existing exact-pipeline fallback.
+  if(pipelined_recording_&&REXCVAR_GET(gta4_native_pipeline_lookahead)&&REXCVAR_GET(gta4_native_pipeline_prewarm)){
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::microseconds(500);
+    size_t visits=0;
+    for(const auto& upcoming:current_frame_){
+      if(++visits>256||std::chrono::steady_clock::now()>=deadline)break;
+      if(upcoming.type==CommandType::kDrawPrimitive||upcoming.type==CommandType::kDrawPrimitiveUp||upcoming.type==CommandType::kDrawIndexedPrimitive)TryPrewarmDrawPipeline(upcoming);
+    }
+  }
   BeginBulbFrame(submitted_frame);
   BeginFireFrame(command_buffer, submitted_frame);
   const auto fire_frame_reset = MakeScopeExit([this] { fire_frame_ = fire_images_ = fire_event_active_ = false; });
@@ -38515,7 +38695,7 @@ void Gta4NativeGraphicsSystem::DestroyNativeRendererObjects() {
 
 void Gta4NativeGraphicsSystem::DestroyVulkanWorkerObjects() {
   native_texture_format_properties_.clear();
-  recently_evicted_texture_generations_.fill(0);texture_content_reuse_.Reset();texture_content_reuploads_=texture_reupload_age_sum_=0;texture_eviction_reasons_.fill(0);
+  recently_evicted_texture_generations_.fill(0);texture_content_reuse_.Reset();texture_content_reuploads_=texture_reupload_age_sum_=texture_content_reupload_bytes_=0;texture_reupload_age_bins_.fill(0);texture_eviction_reasons_.fill(0);
   // Already-completed resources must also drain on the device-loss exit path.
   image_allocation_pool_enabled_ = false;
   texture_reclaimer_.reset();

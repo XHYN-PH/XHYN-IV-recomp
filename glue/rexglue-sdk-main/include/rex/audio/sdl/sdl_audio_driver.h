@@ -45,6 +45,8 @@ class SDLAudioDriver : public AudioDriver {
   SDL_AudioStream* sdl_stream_ = nullptr;
   bool sdl_initialized_ = false;
   bool silent_fallback_ = false;
+  bool low_latency_ = false;
+  std::chrono::steady_clock::time_point starvation_window_start_=std::chrono::steady_clock::now();
   uint8_t sdl_device_channels_ = 0;
 
   static const uint32_t frame_frequency_ = 48000;

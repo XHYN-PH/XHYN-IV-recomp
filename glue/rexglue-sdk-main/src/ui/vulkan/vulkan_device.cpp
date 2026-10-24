@@ -121,16 +121,11 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
   }
   if (with_native_shader_support && !supported_features.shaderInt64) {
     REXLOG_WARN(
-        "Vulkan device '{}' doesn't support shaderInt64 required by Liberty native shaders",
+        "Vulkan device '{}' lacks shaderInt64; the address fallback does not cover the complete title shader cache",
         properties.deviceName);
     return nullptr;
   }
-  if (with_native_shader_support && !supported_features.depthClamp) {
-    REXLOG_WARN(
-        "Vulkan device '{}' doesn't support depthClamp required by Liberty native rendering",
-        properties.deviceName);
-    return nullptr;
-  }
+  if(with_native_shader_support&&!supported_features.depthClamp)REXLOG_WARN("Vulkan device '{}' lacks depthClamp; equivalent clamping is unavailable. The ordinary-clipping experiment defaults off.",properties.deviceName);
   if (with_native_shader_support && !supported_features.sampleRateShading) {
     // Declared statically by the per-sample fullscreen conversion shaders. A
     // draw-time flag cannot make that shader interface legal without it.

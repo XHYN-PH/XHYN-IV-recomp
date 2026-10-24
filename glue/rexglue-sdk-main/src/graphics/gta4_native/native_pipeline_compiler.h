@@ -102,6 +102,11 @@ class NativePipelineCompiler {
     std::lock_guard lock(mutex_);
     return jobs_.contains(key);
   }
+  struct Progress { size_t queued=0, completed=0; bool active=false; };
+  Progress GetProgress() const {
+    std::lock_guard lock(mutex_);
+    return {queue_.size(),completed_.size(),active_};
+  }
   void WaitUntilIdle() {
     std::unique_lock lock(mutex_);
     changed_.wait(lock, [this] { return !active_ && queue_.empty(); });

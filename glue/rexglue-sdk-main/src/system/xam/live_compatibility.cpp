@@ -2045,7 +2045,11 @@ LiveCompatibilityRuntime::LiveCompatibilityRuntime(const LiveConfig& config,
             ? text_chat_transport_->last_error()
         : qos_service_ && !qos_service_->ready()           ? qos_service_->last_error()
                                                            : "missing backend service";
+#if REX_PLATFORM_ANDROID
+    REXSYS_INFO("Community multiplayer unavailable on Android: {} (single-player remains available)", error);
+#else
     REXSYS_ERROR("Unable to initialize multiplayer backend: {}", error);
+#endif
     state_.store(LiveState::kError, std::memory_order_release);
     if (signed_in()) {
       REXSYS_INFO(
