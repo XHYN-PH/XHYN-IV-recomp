@@ -7,24 +7,30 @@
 <p align="center">Grand Theft Auto IV on Android through static recompilation.<br>An XHYN fork of Liberty Recompiled for Android.</p>
 
 <p align="center">
-  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases">Download APK</a> ·
+  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test6">Download Test6 APK</a> ·
   <a href="https://youtube.com/@xhyn_ph">YouTube</a> ·
   <a href="https://t.me/xhynports">Telegram</a>
 </p>
 
-**Current testing version: 0.5.9.3-xhyn-r1.** Performance is still not that good, and work to improve it will continue through future updates. Expect frame drops, occasional crashes and graphics issues while testing.
+**Current testing version: 0.5.9.3-xhyn-r2-test6.** Performance still needs work, and improvements will continue through future updates.
 
-**You must provide your own legally obtained Xbox 360 game files and Title Update 8.** The game, disc image and title update are not included or provided here.
+**You must provide your own legally obtained Xbox 360 GTA IV USA game files and Title Update 8 (0.0.8.5).** The game, disc image and title update are not included.
 
 ## Features
 
-- GTA mobile-style touch controls, an Xbox-style on-screen controller and support for physical controllers.
-- Fullscreen control editors in the launcher, plus live mobile layout editing while playing.
-- Adjustable resolution, graphics settings, camera sensitivity and control opacity.
-- Movable minimap, with nearby help text following its position.
-- Adjustable phone rumble on supported devices.
-- Save export, import and deletion from the launcher.
-- Optional graphics drivers and simple log exports for reporting problems.
+- Refined launcher and compact in-game menu with device, graphics and session information.
+- Mobile and Xbox touch layouts, physical controller support, phone gyro camera and mobile hold-to-lock aiming.
+- Shared controls editor with context previews, snapping, Undo/Redo and layout import/export.
+- Adjustable resolution, graphics, FPS, camera sensitivity, control opacity and phone rumble on supported devices.
+- Movable minimap with nearby help text following its position.
+- Searchable local achievements and single-player cheats, achievement details and catalog preparation.
+- Individual save-slot export, import and deletion, with protective backups.
+- Compatible loose-data mods with enable/disable, priority ordering and conflict information.
+- Configurable FPS/performance overlay, pipeline preparation and troubleshooting reports.
+- Seven bundled driver choices, including experimental **ESMERINGHOY 27.0.0-devel (A7XX/A8XX)**, plus driver import and recovery.
+- Separate live/restart settings, saved pending changes and stable return navigation.
+
+Read the [full r2 changelog](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test6) for all accumulated changes since r1.
 
 ## Requirements
 
@@ -33,57 +39,61 @@
 | Android | Android 10 or newer, 64-bit |
 | CPU | ARM64; a capable gaming phone or handheld is recommended |
 | Graphics | Vulkan 1.2 with the features required by the renderer |
-| Memory | 8 GB RAM recommended; lower-memory devices may struggle |
+| Memory | 8 GB RAM recommended |
 | Storage | Around 15 GB free during installation, including room for your disc image |
-| Game | Xbox 360 GTA IV USA release and Title Update 8, version 0.0.8.5 |
+| Game | Xbox 360 GTA IV USA and Title Update 8, version 0.0.8.5 |
 
-Support depends on the phone, Android version and driver. A supported GPU name does not guarantee that every game scene will render correctly or run smoothly.
+Compatibility depends on your phone, Android version and graphics driver. Use the driver choices admitted for your device.
 
 | GPU family | Driver options |
 |---|---|
-| Adreno 6xx / 7xx | Bundled Turnip or a compatible imported driver |
-| Newer Adreno | A compatible imported driver or the system driver |
-| Mali / Immortalis | System driver; bundled PanVK is experimental on supported Android 15+ devices |
-| Xclipse | System driver; bundled RADV is experimental on supported Android 14+ devices |
+| Adreno 6xx | Compatible Turnip or system/imported driver |
+| Adreno 7xx / 8xx | Compatible bundled candidates, including experimental ESMERINGHOY, or system/imported driver |
+| Mali / Immortalis | System driver; PanVK is experimental on supported Android 15+ devices |
+| Xclipse | System driver; RADV is experimental on supported Android 14+ devices |
 
-See [driver compatibility and credits](os/android/native/DRIVERS.md) before trying an experimental driver. These drivers cannot add missing kernel support to a phone.
+See [driver compatibility and credits](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test6/os/android/native/DRIVERS.md) for details.
 
 ## Getting started
 
-1. Download and install the APK from [Releases](https://github.com/XHYN-PH/XHYN-IV-recomp/releases).
-2. Open **Game files**, select your own GTA IV disc image and Title Update 8, then press **Install**.
+1. Download **XHYN-IV-0.5.9.3-xhyn-r2-test6.apk** from the [Test6 release](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test6).
+2. Install it, open **Game files**, select your GTA IV disc image and Title Update 8, then press **Install**.
 3. Wait until the game is ready, then press **Play**.
 
-The XHYN app uses `com.xhyn.ivrecomp`. An installation from the original Liberty Recompiled app has separate game and save data. Export your saves before changing apps or uninstalling.
+Updating XHYN IV? Install over the existing app. Export saves first; do not uninstall just to update.
+
+The app uses `com.xhyn.ivrecomp`. The original Liberty Recompiled app has separate game and save data.
 
 ## Controls and settings
 
-Open **Settings → Controls** to adjust movement, camera, sensitivity and opacity, or edit the mobile and Xbox layouts. While playing, use the small controller button to switch on-screen control styles. The in-game menu has an **Edit controls** shortcut.
+Open **Settings → Controls** to adjust sensitivity, gyro and opacity, or edit the mobile and Xbox layouts. The in-game menu also has an **Edit controls** shortcut.
 
-Graphics options are under **Settings → Graphics & performance**. Each option has a short explanation. Lower resolution first if the game is too slow; higher settings can increase heat and memory use. Some changes require restarting the game.
+Open **Settings → Graphics & performance** for resolution and rendering options. Lower resolution first if the game is too slow. Save changes when finished; settings that require a restart remain pending until the next launch.
 
-Use **Game files → Save data** to export, import or delete saves. Quit the game before managing saves, and keep an exported backup.
+Use **Game files → Save data** to export, import or delete saves. Quit gameplay before managing saves and keep a backup. Data mods accept compatible loose Xbox game files; PC DLL/ASI/EXE plugins are unsupported.
 
 ## Reporting a problem
 
-**No logs = no improvements.** A log helps identify what went wrong on your device.
+**No logs = no improvements.**
 
 1. Open **Settings → Logs & troubleshooting → Play with logs**.
 2. Reproduce the problem, then return to the launcher.
-3. Choose **Share latest log** and attach the ZIP to the testing PR or send it in [Telegram](https://t.me/xhynports).
+3. Choose **Share latest log** and send the ZIP in [Telegram](https://t.me/xhynports).
 
-Include your phone model, Android version, chosen graphics driver, settings and what happened. Add a screenshot or short video for shadows, lighting or other visual problems. Old logs are cleared when a new session starts, so export the report before playing again. Normal **Play** leaves diagnostic logging off.
+Include your phone model, Android version, actual graphics driver, settings and what happened. Add a screenshot or short video for visual issues.
+
+**Previous full logs are cleared automatically when a new session starts. Export the latest report before playing again.** Normal **Play** leaves diagnostic logging off.
 
 ## More information
 
-[Installation](docs/android/INSTALL.md) · [Build from source](docs/android/BUILDING.md) · [Mod support](docs/MOD_SUPPORT.md) · [Original project README](README_UPSTREAM.md)
+[Installation](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test6/docs/android/INSTALL.md) · [Build Test6 from source](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test6/docs/android/BUILDING.md) · [Mod support](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test6/docs/MOD_SUPPORT.md) · [Original project README](README_UPSTREAM.md)
 
 ## Credits
 
 - [vaduur/LibertyRecompAndroid](https://github.com/vaduur/LibertyRecompAndroid) for the Android base.
 - [OZORDI/LibertyRecomp](https://github.com/OZORDI/LibertyRecomp) and [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) for the recompilation and runtime.
-- [prollynotzjay/LibertyRecompAndroidMaliVer](https://github.com/prollynotzjay/LibertyRecompAndroidMaliVer) for the mobile touch layout and icons adapted by this fork. See [touch credits](os/android/app/src/main/assets/TOUCH-NOTICE.txt).
-- SDL, Mesa, libadrenotools and the other upstream contributors. Driver sources and licenses are listed in [DRIVERS.md](os/android/native/DRIVERS.md).
+- [prollynotzjay/LibertyRecompAndroidMaliVer](https://github.com/prollynotzjay/LibertyRecompAndroidMaliVer) for the adapted mobile touch layout and icons. See [touch attribution](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test6/os/android/app/src/main/assets/TOUCH-NOTICE.txt) for imported artwork.
+- SDL, Mesa, libadrenotools and the other upstream contributors. Driver sources and licenses are listed in [DRIVERS.md](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test6/os/android/native/DRIVERS.md).
 - XHYN for this fork's Android refinements, interface and release maintenance.
 
 Source is distributed under [GNU GPL v3](COPYING), with third-party components retaining their own licenses and notices. [Artwork and trademarks](docs/android/ARTWORK.md) remain with their respective owners. This unofficial project is not affiliated with Rockstar Games or Take-Two Interactive.
