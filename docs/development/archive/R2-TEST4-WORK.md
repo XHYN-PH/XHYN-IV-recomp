@@ -2,7 +2,7 @@
 
 Built 23 October 2026. `0.5.9.3-xhyn-r2-test4`, code 32, package `com.xhyn.ivrecomp`. The APK was rebuilt from the native sources and signed with the original release key. No repository push or public release was performed.
 
-The public changelog is [R2-CHANGELOG.md](R2-CHANGELOG.md), describing the combined change since R1. This report follows the stable 54-item review. Items 51 and 52 were excluded by the user. “Implemented” below describes code in this candidate, not hardware certification. Open research and partial results are recorded explicitly.
+The public changelog is [R2-CHANGELOG.md](../../android/R2-CHANGELOG.md), describing the combined change since R1. This report follows the stable 54-item review. Items 51 and 52 were excluded by the user. “Implemented” below describes code in this candidate, not hardware certification. Open research and partial results are recorded explicitly.
 
 ## Scope status
 

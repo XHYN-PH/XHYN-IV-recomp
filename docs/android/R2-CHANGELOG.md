@@ -1,8 +1,10 @@
 # XHYN IV r2 — through Test7
 
-**Android testing prerelease · r2 Test7**
+**Android testing release · r2 Test7**
 
-Download **XHYN-IV-0.5.9.3-xhyn-r2-test7.apk** below. This release includes the accumulated r2 changes since r1.
+[**Download the Android APK**](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test7/XHYN-IV-0.5.9.3-xhyn-r2-test7.apk)
+
+Install it over your existing XHYN IV app. Back up saves first; uninstalling removes app data. This release includes all r2 changes since r1.
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
 
@@ -15,16 +17,15 @@ Download **XHYN-IV-0.5.9.3-xhyn-r2-test7.apk** below. This release includes the 
 - Moved the transparent IV logo and gameplay details above Resume in the in-game menu.
 - Changed optional outlines to follow button circles; glyphs stay clean.
 - Corrected missing or misleading action artwork, including Interact, weapon, focus, pause and map tabs.
-- Matched editor colors and opacity with gameplay, including camera opacity, hidden controls and hints.
+- Matched the controls editor with gameplay, including colors, opacity, hidden buttons and hints.
 - Added optional touch-area and overlap guides to the editor.
 - Added Save, Discard and Keep editing when leaving a changed layout or advanced Turnip options, including Android system Back.
 - Fixed Turnip Reset labels and consistent spacing across options and secondary menus.
 - Kept settings scroll position and focus after choosing an option, with saved next-launch settings preserved.
-- Replaced empty pause statistics with a waiting state until gameplay supplies a valid sample; driver identity uses the active renderer.
+- The pause menu waits for gameplay information instead of showing empty statistics, and shows the driver actually in use.
 - Simplified menu transitions and button feedback, and removed continuous launcher background movement.
 - Replaced the large preparation completion toast with a short status chip.
-- Added a bounded launcher failure report that can be shared without starting gameplay; normal Play logging and automatic cleanup retain their behavior.
-- Added Android menu interaction regressions, minimum-version coverage and native circle/full-window checks.
+- Launcher problems can be reported from Logs even when Play will not start. Normal Play still has logging off, and old full logs are cleared automatically.
 
 ## Launcher and menus
 
@@ -37,10 +38,10 @@ Download **XHYN-IV-0.5.9.3-xhyn-r2-test7.apk** below. This release includes the 
 
 ## Settings and performance overlay
 
-- Added compact settings categories, search, contextual help, precise numeric entry, Save/Discard and category reset.
+- Added settings categories, search, help, exact value entry, Save/Discard and category reset.
 - Separated live settings from changes that require a restart. Pending changes remain saved, with a Quit now/Later prompt.
-- Added FPS and Detailed overlays with corner, centered and custom positions; adjustable text size and opacity; optional RAM and thermal information; and compact or separate-line layouts.
-- Added an overlay appearance preview and safe-area updates when the display rotates.
+- Added FPS and Detailed displays with adjustable position, text size and opacity, plus optional memory and temperature information.
+- Added a preview for the performance display and better placement when rotating the phone.
 - Updated defaults for new or reset configurations: VSync Off requested, motion blur Off, FXAA, Native upscaling, SMAA Low when selected, 256 shadows, reflection AA Off, Near reflection distance, water/environment updates Off, draw distance 0.85 and converted texture disk cache On. Existing custom values are preserved.
 - Corrected AA Off handling so older MSAA values do not override it. Options that do not apply to the selected AA or upscaler are inactive.
 - Added film-grain control for The Lost and Damned and output-dithering control.
@@ -52,8 +53,8 @@ Download **XHYN-IV-0.5.9.3-xhyn-r2-test7.apk** below. This release includes the 
 - Added optional outlines around circular touch buttons; outlines default Off and icons stay clean.
 - Added mobile hold-to-lock aiming with an adjustable hold threshold, lock indicator and reset handling around gameplay transitions.
 - Added phone gyro camera modes: Off, Aim only and Gameplay, with sensitivity, smoothing and X/Y inversion.
-- Improved gyro orientation, sensor timing and reset handling around pause, backgrounding, focus changes and rotation.
-- Forwarded Android captured mouse movement, button changes and wheel input to SDL, with sensitivity, inversion and capture release around menus and focus changes.
+- Improved gyro behavior when pausing, switching apps and rotating the phone.
+- Added mouse movement, buttons and wheel input, with sensitivity and inversion settings. Mouse capture is released around menus and app switching.
 - Added camera, focus, radar, radio, cinematic and map/menu controls through the game's existing actions.
 - Added a visible, time-limited input recording option under Diagnostics.
 
@@ -71,50 +72,50 @@ Download **XHYN-IV-0.5.9.3-xhyn-r2-test7.apk** below. This release includes the 
 - Added persistent secret-detail visibility and independent unlock-notification settings.
 - Added achievement catalog preparation from installed game files during installation or from the browser, without starting gameplay.
 - Added searchable cheat categories and clearer request status.
-- Fixed cheat requests being cancelled by an unstable per-frame identity.
+- Fixed cheat requests being cancelled before they could run.
 - Added health, armour, vehicle repair, money, invincibility on/off and time-of-day actions with single-player guards. Health and armour check the resulting values where available.
 - Retained the option to respect achievement restrictions when cheats are used.
 
 ## Saves, game files and mods
 
-- Added individual save-slot discovery, export, import and deletion, with package validation, protective backups and rollback.
-- Improved recognized save metadata and last-observed completion display. Account achievements remain separate from deleting a save slot.
+- Added individual save-slot browsing, export, import and deletion, with backups and recovery if an operation fails.
+- Improved save names and progress information where available. Deleting a save slot keeps account achievements.
 - Removed the separate Recover removed/replaced slot menu action while keeping internal transaction recovery.
-- Added an accessible Android/media game location, verified copying with originals retained, clearer extraction destinations and storage-space checks.
-- Added compatible loose Xbox-data mod overlays with independent enable/disable, priority ordering, conflict winners, validation details and last-launch mount results.
-- Moved mod scanning and saving off the UI thread. A failed mod rolls back its own overlay while preserving earlier valid mods.
-- PC DLL/ASI/EXE plugins are unsupported by the data-mod overlay.
+- Added an accessible Android/media game folder, clearer installation locations and free-space checks. Original files are kept after copying.
+- Added compatible Xbox 360 data-file mods with separate switches, load order, conflict information and a record of which mods loaded last time.
+- Kept the mod menu responsive while scanning or saving. A mod that fails to load leaves earlier working mods in place.
+- PC DLL/ASI/EXE plugins are not supported by the data-file mod menu.
 
 ## Graphics preparation and rendering
 
-- Added bounded preparation of compatible learned pipeline recipes and available shader modules before gameplay, with a time budget and Skip.
-- Added clearer ready, skipped, cancelled, budget-expired and partial preparation results, including remaining work, failures and elapsed time.
-- Added bounded pipeline lookahead and cached vertex-declaration lookups.
-- Added coordinated shader/input-location remapping for devices with smaller vertex-input limits, preserving the normal mapping when remapping is unnecessary.
-- Added optional longer texture retention within the existing memory budget and pressure policy, plus texture-reuse diagnostics.
-- Reduced inactive profiler CPU work and corrected detailed GPU-query readback handling.
-- Refined display-rate requests to avoid reapplying unchanged settings and to allow seamless refresh-rate changes.
-- Refined Thermal Guard status precedence, cooldown handling and visibility in session information.
+- Added graphics preparation before gameplay, with a time limit and Skip button.
+- Made preparation progress and completion messages clearer, including skipped or unfinished work.
+- Improved graphics preparation and reuse of previously processed drawing information.
+- Improved handling of devices with tighter graphics limits.
+- Added an option to keep recently used textures longer while respecting the memory budget.
+- Reduced unnecessary background work from performance diagnostics and fixed detailed GPU statistics.
+- Improved display refresh-rate changes and avoided repeatedly applying the same setting.
+- Improved Thermal Guard messages, cooldown behavior and session information.
 - Water entry remains user-confirmed fixed on the tested device.
 
 ## Drivers
 
-- Added the separately source-built **ESMERINGHOY 27.0.0-devel (A7XX/A8XX)** experimental driver, with its source and build information.
-- Bundled seven driver archives, including separate original V38 and Vauzi packages, A710/A720/A722 candidates and an experimental RADV Xclipse driver.
+- Added the **ESMERINGHOY 27.0.0-devel (A7XX/A8XX)** experimental driver for compatible Adreno devices.
+- Included seven driver choices, with separate original V38 and Vauzi packages, additional Adreno options and experimental RADV for compatible Xclipse devices.
 - Added compatible-first ordering, clearer driver labels, per-driver options, advanced Turnip rendering/cache controls and last-working-driver recovery.
 - Show the actual loaded driver, including system-driver fallback.
 - Added imported-driver deletion with confirmation and blocked driver imports/removal while playing.
-- Hardened imports against invalid or duplicate paths, excessive sizes and unsafe metadata. Interrupted replacement preserves the previous package, and replacement/removal clears stale history.
-- Corrected Android SDK compatibility and Vulkan feature-query initialization.
-- Improved the experimental shader address rewrite and shared texture-detile compatibility path. Experimental depth clipping defaults Off; device admission continues to require the renderer's needed features.
+- Improved driver import error handling. An interrupted replacement keeps the previous driver, and replacing or deleting a driver clears outdated records.
+- Fixed compatibility problems in driver settings and graphics startup.
+- Improved experimental driver compatibility. Experimental depth clipping stays Off by default, and unsupported drivers fall back to System.
 
 ## Logs and troubleshooting
 
-- Added benchmark captures with fixed starting conditions, setting-change tracking, frame-spike counts, thermal/battery readings and bounded session history.
-- Expanded pipeline, texture, effective-settings and audio-starvation diagnostics, including overlapping or incomplete capture notices.
+- Added optional performance recordings with frame-rate, temperature and battery information, plus recent-session history.
+- Added more useful graphics, settings and audio information to problem reports, with clearer messages when a recording is incomplete.
 - Kept normal Play free of diagnostic recording. Share/Delete actions are easier to find, and manual deletion asks for confirmation.
 - **Automatic cleanup of previous full logs remains enabled. Export your report before starting another session.**
-- Fixed native settings cleanup and included the project license and touch-artwork attribution in the APK.
+- Fixed settings cleanup and included the project license and touch-artwork credits in the APK.
 
 ## Installation
 

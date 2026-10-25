@@ -57,7 +57,7 @@ APK verification checked the existing update certificate, package/version, all 1
 
 Open work includes shaderInt64-free rendering, equivalent depth-clamp/clip-plane support, Mali/Xclipse phone acceptance, mouse unarmed targeting/attacks and camera follow, controller ownership/reconnect, contextual/GPS/map actions, complete save episode/autosave/loaded-slot identity, collision/guest-call investigations and measured renderer/texture/sustained-performance comparisons. Water entry remains user-confirmed fixed on the tested device. Multiplayer remains deferred.
 
-Imported es2 touch artwork retains its attribution; no creator/redistribution license was supplied with that import. It is not claimed as original GPL artwork. See [artwork notices](ARTWORK.md) and [touch attribution](../../os/android/app/src/main/assets/TOUCH-NOTICE.txt).
+Imported es2 touch artwork retains its attribution; no creator/redistribution license was supplied with that import. It is not claimed as original GPL artwork. See [artwork notices](../../android/ARTWORK.md) and [touch attribution](../../../os/android/app/src/main/assets/TOUCH-NOTICE.txt).
 
 ## Installation and reporting
 
@@ -65,6 +65,6 @@ Install over the existing XHYN IV app using the same signing identity. Export sa
 
 Follow the [phone checklist](R2-TEST6-DEVICE-CHECKS.md) one section at a time. For a problem, use **Settings → Logs & troubleshooting → Play with logs**, reproduce it, return to the launcher and share the latest ZIP before starting another session. Include the phone, Android, actual driver, settings and a screenshot/video for visual issues.
 
-See [verification details](R2-TEST6-VERIFICATION.md), [build identity](R2-TEST6-BUILD.json), [build instructions](BUILDING.md), [driver sources/credits](../../os/android/native/DRIVERS.md) and [mod instructions](../MOD_SUPPORT.md).
+See [verification details](R2-TEST6-VERIFICATION.md), [build identity](R2-TEST6-BUILD.json), [build instructions](../../android/BUILDING.md), [driver sources/credits](../../../os/android/native/DRIVERS.md) and [mod instructions](../../MOD_SUPPORT.md).
 
 APK SHA-256: `0507caf127222bb5457d69b2b6b2545a044d14a35e2774eb43585cca86292e35`.
