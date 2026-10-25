@@ -17,6 +17,22 @@
 
 **Bring your own Xbox 360 GTA IV USA disc image and Title Update 8 (0.0.8.5).** Game files and the update are not included.
 
+## How this fork differs from the original
+
+XHYN IV is based on [vaduur's LibertyRecompAndroid](https://github.com/vaduur/LibertyRecompAndroid), which brings [Liberty Recompiled](https://github.com/OZORDI/LibertyRecomp) to Android. The original already provides the Android game runtime, installation, touch/controller input, driver import, and performance work.
+
+This fork focuses on making more of the experience adjustable from your phone:
+
+- Redesigned launcher and in-game menus, explained settings, and controller navigation.
+- Separate editable mobile/Xbox layouts, gyro options, controller tuning, and a fullscreen FPS-overlay editor.
+- More bundled driver choices, including ESMERINGHOY, plus graphics and heat-management options.
+- Save backups, individual save-slot tools, achievement/cheat menus, and a data-file mod manager.
+- One shareable problem report, with optional detailed captures.
+
+**More options do not guarantee higher FPS or lower heat.** Device and driver compatibility still vary. The two apps keep separate saves and settings.
+
+[Compare both versions and understand the choices](docs/FORK-DIFFERENCES.md).
+
 ## Get started
 
 1. [Download the APK](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test8/XHYN-IV-0.5.9.3-xhyn-r2-test8.apk) and install it on your phone.
