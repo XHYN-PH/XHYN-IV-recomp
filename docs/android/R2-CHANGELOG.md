@@ -1,10 +1,30 @@
-# XHYN IV r2 — through Test6
+# XHYN IV r2 — through Test7
 
-**0.5.9.3-xhyn-r2-test6 — testing prerelease**
+**Android testing prerelease · r2 Test7**
 
-Download **XHYN-IV-0.5.9.3-xhyn-r2-test6.apk** below. This release includes the accumulated r2 changes since r1.
+Download **XHYN-IV-0.5.9.3-xhyn-r2-test7.apk** below. This release includes the accumulated r2 changes since r1.
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
+
+## Fixed in Test7
+
+- Fixed the crash when opening the three dots beside Play. Logs also opens directly from Settings.
+- Lowered the main navigation and footer to remove the excess bottom gap; the achievement card follows the footer safely.
+- Removed Last session, Last rendered and Free RAM from the launcher summary.
+- Made the mobile controls and editor use the full window. Xbox layout geometry stays independent.
+- Moved the transparent IV logo and gameplay details above Resume in the in-game menu.
+- Changed optional outlines to follow button circles; glyphs stay clean.
+- Corrected missing or misleading action artwork, including Interact, weapon, focus, pause and map tabs.
+- Matched editor colors and opacity with gameplay, including camera opacity, hidden controls and hints.
+- Added optional touch-area and overlap guides to the editor.
+- Added Save, Discard and Keep editing when leaving a changed layout or advanced Turnip options, including Android system Back.
+- Fixed Turnip Reset labels and consistent spacing across options and secondary menus.
+- Kept settings scroll position and focus after choosing an option, with saved next-launch settings preserved.
+- Replaced empty pause statistics with a waiting state until gameplay supplies a valid sample; driver identity uses the active renderer.
+- Simplified menu transitions and button feedback, and removed continuous launcher background movement.
+- Replaced the large preparation completion toast with a short status chip.
+- Added a bounded launcher failure report that can be shared without starting gameplay; normal Play logging and automatic cleanup retain their behavior.
+- Added Android menu interaction regressions, minimum-version coverage and native circle/full-window checks.
 
 ## Launcher and menus
 
@@ -29,7 +49,7 @@ Download **XHYN-IV-0.5.9.3-xhyn-r2-test6.apk** below. This release includes the 
 ## Touch, mouse and gyro controls
 
 - Updated mobile and Xbox touch artwork, matching editor previews and shared stick styling. Fixed icon installation so the renderer uses the bundled artwork after an update.
-- Added optional icon outlines that follow the glyph silhouette; outlines default Off.
+- Added optional outlines around circular touch buttons; outlines default Off and icons stay clean.
 - Added mobile hold-to-lock aiming with an adjustable hold threshold, lock indicator and reset handling around gameplay transitions.
 - Added phone gyro camera modes: Off, Aim only and Gameplay, with sensitivity, smoothing and X/Y inversion.
 - Improved gyro orientation, sensor timing and reset handling around pause, backgrounding, focus changes and rotation.
@@ -40,9 +60,9 @@ Download **XHYN-IV-0.5.9.3-xhyn-r2-test6.apk** below. This release includes the 
 ## Controls editor
 
 - Unified the mobile and Xbox layout editor across the launcher and in-game menu. Each layout remains independent.
-- Added context previews, safe-area and center guides, adjustable grids and snapping, numeric position/scale/opacity, hide/show, context reset and Undo/Redo.
+- Added context previews, center and alignment guides, adjustable grids and snapping, numeric position/scale/opacity, hide/show, context reset and Undo/Redo.
 - Added layout import/export. Imports preserve controls and contexts that are not included in the imported file.
-- Added explicit Save handling and checks that reject stale viewport calibration.
+- Added explicit Save, Discard and Keep editing, with full-window mobile geometry matching gameplay.
 
 ## Achievements and cheats
 
@@ -104,6 +124,6 @@ You must supply your own **Xbox 360 GTA IV USA game files and Title Update 8 (0.
 
 ## Reporting a problem
 
-Open **Settings → Logs & troubleshooting → Play with logs**, reproduce the issue, then return to the launcher and share the latest ZIP before another session. Include your phone, Android version, actual graphics driver, settings and a screenshot or video for visual issues.
+Open **Settings → Logs → Play with logs**, reproduce the issue, then return to the launcher and share the latest ZIP before another session. Include your phone, Android version, actual graphics driver, settings and a screenshot or video for visual issues.
 
 [Telegram](https://t.me/xhynports) · [YouTube](https://youtube.com/@xhyn_ph)
