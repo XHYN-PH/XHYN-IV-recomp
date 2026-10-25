@@ -1,46 +1,109 @@
-# XHYN IV R2
+# XHYN IV r2 — through Test6
 
-Changes since R1. R2 is awaiting phone validation before a public release.
+**0.5.9.3-xhyn-r2-test6 — testing prerelease**
 
-## Launcher, menus and settings
+Download **XHYN-IV-0.5.9.3-xhyn-r2-test6.apk** below. This release includes the accumulated r2 changes since r1.
 
-- Compact launcher actions, a horizontal overflow button beside Play, footer spacing and one achievement entry through the right-hand card.
-- Expanded configured graphics, GPU, Android, driver and memory information. Session diagnostics distinguish requested graphics options from the renderer's actual AA and presentation mode, including FIFO fallback.
-- Branded pause panel with separate touch/controller sections, a single-line performance summary, details in Diagnostics and horizontal entrance/exit motion. Reduced motion and navigation state are retained.
-- Slimmer settings rows, search, contextual explanations, precise numeric entry, Save/Discard and category reset. Restart-only changes are queued independently of the running game's configuration, with Quit now/Later and a pending indicator.
-- Recommended defaults for new/reset configurations: VSync Off requested, motion blur Off, FXAA, Native upscaling, SMAA Low when selected, 256 shadows, reflection AA Off, Near reflection distance, water/environment updates Off, draw distance 0.85 and converted texture disk cache On. Existing custom settings are preserved.
-- Film grain control for The Lost and Damned and output dithering control.
-- FPS/Detailed overlay with corners, centered positions or custom placement, text size, opacity, optional memory/thermal metrics and a compact layout.
+**Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
 
-## Input and touch editing
+## Launcher and menus
 
-- Android captured mouse motion, button changes and wheel events are forwarded to SDL. Capture is released around menus, focus loss and backgrounding, with sensitivity/inversion settings and bounded input tracing.
-- Shared mobile/Xbox layout editor from the launcher and game, with context previews, safe-area/grid guides, adjustable snapping, numeric position/scale/opacity, hide/show, undo/redo, context reset and profile import/export.
-- Additional camera, focus, radio, radar and map/menu controls where the game's existing actions permit them. Mobile and Xbox saved layouts remain independent.
-- Approved touch artwork, consistent stick styling and transparent camera-related glyphs. Touch icon synchronization refreshes assets on app updates.
-- Optional phone gyro camera with aim-only/gameplay modes, smoothing, sensitivity and inversion. Samples are bounded, expire and reset around inactive states.
+- Refined the launcher layout, Play button spacing, installation status, community links and safe-area handling. More now sits beside Play.
+- Added an achievement progress card that opens the achievement browser, replacing the duplicate launcher entry.
+- Expanded device, Android, GPU, memory, resolution, FPS-cap, graphics and driver information.
+- Added a compact in-game menu with the IV icon, session information and grouped actions. Touch and Controller settings have separate sections.
+- Added restrained menu animations and a shared Reduce motion preference.
+- Preserved the selected category, scroll position and return screen when opening settings, achievements, cheats or the controls editor.
 
-## Achievements, saves and game files
+## Settings and performance overlay
 
-- Launcher and native tracking use the same achievement directory. Locked/unlocked filters, secret-detail preference, icons, descriptions and unlock dates share the native catalog.
-- Installed-title achievement metadata can be prepared during installation or from the browser without starting gameplay. Existing unlock records are retained.
-- Individual save-package discovery, backup, restore and deletion with recovery copies. Account achievements remain separate from slot deletion; full-backup import validates and stages data before replacement.
-- Last observed in-game completion can be shown when the registered game statistic is available. It is labeled historical and is not tied to a verified save slot yet.
-- An accessible app-owned Android/media game location with verified copying and retained originals. Selected SAF folders are imported into a direct native path.
-- Optional read-only overlays for compatible loose Xbox game data. PC plugin, executable, script and archive mods are not supported by this overlay.
-- Searchable cheat categories and additional guarded single-player actions. Handler submission is distinguished from a verified effect.
+- Added compact settings categories, search, contextual help, precise numeric entry, Save/Discard and category reset.
+- Separated live settings from changes that require a restart. Pending changes remain saved, with a Quit now/Later prompt.
+- Added FPS and Detailed overlays with corner, centered and custom positions; adjustable text size and opacity; optional RAM and thermal information; and compact or separate-line layouts.
+- Added an overlay appearance preview and safe-area updates when the display rotates.
+- Updated defaults for new or reset configurations: VSync Off requested, motion blur Off, FXAA, Native upscaling, SMAA Low when selected, 256 shadows, reflection AA Off, Near reflection distance, water/environment updates Off, draw distance 0.85 and converted texture disk cache On. Existing custom values are preserved.
+- Corrected AA Off handling so older MSAA values do not override it. Options that do not apply to the selected AA or upscaler are inactive.
+- Added film-grain control for The Lost and Damned and output-dithering control.
+- Show the actual presentation mode and active AA separately from the requested settings.
 
-## Rendering, drivers and diagnostics
+## Touch, mouse and gyro controls
 
-- Bounded preparation of compatible learned pipeline recipes and available shader modules before gameplay, with known-work status, a time budget and Skip. Unseen rendering states can still compile during play.
-- Cached vertex-declaration location lookup and coordinated shader/declaration input-location compaction for devices with smaller limits. Output locations and the normal Adreno mapping are preserved when remapping is unnecessary.
-- Optional longer texture retention within the existing budget and pressure policy, alongside reuse/eviction diagnostics. No blanket memory-budget increase.
-- Exact, separately named Turnip Gen8 V38 Patched bundle with pinned provenance, plus an experimental Android RADV 1.8 Xclipse bundle. Existing driver choices and fallback options remain available.
-- Advanced Turnip rendering/cache options, applied before driver creation, with explicit restart behavior and reset.
-- Experimental ordinary depth-clipping fallback when depthClamp is absent, and more detailed GPU feature reporting. Missing shaderInt64 and unsupported user clip-plane paths still prevent full compatibility; Mali/Xclipse support requires device testing.
-- Benchmark, pipeline, texture, effective-settings and audio-starvation diagnostics, with opt-in heavy capture and clear publisher-FPS/timing limits.
-- Portable Linux host-tool/build handling, registry validation and automated Java, resource, native and package checks. ARMv8-A baseline and original signing identity are retained.
+- Updated mobile and Xbox touch artwork, matching editor previews and shared stick styling. Fixed icon installation so the renderer uses the bundled artwork after an update.
+- Added optional icon outlines that follow the glyph silhouette; outlines default Off.
+- Added mobile hold-to-lock aiming with an adjustable hold threshold, lock indicator and reset handling around gameplay transitions.
+- Added phone gyro camera modes: Off, Aim only and Gameplay, with sensitivity, smoothing and X/Y inversion.
+- Improved gyro orientation, sensor timing and reset handling around pause, backgrounding, focus changes and rotation.
+- Forwarded Android captured mouse movement, button changes and wheel input to SDL, with sensitivity, inversion and capture release around menus and focus changes.
+- Added camera, focus, radar, radio, cinematic and map/menu controls through the game's existing actions.
+- Added a visible, time-limited input recording option under Diagnostics.
 
-## Validation limits
+## Controls editor
 
-This build has passed host checks and APK verification. Actual installation, controls, achievement preparation, saves, visual correctness, sustained heat/audio and driver behavior still need phone testing. No new FPS gain is claimed. Multiplayer, a reproducible V38-derived custom driver, full missing-feature shader emulation and verified per-slot completion remain research work. Foldable work and Android 10 custom-driver investigation were excluded from this scope.
+- Unified the mobile and Xbox layout editor across the launcher and in-game menu. Each layout remains independent.
+- Added context previews, safe-area and center guides, adjustable grids and snapping, numeric position/scale/opacity, hide/show, context reset and Undo/Redo.
+- Added layout import/export. Imports preserve controls and contexts that are not included in the imported file.
+- Added explicit Save handling and checks that reject stale viewport calibration.
+
+## Achievements and cheats
+
+- Unified launcher counts and native achievement tracking, with refresh after installation and save-backup import.
+- Added achievement search, All/Locked/Unlocked filters, icons, points, descriptions, unlock dates and detail views.
+- Added persistent secret-detail visibility and independent unlock-notification settings.
+- Added achievement catalog preparation from installed game files during installation or from the browser, without starting gameplay.
+- Added searchable cheat categories and clearer request status.
+- Fixed cheat requests being cancelled by an unstable per-frame identity.
+- Added health, armour, vehicle repair, money, invincibility on/off and time-of-day actions with single-player guards. Health and armour check the resulting values where available.
+- Retained the option to respect achievement restrictions when cheats are used.
+
+## Saves, game files and mods
+
+- Added individual save-slot discovery, export, import and deletion, with package validation, protective backups and rollback.
+- Improved recognized save metadata and last-observed completion display. Account achievements remain separate from deleting a save slot.
+- Removed the separate Recover removed/replaced slot menu action while keeping internal transaction recovery.
+- Added an accessible Android/media game location, verified copying with originals retained, clearer extraction destinations and storage-space checks.
+- Added compatible loose Xbox-data mod overlays with independent enable/disable, priority ordering, conflict winners, validation details and last-launch mount results.
+- Moved mod scanning and saving off the UI thread. A failed mod rolls back its own overlay while preserving earlier valid mods.
+- PC DLL/ASI/EXE plugins are unsupported by the data-mod overlay.
+
+## Graphics preparation and rendering
+
+- Added bounded preparation of compatible learned pipeline recipes and available shader modules before gameplay, with a time budget and Skip.
+- Added clearer ready, skipped, cancelled, budget-expired and partial preparation results, including remaining work, failures and elapsed time.
+- Added bounded pipeline lookahead and cached vertex-declaration lookups.
+- Added coordinated shader/input-location remapping for devices with smaller vertex-input limits, preserving the normal mapping when remapping is unnecessary.
+- Added optional longer texture retention within the existing memory budget and pressure policy, plus texture-reuse diagnostics.
+- Reduced inactive profiler CPU work and corrected detailed GPU-query readback handling.
+- Refined display-rate requests to avoid reapplying unchanged settings and to allow seamless refresh-rate changes.
+- Refined Thermal Guard status precedence, cooldown handling and visibility in session information.
+- Water entry remains user-confirmed fixed on the tested device.
+
+## Drivers
+
+- Added the separately source-built **ESMERINGHOY 27.0.0-devel (A7XX/A8XX)** experimental driver, with its source and build information.
+- Bundled seven driver archives, including separate original V38 and Vauzi packages, A710/A720/A722 candidates and an experimental RADV Xclipse driver.
+- Added compatible-first ordering, clearer driver labels, per-driver options, advanced Turnip rendering/cache controls and last-working-driver recovery.
+- Show the actual loaded driver, including system-driver fallback.
+- Added imported-driver deletion with confirmation and blocked driver imports/removal while playing.
+- Hardened imports against invalid or duplicate paths, excessive sizes and unsafe metadata. Interrupted replacement preserves the previous package, and replacement/removal clears stale history.
+- Corrected Android SDK compatibility and Vulkan feature-query initialization.
+- Improved the experimental shader address rewrite and shared texture-detile compatibility path. Experimental depth clipping defaults Off; device admission continues to require the renderer's needed features.
+
+## Logs and troubleshooting
+
+- Added benchmark captures with fixed starting conditions, setting-change tracking, frame-spike counts, thermal/battery readings and bounded session history.
+- Expanded pipeline, texture, effective-settings and audio-starvation diagnostics, including overlapping or incomplete capture notices.
+- Kept normal Play free of diagnostic recording. Share/Delete actions are easier to find, and manual deletion asks for confirmation.
+- **Automatic cleanup of previous full logs remains enabled. Export your report before starting another session.**
+- Fixed native settings cleanup and included the project license and touch-artwork attribution in the APK.
+
+## Installation
+
+Install the APK over your existing XHYN IV installation. Export saves first; do not uninstall just to update.
+
+You must supply your own **Xbox 360 GTA IV USA game files and Title Update 8 (0.0.8.5)**. Game files and the title update are not included.
+
+## Reporting a problem
+
+Open **Settings → Logs & troubleshooting → Play with logs**, reproduce the issue, then return to the launcher and share the latest ZIP before another session. Include your phone, Android version, actual graphics driver, settings and a screenshot or video for visual issues.
+
+[Telegram](https://t.me/xhynports) · [YouTube](https://youtube.com/@xhyn_ph)
