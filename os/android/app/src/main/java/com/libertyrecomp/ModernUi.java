@@ -111,12 +111,14 @@ final class ModernUi {
         Button back=iconButton(a,"back","Back");header.addView(back,new LinearLayout.LayoutParams(dp(a,42),dp(a,42)));
         if(actionLabel!=null){Button save=button(a,actionLabel,true);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(a,36));p.leftMargin=dp(a,8);header.addView(save,p);save.setOnClickListener(v->action.run());}
         panel.setPadding(dp(a,12),dp(a,12),dp(a,12),dp(a,12));panel.addView(header);LinearLayout.LayoutParams content=new LinearLayout.LayoutParams(-1,0,1);content.topMargin=dp(a,8);panel.addView(body,content);
-        AlertDialog d=new AlertDialog.Builder(a).setView(panel).create();
-        back.setOnClickListener(v->{if(close==null||close.getAsBoolean())d.dismiss();});
+        AlertDialog d=new AlertDialog(a){
+            @Override @SuppressWarnings("deprecation") public void onBackPressed(){
+                if(close==null||close.getAsBoolean())dismiss();
+            }
+        };
+        d.setView(panel);
+        back.setOnClickListener(v->d.onBackPressed());
         d.setCanceledOnTouchOutside(false);
-        d.setOnKeyListener((dialog,key,event)->{
-            if(key==KeyEvent.KEYCODE_BACK&&event.getAction()==KeyEvent.ACTION_UP&&close!=null){if(close.getAsBoolean())d.dismiss();return true;}return false;
-        });
         d.setOnShowListener(v->{if(d.getWindow()!=null){immersive(d.getWindow());safeInsets(a,panel,10,8);d.getWindow().getDecorView().setPadding(0,0,0,0);d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setDimAmount(.6f);d.getWindow().setLayout((int)(a.getResources().getDisplayMetrics().widthPixels*.96f),(int)(a.getResources().getDisplayMetrics().heightPixels*.94f));enter(a,panel,0);}});
         return d;
     }

@@ -89,7 +89,9 @@ public class MenuRegressionTest {
             assertNotNull(find(options.getWindow().getDecorView(),"Rendering policy: Launcher default"));assertNotNull(find(options.getWindow().getDecorView(),"Driver disk shader cache: On"));
             View row=find(options.getWindow().getDecorView(),"Rendering policy: Launcher default");
             assertTrue(((android.view.ViewGroup.MarginLayoutParams)row.getLayoutParams()).topMargin>=ModernUi.dp(a,8));
-            capture(a,options.getWindow().getDecorView(),"turnip-test7");click(options.getWindow().getDecorView(),"Back");press(latest(),AlertDialog.BUTTON_NEGATIVE);
+            capture(a,options.getWindow().getDecorView(),"turnip-test7");options.onBackPressed();Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertEquals("Unsaved driver options",Shadows.shadowOf(latest()).getTitle().toString());press(latest(),AlertDialog.BUTTON_NEUTRAL);assertTrue(options.isShowing());
+            click(options.getWindow().getDecorView(),"Back");press(latest(),AlertDialog.BUTTON_NEGATIVE);
             assertEquals("gmem",DriverState.options(data,"turnip_v38").get("rendering"));
         }
     }
@@ -135,6 +137,7 @@ public class MenuRegressionTest {
             scroll.scrollTo(0,scroll.getChildAt(0).getHeight());Shadows.shadowOf(Looper.getMainLooper()).idle();int before=scroll.getScrollY();assertTrue("Fixture must scroll",before>0);
             ((Button)row.getChildAt(1)).performClick();Shadows.shadowOf(Looper.getMainLooper()).idle();click(latest().getWindow().getDecorView(),"Off");
             Shadows.shadowOf(Looper.getMainLooper()).idle();assertEquals(before,scroll.getScrollY());
+            settings.onBackPressed();Shadows.shadowOf(Looper.getMainLooper()).idle();assertEquals("Unsaved settings",Shadows.shadowOf(latest()).getTitle().toString());press(latest(),AlertDialog.BUTTON_NEUTRAL);assertTrue(settings.isShowing());
             click(decor,"Discard");android.widget.LinearLayout cap=decor.findViewWithTag("gta4_frame_limit");((Button)cap.getChildAt(1)).performClick();Shadows.shadowOf(Looper.getMainLooper()).idle();click(latest().getWindow().getDecorView(),"40 FPS");click(decor,"Save");
             assertEquals("40",MobileConfig.read(MobileConfig.file(data)).get("gta4_frame_limit"));assertEquals("540p",PendingSettings.read(data).get("resolution"));settings.dismiss();
         }
