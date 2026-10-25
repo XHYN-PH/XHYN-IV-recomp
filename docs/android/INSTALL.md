@@ -1,36 +1,59 @@
-# Installing XHYN IV
+# Install and update XHYN IV
 
-Download the testing APK from [Releases](https://github.com/XHYN-PH/XHYN-IV-recomp/releases) and install it on a 64-bit Android 10+ device. Android may ask you to allow installation from the browser or file manager you are using.
+## Before you start
 
-## Your game files
+You need a 64-bit Android 10+ phone with compatible Vulkan 1.2 graphics, around 15 GB free during installation, and your own:
 
-You need your own Xbox 360 GTA IV USA disc image (`.iso`) and matching Title Update 8, version **0.0.8.5**. The update can be its STFS package or an extracted `default.xexp`. Other regions and update versions are not interchangeable. No game files or download links are provided by this project.
+- **Xbox 360 GTA IV USA disc image** (`.iso`).
+- **Title Update 8**, version **0.0.8.5**, for that game.
 
-1. Open **Game files** in the launcher.
-2. Select your disc image and title update. Grant file access if Android asks for it.
-3. Press **Install**, leave the app open and wait for it to finish.
-4. Return to the main screen and press **Play**.
+Game files and title updates are not included. Other regions and update versions are not supported by this build.
 
-Allow around 15 GB free during installation. Keep your original files until installation succeeds. Optional episodes need their own matching game files and remain experimental.
+## Install and play
 
-## Choosing a graphics driver
+1. [Download the Test7 APK](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test7/XHYN-IV-0.5.9.3-xhyn-r2-test7.apk).
+2. Open the APK and install it. If Android asks, allow your browser or file manager to install this APK.
+3. Open XHYN IV and choose **Game files**.
+4. Select the GTA IV disc image and Title Update 8. Allow file access when asked.
+5. Press **Install** and keep the app open until it finishes.
+6. Return to the main menu and press **Play**.
 
-Open **Settings → Graphics driver** before starting the game. Try the automatic selection first. Bundled Turnip targets supported Adreno 6xx/7xx GPUs; PanVK and Xclipse RADV are experimental, with Android and kernel requirements. See [driver compatibility](../../os/android/native/DRIVERS.md). A driver for one GPU family cannot run on another.
+Keep your original game files until installation has finished successfully. Optional episodes need their own matching game files and remain experimental.
 
-## Controls
+## Choose a driver
 
-Open **Settings → Controls** to edit the mobile or Xbox on-screen layout. While playing, the small controller button switches styles, and the in-game menu gives access to graphics, controls and quitting. A physical controller can also be used.
+Open **Drivers** on the main menu before starting the game.
 
-## Updating and saves
+Start with **Automatic**. If you get a crash or graphics problems with a chosen driver, try **System**. Adreno phones may also have compatible Turnip or ESMERINGHOY choices. Mali, Immortalis, and Xclipse phones should start with System; their optional drivers are experimental.
 
-Install a newer official XHYN APK over the existing one to retain the app's data when its signing key matches. If Android refuses the update, export saves before changing or removing the existing app. Uninstalling removes app data.
+A driver must match your phone's GPU. The available choices and results can vary by device and Android version.
 
-**Game files → Save data** provides export, import and deletion. Quit the game first. Import keeps a local backup of the previous saves, but you should also keep your own exported copy.
+## Adjust your controls
 
-XHYN IV uses package `com.xhyn.ivrecomp`, separate from the original `com.libertyrecomp` app. Its usual external app folder is `Android/data/com.xhyn.ivrecomp/files/`; use the app's menus to manage files where possible.
+Open **Touch controls** on the main menu. Choose the mobile or Xbox layout, then edit the buttons' positions, size, and opacity. Save the layout when finished.
 
-## Reporting problems
+While playing, open the in-game menu for **Touch controls**, **Controller**, or **Edit controls**. Mobile and Xbox layouts are saved separately. A physical controller can also be used.
 
-Use **Settings → Logs & troubleshooting → Play with logs**, reproduce the issue, then choose **Share latest log**. Export before starting another session, because old logs are cleared. Attach the ZIP, phone model, Android version and driver when reporting the issue in the testing PR or [Telegram](https://t.me/xhynports). Visual problems also need a screenshot or short video.
+For resolution, open **Settings → Video**. For shadows and reflections, use **Settings → Graphics**. FPS limits are under **Settings → Performance**.
 
-Normal **Play** has diagnostic logging off. Advanced diagnostics add overhead and should be used when a more detailed report is requested.
+## Update the app
+
+Install the newer APK over your existing XHYN IV app. Back up your saves first. **Uninstalling removes app data.**
+
+If Android refuses an update, keep your current installation and back up your saves before trying to replace it. Use APKs from this repository's [releases](https://github.com/XHYN-PH/XHYN-IV-recomp/releases).
+
+## Back up and restore saves
+
+Quit the game, then open **Game files → Save data**.
+
+- **Export all saves & achievements** creates a ZIP backup that you can keep outside the app.
+- **Import full backup** restores a previously exported backup.
+- **Manage individual slots** lets you back up, restore, or delete one save slot.
+
+Keep a separate copy of important backups. Saves from the original Liberty Recompiled app are stored separately from XHYN IV.
+
+## Need help?
+
+Read [troubleshooting](TROUBLESHOOTING.md), or ask in [Telegram](https://t.me/xhynports). Include your phone model, Android version, selected driver, and a screenshot of any error.
+
+[Back to the README](../../README.md)

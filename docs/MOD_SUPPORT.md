@@ -1,22 +1,35 @@
-# Mods on Android
+# Use data-file mods
 
-XHYN IV runs the Xbox 360 game data. Files and plugins made for the PC edition
-are not automatically compatible.
+XHYN IV supports compatible loose Xbox 360 data files, such as handling or weather settings. PC DLL/ASI/EXE plugins, scripts, and model or texture archives are not supported by this mod menu.
 
-The current Android host reads the installed loose files in
-`Android/data/com.xhyn.ivrecomp/files/LibertyRecomp/game/`.
-Matching Xbox 360 data replacements can be tested at their original paths,
-such as `common/data/handling.dat`. Keep a copy of each original file before
-replacing it and quit the game first. A mod must match the installed game and
-title update; changing traffic, models or scripts can also affect performance.
+## Add a mod
 
-Xbox 360 texture and model formats are required. A matching filename alone
-does not make a PC asset compatible. PC `.asi`, `.dll` and `.exe` plugins and
-replacement Xbox executable code are not supported by this Android build.
-Custom SCO scripts and replacement IMG/RPF archives have not been validated.
+Quit the game first. Inside the installation's **mods** folder, give each mod its own folder. Keep the game's original file paths under **game** or **update**:
 
-The Android RexGlue host mounts `game/` as `game:` and the installed
-`game/update/` directory as `update:`. This is separate from the older desktop
-host's FusionFix-style overlay. Simply creating `mods/update/` or copying PC
-FusionFix plugins does not enable an Android overlay. A separate mod importer
-or overlay manager has not been added to the launcher.
+```text
+mods/MyHandling/game/common/data/handling.dat
+mods/MyWeather/update/common/data/timecyc.dat
+```
+
+Files under **update** need the matching title update to be installed.
+
+Supported file types are `.dat`, `.xml`, `.ide`, `.ipl`, `.txt`, `.meta`, and `.gxt`. Put a mod's instructions or readme outside its mod folder.
+
+## Enable it
+
+1. Open **Game files → Data-file mods**.
+2. Turn on the main mod switch and enable the mods you want.
+3. Adjust **Priority** if needed.
+4. Press **Save for next launch**, then start the game.
+
+When two mods replace the same file, the one with the higher priority number wins. The menu shows conflicts and which mod takes priority.
+
+## If a mod does not work
+
+Check its message in the mod menu and the **Last launch** result. If it causes a crash or unwanted changes, quit the game, disable it, save, and launch again.
+
+Mods must use paths and file contents that match the Xbox 360 version. A PC mod is not automatically compatible. Try one mod at a time and keep a save backup.
+
+The mod menu loads files over the installed game without replacing the original game files on disk.
+
+[Back to help](README.md)
