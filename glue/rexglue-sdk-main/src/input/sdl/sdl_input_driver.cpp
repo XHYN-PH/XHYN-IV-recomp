@@ -30,6 +30,16 @@
 
 REXCVAR_DEFINE_STRING(hid_mappings_file, "", "Input", "Path to SDL gamecontroller mappings file");
 
+REXCVAR_DEFINE_DOUBLE(gamepad_left_deadzone,0.0,"Input/Controller","Left stick radial deadzone").range(0,.4);
+REXCVAR_DEFINE_DOUBLE(gamepad_right_deadzone,0.0,"Input/Controller","Right stick radial deadzone").range(0,.4);
+REXCVAR_DEFINE_DOUBLE(gamepad_left_sensitivity,1.0,"Input/Controller","Left stick sensitivity").range(.25,2);
+REXCVAR_DEFINE_DOUBLE(gamepad_right_sensitivity,1.0,"Input/Controller","Right stick sensitivity").range(.25,2);
+REXCVAR_DEFINE_DOUBLE(gamepad_response_curve,1.0,"Input/Controller","Stick response exponent").range(.5,2);
+REXCVAR_DEFINE_DOUBLE(gamepad_trigger_threshold,0.0,"Input/Controller","Trigger deadzone").range(0,.4);
+REXCVAR_DEFINE_BOOL(gamepad_invert_right_x,false,"Input/Controller","Invert right stick horizontally");
+REXCVAR_DEFINE_BOOL(gamepad_invert_right_y,false,"Input/Controller","Invert right stick vertically");
+REXCVAR_DEFINE_DOUBLE(gamepad_rumble_strength,1.0,"Input/Controller","Physical controller rumble multiplier").range(0,1);
+
 namespace rex::input::sdl {
 
 namespace {
@@ -444,6 +454,14 @@ X_RESULT SDLInputDriver::GetState(uint32_t user_index, X_INPUT_STATE* out_state)
     controller->state_changed = false;
   }
   std::memcpy(out_state, &controller->state, sizeof(*out_state));
+  if(is_active){
+    auto& pad=out_state->gamepad;
+    int16_t lx=pad.thumb_lx,ly=pad.thumb_ly,rx=pad.thumb_rx,ry=pad.thumb_ry;
+    TuneThumbs(lx,ly,REXCVAR_GET(gamepad_left_deadzone),REXCVAR_GET(gamepad_left_sensitivity),REXCVAR_GET(gamepad_response_curve),false,false);
+    TuneThumbs(rx,ry,REXCVAR_GET(gamepad_right_deadzone),REXCVAR_GET(gamepad_right_sensitivity),REXCVAR_GET(gamepad_response_curve),REXCVAR_GET(gamepad_invert_right_x),REXCVAR_GET(gamepad_invert_right_y));
+    pad.thumb_lx=lx;pad.thumb_ly=ly;pad.thumb_rx=rx;pad.thumb_ry=ry;
+    pad.left_trigger=TuneTrigger(pad.left_trigger,REXCVAR_GET(gamepad_trigger_threshold));pad.right_trigger=TuneTrigger(pad.right_trigger,REXCVAR_GET(gamepad_trigger_threshold));
+  }
   if (!is_active) {
     // Simulate an "untouched" controller. When we become active again the
     // pressed buttons aren't lost and will be visible again.
@@ -502,8 +520,10 @@ X_RESULT SDLInputDriver::SetState(uint32_t user_index, X_INPUT_VIBRATION* vibrat
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
 
-  const uint16_t left_motor = vibration->left_motor_speed;
-  const uint16_t right_motor = vibration->right_motor_speed;
+  const double configured_strength=REXCVAR_GET(gamepad_rumble_strength);
+  const double strength=std::isfinite(configured_strength)?std::clamp(configured_strength,0.0,1.0):1.0;
+  const uint16_t left_motor = uint16_t(vibration->left_motor_speed*strength);
+  const uint16_t right_motor = uint16_t(vibration->right_motor_speed*strength);
   if (!controller->rumble_supported) {
     if (!left_motor && !right_motor) {
       return X_ERROR_SUCCESS;

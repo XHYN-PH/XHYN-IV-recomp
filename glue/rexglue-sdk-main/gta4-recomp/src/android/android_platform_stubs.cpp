@@ -69,6 +69,7 @@ Java_com_libertyrecomp_LibertyActivity_nativeSetTouchLayout(JNIEnv*, jclass, jbo
 }
 namespace {
 const std::set<std::string_view> mobile_settings={
+  "gamepad_left_deadzone","gamepad_right_deadzone","gamepad_left_sensitivity","gamepad_right_sensitivity","gamepad_response_curve","gamepad_trigger_threshold","gamepad_invert_right_x","gamepad_invert_right_y","gamepad_rumble_strength","gta4_touch_context_delay_ms","gta4_profile_native_detailed_cpu","gta4_profile_native_detailed_gpu",
   "gta4_native_preparation_cancel","gta4_native_texture_reuse_extended","gta4_native_depth_clip_fallback",
   "mnk_mode","mnk_sensitivity","mnk_invert_y","gta4_native_output_dither","gta4_disable_tlad_film_grain",
   "gta4_overlay_text_size","gta4_overlay_opacity","gta4_overlay_x","gta4_overlay_y","gta4_overlay_ram","gta4_overlay_thermal","gta4_overlay_compact","gta4_overlay_edge_gap","gta4_touch_icon_outline",
@@ -81,7 +82,7 @@ const std::set<std::string_view> mobile_settings={
   "gta4_touch_button_hints","gta4_touch_labels",
   "gta4_phone_rumble_strength","achievement_notifications","gta4_touch_animations","gta4_cheat_achievements",
   "gta4_touch_aim_hold_lock","gta4_touch_aim_hold_seconds",
-  "android_thermal_guard","audio_mute","gta4_performance_overlay","gta4_overlay_position",
+  "android_thermal_guard","audio_adaptive_buffer","audio_mute","gta4_performance_overlay","gta4_overlay_position",
   "gta4_phone_gyro_mode","gta4_phone_gyro_sensitivity","gta4_phone_gyro_smoothing","gta4_phone_gyro_invert_x","gta4_phone_gyro_invert_y",
   "gta4_native_pipeline_lookahead","gta4_native_smaa_quality","gta4_native_shadow_interval","gta4_reflection_capture_distance","gta4_dynamic_draw_distance"};
 std::string JavaString(JNIEnv* env,jstring s) {

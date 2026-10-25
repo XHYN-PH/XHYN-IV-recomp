@@ -66,8 +66,8 @@ public class MenuRegressionTest {
     @Test public void overflowOpensLogsRepeatedly()throws Exception{
         try(ActivityController<LauncherActivity> c=Robolectric.buildActivity(LauncherActivity.class).setup()){
             LauncherActivity a=c.get();click(root(a),"More actions");AlertDialog logs=latest();
-            assertNotNull(find(logs.getWindow().getDecorView(),"Play with logs"));assertTrue(find(logs.getWindow().getDecorView(),"Share latest log") instanceof Button);
-            logs.dismiss();click(root(a),"More actions");latest().dismiss();capture(a,root(a),"launcher-test7");
+            assertNotNull(find(logs.getWindow().getDecorView(),"Play with logs"));assertTrue(find(logs.getWindow().getDecorView(),"Share report") instanceof Button);
+            logs.dismiss();click(root(a),"More actions");latest().dismiss();capture(a,root(a),"launcher-test8");
         }
     }
     @Test public void logsAlsoOpenThroughSettings(){
@@ -89,7 +89,7 @@ public class MenuRegressionTest {
             assertNotNull(find(options.getWindow().getDecorView(),"Rendering policy: Launcher default"));assertNotNull(find(options.getWindow().getDecorView(),"Driver disk shader cache: On"));
             View row=find(options.getWindow().getDecorView(),"Rendering policy: Launcher default");
             assertTrue(((android.view.ViewGroup.MarginLayoutParams)row.getLayoutParams()).topMargin>=ModernUi.dp(a,8));
-            capture(a,options.getWindow().getDecorView(),"turnip-test7");options.onBackPressed();Shadows.shadowOf(Looper.getMainLooper()).idle();
+            capture(a,options.getWindow().getDecorView(),"turnip-test8");options.onBackPressed();Shadows.shadowOf(Looper.getMainLooper()).idle();
             assertEquals("Unsaved driver options",Shadows.shadowOf(latest()).getTitle().toString());press(latest(),AlertDialog.BUTTON_NEUTRAL);assertTrue(options.isShowing());
             click(options.getWindow().getDecorView(),"Back");press(latest(),AlertDialog.BUTTON_NEGATIVE);
             assertEquals("gmem",DriverState.options(data,"turnip_v38").get("rendering"));
@@ -103,13 +103,13 @@ public class MenuRegressionTest {
             assertEquals(0,bounds.left,0);assertEquals(0,bounds.top,0);assertEquals(2048,bounds.right,0);assertEquals(921,bounds.bottom,0);
             TouchLayoutDocument doc=(TouchLayoutDocument)field(a,"document");doc.get("on_foot/jump").dx=123;field(a,"dirty",true);
             a.onBackPressed();AlertDialog confirm=latest();assertEquals("Unsaved control layout",Shadows.shadowOf(confirm).getTitle().toString());press(confirm,AlertDialog.BUTTON_NEUTRAL);assertFalse(a.isFinishing());
-            capture(a,root(a),"mobile-editor-test7");a.onBackPressed();press(latest(),AlertDialog.BUTTON_NEGATIVE);assertFalse(TouchLayoutDocument.file(data(a)).exists());
+            capture(a,root(a),"mobile-editor-test8");a.onBackPressed();press(latest(),AlertDialog.BUTTON_NEGATIVE);assertFalse(TouchLayoutDocument.file(data(a)).exists());
         }
     }
     @Test public void xboxEditorRetainsIndependentFullscreenMode()throws Exception{
         Intent intent=new Intent().putExtra("xbox",true);
         try(ActivityController<TouchEditorActivity> c=Robolectric.buildActivity(TouchEditorActivity.class,intent).setup()){
-            assertTrue((Boolean)field(c.get(),"xbox"));assertNotNull(find(root(c.get()),"Xbox layout editor"));capture(c.get(),root(c.get()),"xbox-editor-test7");
+            assertTrue((Boolean)field(c.get(),"xbox"));assertNotNull(find(root(c.get()),"Xbox layout editor"));capture(c.get(),root(c.get()),"xbox-editor-test8");
         }
     }
     @Test public void sessionHeaderPrecedesResumeAndUsesTransparentLogo()throws Exception{
@@ -118,24 +118,24 @@ public class MenuRegressionTest {
             Map<String,Runnable> actions=new LinkedHashMap<>();for(String action:new String[]{"Achievements","Cheats","Settings","Edit mobile controls","Control settings","Edit Xbox controls","Start performance test","Recorded results","Input test (30 seconds)","Capture renderer timings","Capture shadow issue"})actions.put(action,()->{});
             AlertDialog menu=SessionMenuUi.show(a,runtime,"turnip_v38",new SessionMenuUi.State(),actions,()->{});
             View resume=find(menu.getWindow().getDecorView(),"Resume"),waiting=find(menu.getWindow().getDecorView(),"Waiting for gameplay sample");assertNotNull(resume);assertNotNull(waiting);assertNull(find(menu.getWindow().getDecorView(),"Back"));
-            capture(a,menu.getWindow().getDecorView(),"session-menu-test7");
+            capture(a,menu.getWindow().getDecorView(),"session-menu-test8");
             int[] headerPosition=new int[2],resumePosition=new int[2];waiting.getLocationInWindow(headerPosition);resume.getLocationInWindow(resumePosition);
             assertTrue("Stats must be above Resume",headerPosition[1]+waiting.getHeight()<=resumePosition[1]);
             ImageView logo=(ImageView)find(menu.getWindow().getDecorView(),"IV logo");assertNotNull(logo);assertTrue(logo.getDrawable() instanceof BitmapDrawable);
             Bitmap bitmap=((BitmapDrawable)logo.getDrawable()).getBitmap();assertEquals(0,Color.alpha(bitmap.getPixel(0,0)));assertEquals(0,Color.alpha(bitmap.getPixel(bitmap.getWidth()-1,bitmap.getHeight()-1)));
             assertTrue(find(menu.getWindow().getDecorView(),"Achievements").getHeight()>0);
-            click(menu.getWindow().getDecorView(),"Diagnostics");assertNotNull(find(menu.getWindow().getDecorView(),"Recorded results"));
+            click(menu.getWindow().getDecorView(),"Diagnostics");assertNull(find(menu.getWindow().getDecorView(),"Recorded results"));assertNotNull(find(menu.getWindow().getDecorView(),"Session details"));assertNotNull(find(menu.getWindow().getDecorView(),"Copy details"));
             menu.dismiss();
         }
     }
     @Test public void choicesKeepScrollAndSavedPendingSettings()throws Exception{
         try(ActivityController<Activity> c=Robolectric.buildActivity(Activity.class).setup()){
             Activity a=c.get();File data=data(a);MobileConfig.update(MobileConfig.file(data),Map.of("gta4_frame_limit","30"));PendingSettings.save(data,Map.of("resolution","540p"));
-            AlertDialog settings=MobileSettingsUi.graphics(a,data,null);View decor=settings.getWindow().getDecorView();click(decor,"Performance");capture(a,decor,"settings-test7");
+            AlertDialog settings=MobileSettingsUi.graphics(a,data,null);View decor=settings.getWindow().getDecorView();click(decor,"Performance");capture(a,decor,"settings-test8");
             android.widget.LinearLayout row=decor.findViewWithTag("gta4_native_converted_texture_disk_cache");assertNotNull(row);
             android.view.ViewParent parent=row.getParent();while(!(parent instanceof android.widget.ScrollView))parent=parent.getParent();android.widget.ScrollView scroll=(android.widget.ScrollView)parent;
             scroll.scrollTo(0,scroll.getChildAt(0).getHeight());Shadows.shadowOf(Looper.getMainLooper()).idle();int before=scroll.getScrollY();assertTrue("Fixture must scroll",before>0);
-            ((Button)row.getChildAt(1)).performClick();Shadows.shadowOf(Looper.getMainLooper()).idle();click(latest().getWindow().getDecorView(),"Off");
+            click(row,"Off");
             Shadows.shadowOf(Looper.getMainLooper()).idle();assertEquals(before,scroll.getScrollY());
             settings.onBackPressed();Shadows.shadowOf(Looper.getMainLooper()).idle();assertEquals("Unsaved settings",Shadows.shadowOf(latest()).getTitle().toString());press(latest(),AlertDialog.BUTTON_NEUTRAL);assertTrue(settings.isShowing());
             click(decor,"Discard");android.widget.LinearLayout cap=decor.findViewWithTag("gta4_frame_limit");((Button)cap.getChildAt(1)).performClick();Shadows.shadowOf(Looper.getMainLooper()).idle();click(latest().getWindow().getDecorView(),"40 FPS");click(decor,"Save");
@@ -146,6 +146,31 @@ public class MenuRegressionTest {
         try(ActivityController<Activity> c=Robolectric.buildActivity(Activity.class).setup()){
             AlertDialog settings=MobileSettingsUi.graphics(c.get(),data(c.get()),null);assertNotNull(settings);
             click(settings.getWindow().getDecorView(),"Overlay");click(settings.getWindow().getDecorView(),"Performance");click(settings.getWindow().getDecorView(),"Discard");click(settings.getWindow().getDecorView(),"Save");settings.dismiss();
+        }
+    }
+    @Test public void overlayEditorKeepsChangesInDraftUntilSettingsSave()throws Exception{
+        try(ActivityController<Activity> c=Robolectric.buildActivity(Activity.class).setup()){
+            Activity a=c.get();File data=data(a);AlertDialog settings=MobileSettingsUi.graphics(a,data,null);View decor=settings.getWindow().getDecorView();click(decor,"Overlay");click(decor,"Edit overlay");AlertDialog editor=latest();assertEquals(-1,editor.getWindow().getAttributes().width);assertEquals(-1,editor.getWindow().getAttributes().height);
+            click(editor.getWindow().getDecorView(),"Text size increase");click(editor.getWindow().getDecorView(),"Position");click(latest().getWindow().getDecorView(),"Bottom left");capture(a,editor.getWindow().getDecorView(),"overlay-editor-test8");click(editor.getWindow().getDecorView(),"Save");
+            assertFalse(MobileConfig.read(MobileConfig.file(data)).containsKey("gta4_overlay_position"));click(decor,"Save");assertEquals("bottom_left",MobileConfig.read(MobileConfig.file(data)).get("gta4_overlay_position"));assertEquals("13",MobileConfig.read(MobileConfig.file(data)).get("gta4_overlay_text_size"));settings.dismiss();
+        }
+    }
+    @Test public void controllerBackHonorsUnsavedGuard(){
+        try(ActivityController<Activity> c=Robolectric.buildActivity(Activity.class).setup()){
+            Activity a=c.get();boolean[] allow={false};AlertDialog dialog=ModernUi.screen(a,"Controller",ModernUi.text(a,"Body",14,ModernUi.TEXT),null,null,()->allow[0]);dialog.show();
+            android.view.KeyEvent back=new android.view.KeyEvent(0,1,android.view.KeyEvent.ACTION_UP,android.view.KeyEvent.KEYCODE_BUTTON_B,0,0,0,0,0,android.view.InputDevice.SOURCE_GAMEPAD);
+            dialog.dispatchKeyEvent(back);assertTrue(dialog.isShowing());allow[0]=true;dialog.dispatchKeyEvent(back);assertFalse(dialog.isShowing());
+        }
+    }
+    @Test public void inlineTogglesAndControllerSettingsPersist()throws Exception{
+        try(ActivityController<Activity> c=Robolectric.buildActivity(Activity.class).setup()){
+            Activity a=c.get();File data=data(a);AlertDialog settings=MobileSettingsUi.graphics(a,data,null);View decor=settings.getWindow().getDecorView();click(decor,"Controller");android.widget.LinearLayout invert=decor.findViewWithTag("gamepad_invert_right_y");assertNotNull(invert);click(invert,"On");assertSame(settings,latest());click(decor,"Save");assertEquals("true",MobileConfig.read(MobileConfig.file(data)).get("gamepad_invert_right_y"));capture(a,decor,"controller-settings-test8");settings.dismiss();
+        }
+    }
+    @Test public void controllerCanCloseConfirmationAndToggleFilmGrainCorrectly()throws Exception{
+        try(ActivityController<Activity> c=Robolectric.buildActivity(Activity.class).setup()){
+            Activity a=c.get();AlertDialog confirm=ModernUi.builder(a).setTitle("Confirm").setPositiveButton("Keep",null).setNegativeButton("Cancel",null).create();confirm.show();confirm.dispatchKeyEvent(new android.view.KeyEvent(0,1,android.view.KeyEvent.ACTION_UP,android.view.KeyEvent.KEYCODE_BUTTON_B,0,0,0,0,0,android.view.InputDevice.SOURCE_GAMEPAD));assertFalse(confirm.isShowing());
+            File data=data(a);AlertDialog settings=MobileSettingsUi.graphics(a,data,null);View decor=settings.getWindow().getDecorView();click(decor,"Graphics");android.widget.LinearLayout grain=decor.findViewWithTag("gta4_disable_tlad_film_grain");if(grain==null){click(decor,"Video");grain=decor.findViewWithTag("gta4_disable_tlad_film_grain");}assertNotNull(grain);click(grain,"Off");click(decor,"Save");assertEquals("true",MobileConfig.read(MobileConfig.file(data)).get("gta4_disable_tlad_film_grain"));settings.dismiss();
         }
     }
 }

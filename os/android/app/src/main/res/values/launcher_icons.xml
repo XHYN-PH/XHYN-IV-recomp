@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <item type="mipmap" name="ic_launcher">@drawable/app_icon</item>
-    <item type="mipmap" name="ic_launcher_round">@drawable/app_icon</item>
-</resources>

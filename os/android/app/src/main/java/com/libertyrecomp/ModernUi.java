@@ -44,8 +44,8 @@ final class ModernUi {
     static void enter(Activity a,View view,int delay){
         view.animate().cancel();view.setTranslationX(0);view.setTranslationY(0);
         if(!motion(a)){view.setAlpha(1);return;}
-        view.setAlpha(0);
-        view.animate().alpha(1).setStartDelay(0).setDuration(120)
+        view.setAlpha(.85f);view.setTranslationX(dp(a,32));
+        view.animate().translationX(0).alpha(1).setStartDelay(Math.max(0,Math.min(80,delay))).setDuration(180)
             .setInterpolator(new DecelerateInterpolator()).start();
     }
     static void slideIn(Activity a,View view){enter(a,view,0);}
@@ -62,16 +62,16 @@ final class ModernUi {
                 if(getWindowToken()!=null){setScaleX(1);setScaleY(1);}
             }
             @Override protected void onDetachedFromWindow(){animate().cancel();super.onDetachedFromWindow();}
-        };b.setText(title);b.setAllCaps(false);b.setTextSize(14);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        };b.setText(title);b.setFocusable(true);b.setAllCaps(false);b.setTextSize(14);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         b.setMinWidth(0);b.setMinimumWidth(0);b.setMinHeight(0);b.setMinimumHeight(0);b.setIncludeFontPadding(false);b.setGravity(Gravity.CENTER);b.setSingleLine(true);b.setEllipsize(android.text.TextUtils.TruncateAt.END);
         b.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{android.R.attr.state_focused},new int[]{android.R.attr.state_pressed},new int[]{}},new int[]{MUTED,BG,BG,primary?BG:TEXT}));
         StateListDrawable states=new StateListDrawable();states.addState(new int[]{android.R.attr.state_pressed},surface(a,ACCENT,10));states.addState(new int[]{android.R.attr.state_focused},surface(a,ACCENT,10));states.addState(new int[]{},surface(a,primary?TEXT:0xff242424,10));
         states.setEnterFadeDuration(motion(a)?80:0);states.setExitFadeDuration(motion(a)?100:0);
-        b.setBackgroundTintList(null);b.setBackground(states);b.setStateListAnimator(null);b.setElevation(0);b.setPadding(dp(a,12),dp(a,4),dp(a,12),dp(a,4));return b;
+        b.setTooltipText(title);b.setBackgroundTintList(null);b.setBackground(states);b.setStateListAnimator(null);b.setElevation(0);b.setPadding(dp(a,12),dp(a,4),dp(a,12),dp(a,4));return b;
     }
     static void selected(Button button,boolean selected){button.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{android.R.attr.state_focused},new int[]{android.R.attr.state_pressed},new int[]{}},new int[]{MUTED,BG,BG,selected?ACCENT:TEXT}));}
     static Button icon(Activity a,String title,String glyph,boolean primary){Button b=button(a,title,primary);UiIcon icon=new UiIcon(glyph,primary?BG:TEXT);int size=dp(a,19);icon.setBounds(0,0,size,size);b.setCompoundDrawables(icon,null,null,null);b.setCompoundDrawablePadding(dp(a,9));return b;}
-    static Button iconButton(Activity a,String glyph,String description){Button b=button(a,"",false);UiIcon icon=new UiIcon(glyph,TEXT);int size=dp(a,20);icon.setBounds(0,0,size,size);b.setCompoundDrawables(null,null,null,null);b.setBackground(new android.graphics.drawable.LayerDrawable(new Drawable[]{b.getBackground(),icon}));android.graphics.drawable.LayerDrawable layer=(android.graphics.drawable.LayerDrawable)b.getBackground();layer.setLayerGravity(1,Gravity.CENTER);layer.setLayerSize(1,size,size);b.setContentDescription(description);return b;}
+    static Button iconButton(Activity a,String glyph,String description){Button b=button(a,"",false);UiIcon icon=new UiIcon(glyph,TEXT);int size=dp(a,20);icon.setBounds(0,0,size,size);b.setCompoundDrawables(null,null,null,null);b.setBackground(new android.graphics.drawable.LayerDrawable(new Drawable[]{b.getBackground(),icon}));android.graphics.drawable.LayerDrawable layer=(android.graphics.drawable.LayerDrawable)b.getBackground();layer.setLayerGravity(1,Gravity.CENTER);layer.setLayerSize(1,size,size);b.setContentDescription(description);b.setTooltipText(description);return b;}
     static void action(Activity a,LinearLayout panel,String title,Runnable run){Button b=button(a,title,false);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(a,42));lp.topMargin=dp(a,6);panel.addView(b,lp);b.setOnClickListener(v->run.run());}
     static Button gridAction(Activity a,LinearLayout grid,String title,Runnable run){
         View last=grid.getChildCount()==0?null:grid.getChildAt(grid.getChildCount()-1);
@@ -91,10 +91,10 @@ final class ModernUi {
         TextView h=text(a,title.toUpperCase(java.util.Locale.ROOT),20,TEXT);h.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));header.addView(h,new LinearLayout.LayoutParams(0,-2,1));
         boolean iconBack=backLabel==null||backLabel.equals("Back");Button back=iconBack?iconButton(a,"back","Back"):button(a,backLabel,false);header.addView(back,new LinearLayout.LayoutParams(iconBack?dp(a,42):-2,dp(a,42)));panel.addView(header);
         if(actionLabel!=null){Button save=button(a,actionLabel,true);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,dp(a,42));lp.leftMargin=dp(a,8);header.addView(save,lp);save.setOnClickListener(v->{if(action!=null)action.run();});}
-        ScrollView scroll=new ScrollView(a);scroll.setFillViewport(false);scroll.addView(body);
-        LinearLayout.LayoutParams content=new LinearLayout.LayoutParams(-1,0,1);content.topMargin=dp(a,8);panel.addView(scroll,content);
-        AlertDialog d=new AlertDialog.Builder(a).setView(panel).create();back.setOnClickListener(v->d.dismiss());
-        d.setOnShowListener(v->{if(d.getWindow()!=null){immersive(d.getWindow());safeInsets(a,panel,12,8);d.getWindow().getDecorView().setPadding(0,0,0,0);d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setDimAmount(.6f);d.getWindow().setLayout(Math.min(dp(a,720),(int)(a.getResources().getDisplayMetrics().widthPixels*.94f)),(int)(a.getResources().getDisplayMetrics().heightPixels*.92f));enter(a,panel,0);}});return d;
+        ScrollView scroll=new ScrollView(a){@Override protected void onMeasure(int w,int h){super.onMeasure(w,View.MeasureSpec.makeMeasureSpec(Math.max(dp(a,64),(int)(a.getResources().getDisplayMetrics().heightPixels*.76f)-dp(a,72)),View.MeasureSpec.AT_MOST));}};scroll.setFillViewport(false);scroll.addView(body);
+        LinearLayout.LayoutParams content=new LinearLayout.LayoutParams(-1,-2);content.topMargin=dp(a,8);panel.addView(scroll,content);
+        AlertDialog d=navigable(a,null);d.setView(panel);back.setOnClickListener(v->d.onBackPressed());
+        d.setOnShowListener(v->{if(d.getWindow()!=null){immersive(d.getWindow());safeInsets(a,panel,12,8);d.getWindow().getDecorView().setPadding(0,0,0,0);d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setDimAmount(.6f);d.getWindow().setLayout(Math.min(dp(a,body instanceof TextView?480:680),(int)(a.getResources().getDisplayMetrics().widthPixels*.94f)),-2);d.getWindow().setWindowAnimations(motion(a)?R.style.SessionPanelAnimation:0);focusFirst(panel);}});return d;
     }
     static void choose(Activity a,String title,String[] labels,int selected,IntConsumer changed){
         LinearLayout body=new LinearLayout(a);body.setOrientation(LinearLayout.VERTICAL);AlertDialog dialog=dialog(a,title,body);
@@ -111,15 +111,11 @@ final class ModernUi {
         Button back=iconButton(a,"back","Back");header.addView(back,new LinearLayout.LayoutParams(dp(a,42),dp(a,42)));
         if(actionLabel!=null){Button save=button(a,actionLabel,true);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(a,36));p.leftMargin=dp(a,8);header.addView(save,p);save.setOnClickListener(v->action.run());}
         panel.setPadding(dp(a,12),dp(a,12),dp(a,12),dp(a,12));panel.addView(header);LinearLayout.LayoutParams content=new LinearLayout.LayoutParams(-1,0,1);content.topMargin=dp(a,8);panel.addView(body,content);
-        AlertDialog d=new AlertDialog(a){
-            @Override @SuppressWarnings("deprecation") public void onBackPressed(){
-                if(close==null||close.getAsBoolean())dismiss();
-            }
-        };
+        AlertDialog d=navigable(a,close);
         d.setView(panel);
         back.setOnClickListener(v->d.onBackPressed());
         d.setCanceledOnTouchOutside(false);
-        d.setOnShowListener(v->{if(d.getWindow()!=null){immersive(d.getWindow());safeInsets(a,panel,10,8);d.getWindow().getDecorView().setPadding(0,0,0,0);d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setDimAmount(.6f);d.getWindow().setLayout((int)(a.getResources().getDisplayMetrics().widthPixels*.96f),(int)(a.getResources().getDisplayMetrics().heightPixels*.94f));enter(a,panel,0);}});
+        d.setOnShowListener(v->{if(d.getWindow()!=null){immersive(d.getWindow());safeInsets(a,panel,10,8);d.getWindow().getDecorView().setPadding(0,0,0,0);d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setDimAmount(.6f);d.getWindow().setLayout((int)(a.getResources().getDisplayMetrics().widthPixels*.96f),(int)(a.getResources().getDisplayMetrics().heightPixels*.94f));d.getWindow().setWindowAnimations(motion(a)?R.style.SessionPanelAnimation:0);focusFirst(panel);}});
         return d;
     }
     static void tint(SeekBar slider){slider.setProgressTintList(ColorStateList.valueOf(ACCENT));slider.setThumbTintList(ColorStateList.valueOf(ACCENT));}
@@ -133,5 +129,26 @@ final class ModernUi {
             }
         }
     }
+    /** Keep confirmation and input dialogs navigable with the same controller rules. */
+    static AlertDialog.Builder builder(Activity a){return new AlertDialog.Builder(a){
+        @Override public AlertDialog create(){
+            AlertDialog dialog=super.create();ControllerNavigation navigation=new ControllerNavigation();
+            dialog.setOnKeyListener((d,key,event)->navigation.key(dialog.getWindow(),event,dialog::onBackPressed));
+            Window window=dialog.getWindow();if(window!=null){window.getDecorView().setOnGenericMotionListener((v,event)->navigation.motion(window,event));window.setWindowAnimations(motion(a)?R.style.SessionPanelAnimation:0);}
+            return dialog;
+        }
+    };}
+    static AlertDialog navigable(Activity a,java.util.function.BooleanSupplier close){
+        return new AlertDialog(a){
+            final ControllerNavigation navigation=new ControllerNavigation();
+            @Override protected void onCreate(android.os.Bundle state){super.onCreate(state);if(getWindow()!=null)getWindow().setWindowAnimations(motion(a)?R.style.SessionPanelAnimation:0);}
+            @Override public void dismiss(){if(getWindow()!=null)getWindow().setWindowAnimations(motion(a)?R.style.SessionPanelAnimation:0);super.dismiss();}
+            @Override public boolean dispatchGenericMotionEvent(MotionEvent e){return navigation.motion(getWindow(),e)||super.dispatchGenericMotionEvent(e);}
+            @Override public boolean dispatchKeyEvent(KeyEvent e){return navigation.key(getWindow(),e,this::onBackPressed)||super.dispatchKeyEvent(e);}
+            @Override @SuppressWarnings("deprecation") public void onBackPressed(){if(close==null||close.getAsBoolean())dismiss();}
+        };
+    }
+    static void focusFirst(View root){root.post(()->{if(root.findFocus()!=null)return;java.util.ArrayList<View> views=new java.util.ArrayList<>();root.addFocusables(views,View.FOCUS_FORWARD);for(View v:views)if(v.isEnabled()&&v.getVisibility()==View.VISIBLE){v.requestFocus();break;}});}
+    static Button tool(Activity a,String icon,String label){return iconButton(a,icon,label);}
     private ModernUi(){}
 }

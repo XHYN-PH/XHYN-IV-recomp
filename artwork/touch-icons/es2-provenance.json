@@ -2,135 +2,123 @@
   "source": "User-provided es2.zip, described by the user as a fan-game asset archive",
   "archive_sha256": "eefa46f8d3dbf146ad558493253e6b5bc8939bda5627fc7f73a5ea7434a36cfe",
   "creator_and_license": "Not supplied with the archive; no claim that imported assets are original XHYN work or covered by the project license",
-  "processing": "Keep glyph shapes; remove outer ring/backing and normalize tint/alpha. Aim uses lockon.png, not target.png. Mobile pause resolves house.png, so both house and menu use the supplied pause glyph.",
+  "processing": "Keep original glyph shapes and colour; remove circular rim/black backing and normalize baked opacity. Aim uses lockon.png. Mobile Pause uses the supplied pause.png; pistol, eye and interact retain the project SVGs because no corresponding action artwork is supplied.",
   "icons": [
     {
       "icon": "gas",
       "source": "es2/accelerate.png",
       "source_sha256": "e7b58c294544cfcf2684053e56beabf9179ed308d7f749b61354d147b1434f43",
-      "output_sha256": "6653633a3ff3b0e1d06368800b7f4c6dc485fe99352f085326a94fc5d9cde98f"
+      "output_sha256": "4f9eafb40ac1c028f78a853a1d6954e9427ee6031f6ac4b2356602e7dc938a57"
     },
     {
       "icon": "brake",
       "source": "es2/break.png",
       "source_sha256": "81337c5e179226a5cf157f2116531c8ca24f5557d3a13a5c560ef571df08275d",
-      "output_sha256": "a3b39534763a3d3f39d10c35c9645d274a6650b83e68dacee61fc2d3f67d72e1"
+      "output_sha256": "6deb4a963c947f301aa1e1ebe0465649e4f2a01506bfdb55dbaae395b2d6edd7"
     },
     {
       "icon": "handbrake",
       "source": "es2/handbreak.png",
       "source_sha256": "0d5352139c09cc22c6d25ec1564d658c18fd805de6e449a8b4ad97db4dd6db1f",
-      "output_sha256": "d0375eea9b152328988235f42136d7a7ffd509703042dc399851e2c32b625847"
+      "output_sha256": "058293be2fc7c6421ae1350ff136e284bad38890232e897c0b7a7a725de8a8ee"
     },
     {
       "icon": "horn",
       "source": "es2/horn.png",
       "source_sha256": "ed2e0c298e5784ca1a79e1019c4080c0b5650c4e271419e4a21ed7591d5a8f46",
-      "output_sha256": "8abf598a7a2a1c43cc9dd1cba6752ba3f5d6106222e95aa4a3592fd85c8eae36"
+      "output_sha256": "6518104bd8f549764abc901ee3dc0bf33c2d680181a113bc63a7601d67631017"
     },
     {
       "icon": "jump",
       "source": "es2/jump.png",
       "source_sha256": "61fc253f3f13f07ea9b14c41bf019ad5041929cae127ece9ca5b49f4d9c119f0",
-      "output_sha256": "3190b5c4b30809ebce82e5a093eb8c3347db02124304c8adf8064c1b75fba1dc"
+      "output_sha256": "3576529445e64d4f816683964d6d86cf522f213385d16b3f12bc981eb22ed4f9"
     },
     {
       "icon": "run",
       "source": "es2/run.png",
       "source_sha256": "0f0ff89bfaa421f97872f86072712005227cdeaf3da5a5cf41a3949a7474e8be",
-      "output_sha256": "1e493cc2bdda7fbd6e430b2127b901df0e9b44ee2cd8a23f23f555ce86d98734"
+      "output_sha256": "a71e931ce9e6927b1b62745017a14f7facfb13b0335691b0912b1b361f63b8a5"
     },
     {
       "icon": "fist",
       "source": "es2/punch.png",
       "source_sha256": "f0c924da371b2401a96011724bb9b9487ac2fb5636a381ae43fa9e4db88930e7",
-      "output_sha256": "f4329e6e797ce530a7159d39a2e8853e0a1e8180293faaf43c31e1a64fb44b95"
+      "output_sha256": "0e7f96b5aa763cd9f452bb5c3baf80e46390b306499828d05174c040afe4e371"
     },
     {
       "icon": "aim",
       "source": "es2/lockon.png",
       "source_sha256": "41f0e2e179aea2e23c474bcbb9b09006ca1fe095464aaf2de8fbd7705e3e5113",
-      "output_sha256": "22eca29850fba2d8d902c3b71bd2d7a0e2263f05730b86640450398393183825"
+      "output_sha256": "570c244a74f21dedb61394cbb531469be40f49fdef78e1df3e8134e216140a20"
     },
     {
       "icon": "bullet",
       "source": "es2/shoot.png",
       "source_sha256": "0a319d1b2ece0921fe1421981c6489867d520272ae507ef9ef64ce68624af90b",
-      "output_sha256": "c3f1786541b1bd93cd22131ed85ca10f05aa2f19dcab7e49ef17b87fedeead5f"
-    },
-    {
-      "icon": "pistol",
-      "source": "es2/shoot.png",
-      "source_sha256": "0a319d1b2ece0921fe1421981c6489867d520272ae507ef9ef64ce68624af90b",
-      "output_sha256": "c3f1786541b1bd93cd22131ed85ca10f05aa2f19dcab7e49ef17b87fedeead5f"
+      "output_sha256": "1ab21dada30ea501ef3dc9e1603af35b17d5b423d749894d07e8b3fbed80ad2d"
     },
     {
       "icon": "door",
       "source": "es2/enterandexit.png",
       "source_sha256": "20489468d9bdff0814d0d00bab08a68e1a1d809b27151f3611ff4750242ca6b1",
-      "output_sha256": "2ca59050b667e380055dfd0dc3a251d9f38a3281c42b73186bc0906c40756a4b"
-    },
-    {
-      "icon": "eye",
-      "source": "es2/cam-toggle.png",
-      "source_sha256": "c1fe35cb537cb6aa4ef338d5f102549ca16e59bd7b0c42b3fa6699c60b2e9eb3",
-      "output_sha256": "c1c1ccb9815cc27a92f43085b1475f4129ab7b31680a6a5d74e9a3a98bfed9ef"
+      "output_sha256": "97fd379c34e9fdb224a467e496215bd044ab4e28d762c7ce8384f4af282ac64a"
     },
     {
       "icon": "view",
       "source": "es2/cam-toggle.png",
       "source_sha256": "c1fe35cb537cb6aa4ef338d5f102549ca16e59bd7b0c42b3fa6699c60b2e9eb3",
-      "output_sha256": "c1c1ccb9815cc27a92f43085b1475f4129ab7b31680a6a5d74e9a3a98bfed9ef"
+      "output_sha256": "67f84027206c78a6a6745a6ad0d717d68a985fcb03b5a6110306ffd8f337c12d"
     },
     {
       "icon": "menu",
       "source": "es2/pause.png",
       "source_sha256": "f41c286b6ebd51e95f1bfea7a3c40b7abb6d9c20ffe608b62bd890bffd73c990",
-      "output_sha256": "f1c922780982604288102bd6d300c3a381fa08f35a6abc5e95ef2c90c7a2b0d9"
+      "output_sha256": "be38c30c010395546bcecc7061bfa32af587c24a24c8bb91693f41e2df149a6b"
     },
     {
       "icon": "house",
       "source": "es2/pause.png",
       "source_sha256": "f41c286b6ebd51e95f1bfea7a3c40b7abb6d9c20ffe608b62bd890bffd73c990",
-      "output_sha256": "f1c922780982604288102bd6d300c3a381fa08f35a6abc5e95ef2c90c7a2b0d9"
+      "output_sha256": "be38c30c010395546bcecc7061bfa32af587c24a24c8bb91693f41e2df149a6b"
     },
     {
       "icon": "steer_left",
       "source": "es2/left.png",
       "source_sha256": "23ad9c4613ed0e5c2652412cd4df9c490307e3d9813ef682acf6823c00072fa9",
-      "output_sha256": "47f2944a993fd888e5b54433b89044b884490e76e68943c93d2b409764e8e12a"
+      "output_sha256": "c45de536bd1a3c376bab0759aacee378555a17c643c5fc1c6f0fdf5f7c12b64b"
     },
     {
       "icon": "steer_right",
       "source": "es2/right.png",
       "source_sha256": "a2de8d622af0119960d88757a60b89c4ad5586bcc1572168935f2ead82a76220",
-      "output_sha256": "91ac55e0fadba838c63fdb36c6a49809cad5017a6206b42bd0957c1ed932afab"
+      "output_sha256": "6a1f0e69db4738e364eb6b0bc10719d095544cea128ce664fbae45b375c8d218"
     },
     {
       "icon": "left",
       "source": "es2/left.png",
       "source_sha256": "23ad9c4613ed0e5c2652412cd4df9c490307e3d9813ef682acf6823c00072fa9",
-      "output_sha256": "47f2944a993fd888e5b54433b89044b884490e76e68943c93d2b409764e8e12a"
+      "output_sha256": "c45de536bd1a3c376bab0759aacee378555a17c643c5fc1c6f0fdf5f7c12b64b"
     },
     {
       "icon": "right",
       "source": "es2/right.png",
       "source_sha256": "a2de8d622af0119960d88757a60b89c4ad5586bcc1572168935f2ead82a76220",
-      "output_sha256": "91ac55e0fadba838c63fdb36c6a49809cad5017a6206b42bd0957c1ed932afab"
+      "output_sha256": "6a1f0e69db4738e364eb6b0bc10719d095544cea128ce664fbae45b375c8d218"
     },
     {
       "icon": "up",
       "source": "es2/right.png",
       "source_sha256": "a2de8d622af0119960d88757a60b89c4ad5586bcc1572168935f2ead82a76220",
       "rotation": 90,
-      "output_sha256": "7ca8f0831ce21f36f23b4c696f2c4508f47591e2bd4f78f7deac68cc4f878a59"
+      "output_sha256": "a91c8d1a444fa7d0b61ecf47b6e4d13b4c398cffaa6ad72e91f5b24350fde1c9"
     },
     {
       "icon": "down",
       "source": "es2/right.png",
       "source_sha256": "a2de8d622af0119960d88757a60b89c4ad5586bcc1572168935f2ead82a76220",
       "rotation": -90,
-      "output_sha256": "111d0d6dfbe8c4c5945b2e9c6c1c3871973afbcacdde4999a83d4fd2a524a8ba"
+      "output_sha256": "e2b061568415a85b62ace1eea4a6f3653adb30bba027a37fa8eda3755985321b"
     }
   ]
 }

@@ -92,6 +92,7 @@ final class CrashReports {
                 .putString(DISMISSED, report.file.getName()).apply();
     }
 
+    @android.annotation.TargetApi(30)
     private static void collectNew(Context context, File dataRoot, SharedPreferences prefs)
             throws IOException {
         ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
@@ -112,6 +113,7 @@ final class CrashReports {
     }
 
     /** Crashes, ANRs, failed starts, low-memory kills and non-zero exits; not our own kills. */
+    @android.annotation.TargetApi(30)
     private static boolean abnormal(ApplicationExitInfo exit) {
         switch (exit.getReason()) {
             case ApplicationExitInfo.REASON_CRASH:
@@ -145,6 +147,7 @@ final class CrashReports {
         }
     }
 
+    @android.annotation.TargetApi(30)
     private static void write(Context context, File dataRoot, ApplicationExitInfo exit)
             throws IOException {
         File dir = directory(dataRoot);

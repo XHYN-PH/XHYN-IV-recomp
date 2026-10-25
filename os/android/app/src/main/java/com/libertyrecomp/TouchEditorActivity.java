@@ -30,9 +30,12 @@ public final class TouchEditorActivity extends Activity {
     private TextView selected,amount;
     private SeekBar size;
     private CheckBox hidden;
-    private Button picker,collapse;
+    private Button picker,collapse,undoAction,redoAction;
     private final Map<String,Bitmap> icons=new HashMap<>();
 
+    private final ControllerNavigation menuNavigation=new ControllerNavigation();
+    @Override public boolean dispatchGenericMotionEvent(MotionEvent e){return menuNavigation.motion(getWindow(),e)||super.dispatchGenericMotionEvent(e);}
+    @Override public void finish(){super.finish();overridePendingTransition(0,ModernUi.motion(this)?R.anim.session_panel_out:0);}
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         if(Build.VERSION.SDK_INT>=28){
@@ -110,10 +113,14 @@ public final class TouchEditorActivity extends Activity {
             String[] labels=new String[contexts.length()];for(int i=0;i<labels.length;i++)labels[i]=contexts.optJSONObject(i).optString("name");
             ModernUi.choose(this,"Context",labels,context,index->{context=index;canvas.cancelDrag();selectedKey=null;picker.setText(contextName()+" ▾");updateSelection();canvas.invalidate();});
         });
+        Button chooseControl=ModernUi.icon(this,"Select control","touch",false);body.addView(chooseControl,new LinearLayout.LayoutParams(-1,dp(40)));
+        chooseControl.setOnClickListener(v->{JSONArray controls=contexts.optJSONObject(context).optJSONArray("controls");String[] labels=new String[controls.length()];for(int i=0;i<labels.length;i++)labels[i]=controls.optJSONObject(i).optString("label",controls.optJSONObject(i).optString("id"));ModernUi.choose(this,"Select control",labels,-1,i->{selectedKey=contexts.optJSONObject(context).optString("id")+"/"+controls.optJSONObject(i).optString("id");updateSelection();canvas.invalidate();});});
         TextView help=ModernUi.text(this,"Drag controls to move. Tap one to inspect. Drag the header to move this panel.",11,ModernUi.MUTED);
         help.setPadding(0,dp(6),0,dp(4));body.addView(help);
         selectionTools=new LinearLayout(this);selectionTools.setOrientation(LinearLayout.VERTICAL);
         selected=ModernUi.text(this,"",13,ModernUi.TEXT);selected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);selectionTools.addView(selected);
+        LinearLayout nudge=new LinearLayout(this);selectionTools.addView(nudge);
+        String[] directions={"left","right","up","down"};for(int i=0;i<4;i++){final int direction=i;Button b=ModernUi.tool(this,directions[i],"Move selected control "+directions[i]);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(40),1);lp.leftMargin=dp(3);nudge.addView(b,lp);b.setOnClickListener(v->{if(selectedKey==null)return;checkpoint();TouchLayoutDocument.Entry e=document.get(selectedKey);if(direction<2)e.dx=finite(e.dx+(direction==0?-5:5),-2000,2000,0);else e.dy=finite(e.dy+(direction==2?-5:5),-800,800,0);dirty=true;canvas.invalidate();});}
         LinearLayout sizeRow=new LinearLayout(this);sizeRow.setGravity(Gravity.CENTER_VERTICAL);
         amount=ModernUi.text(this,"",12,ModernUi.ACCENT);sizeRow.addView(amount,new LinearLayout.LayoutParams(dp(54),-2));
         size=new SeekBar(this);size.setMax(365);ModernUi.tint(size);sizeRow.addView(size,new LinearLayout.LayoutParams(0,-2,1));selectionTools.addView(sizeRow);
@@ -126,7 +133,7 @@ public final class TouchEditorActivity extends Activity {
         });
         hidden.setOnCheckedChangeListener((button,on)->{if(selectedKey!=null&&document.get(selectedKey).hidden!=on){checkpoint();document.get(selectedKey).hidden=on;dirty=true;canvas.invalidate();}});
         LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER_VERTICAL);
-        Button save=ModernUi.button(this,"Save layout",true),reset=ModernUi.button(this,"Reset context",false);
+        Button save=ModernUi.icon(this,"Save","save",true),reset=ModernUi.tool(this,"reset","Reset this context");
         actions.addView(save,new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(0,dp(44),1);rp.leftMargin=dp(8);actions.addView(reset,rp);body.addView(actions);
         save.setOnClickListener(v->saveAndClose());
         reset.setOnClickListener(v->{checkpoint();String prefix=contexts.optJSONObject(context).optString("id")+"/";document.entries.keySet().removeIf(k->k.startsWith(prefix));dirty=true;selectedKey=null;canvas.cancelDrag();updateSelection();canvas.invalidate();});
@@ -139,19 +146,21 @@ public final class TouchEditorActivity extends Activity {
         strength.setOnClickListener(v->{snapStrength=snapStrength>=1?.25f:snapStrength+.25f;strength.setText("Snap: "+Math.round(snapStrength*100)+"%");});
         CheckBox touchBounds=new CheckBox(this);touchBounds.setText("Touch areas & overlaps");touchBounds.setTextColor(ModernUi.TEXT);touchBounds.setChecked(hitAreas);body.addView(touchBounds);
         touchBounds.setOnCheckedChangeListener((b,on)->{hitAreas=on;updateSelection();canvas.invalidate();});
-        LinearLayout history=new LinearLayout(this);Button backStep=ModernUi.button(this,"Undo",false),forwardStep=ModernUi.button(this,"Redo",false),export=ModernUi.button(this,"Export",false),imported=ModernUi.button(this,"Import",false);
+        LinearLayout history=new LinearLayout(this);Button backStep=ModernUi.tool(this,"undo","Undo"),forwardStep=ModernUi.tool(this,"redo","Redo"),export=ModernUi.tool(this,"export","Export layout"),imported=ModernUi.tool(this,"import","Import layout");
+        undoAction=backStep;redoAction=forwardStep;updateHistory();
         for(Button action:new Button[]{backStep,forwardStep,export,imported}){action.setTextSize(11);action.setMinWidth(0);action.setPadding(dp(3),0,dp(3),0);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(36),1);lp.setMargins(dp(2),0,dp(2),0);history.addView(action,lp);}body.addView(history);backStep.setOnClickListener(v->history(false));forwardStep.setOnClickListener(v->history(true));
-        Button numeric=ModernUi.button(this,"Position, scale & opacity",false);selectionTools.addView(numeric,new LinearLayout.LayoutParams(-1,dp(36)));numeric.setOnClickListener(v->numeric());
+        Button numeric=ModernUi.icon(this,"Position & appearance","position",false);selectionTools.addView(numeric,new LinearLayout.LayoutParams(-1,dp(36)));numeric.setOnClickListener(v->numeric());
         export.setOnClickListener(v->pickLayout(true));imported.setOnClickListener(v->pickLayout(false));
         toolsScroll.addView(body);toolsScroll.setVisibility(collapsed?View.GONE:View.VISIBLE);panel.addView(toolsScroll);
         collapse.setOnClickListener(v->{collapsed=!collapsed;toolsScroll.setVisibility(collapsed?View.GONE:View.VISIBLE);collapse.setText(collapsed?"+":"−");});
     }
 
     private Map<String,float[]> snapshot(){Map<String,float[]> state=new TreeMap<>();for(Map.Entry<String,TouchLayoutDocument.Entry> item:document.entries.entrySet()){TouchLayoutDocument.Entry e=item.getValue();state.put(item.getKey(),new float[]{e.dx,e.dy,e.scale,e.hidden?1:0,e.opacity});}return state;}
-    private void checkpoint(){undo.addLast(snapshot());while(undo.size()>50)undo.removeFirst();redo.clear();}
+    private void updateHistory(){if(undoAction!=null){undoAction.setEnabled(!undo.isEmpty());undoAction.setAlpha(undo.isEmpty()?.35f:1);redoAction.setEnabled(!redo.isEmpty());redoAction.setAlpha(redo.isEmpty()?.35f:1);}}
+    private void checkpoint(){undo.addLast(snapshot());while(undo.size()>50)undo.removeFirst();redo.clear();updateHistory();}
     private void restore(Map<String,float[]> state){document.entries.clear();for(Map.Entry<String,float[]> item:state.entrySet()){TouchLayoutDocument.Entry e=document.get(item.getKey());float[] v=item.getValue();e.dx=v[0];e.dy=v[1];e.scale=v[2];e.hidden=v[3]!=0;e.opacity=v[4];}dirty=true;canvas.cancelDrag();updateSelection();canvas.invalidate();}
-    private void history(boolean forward){ArrayDeque<Map<String,float[]>> from=forward?redo:undo,to=forward?undo:redo;if(from.isEmpty())return;to.addLast(snapshot());restore(from.removeLast());}
-    private void numeric(){if(selectedKey==null)return;TouchLayoutDocument.Entry e=document.get(selectedKey);LinearLayout inputs=new LinearLayout(this);inputs.setOrientation(LinearLayout.VERTICAL);String[] labels={"Horizontal offset","Vertical offset","Scale","Opacity (0–1)"};float[] values={e.dx,e.dy,e.scale,e.opacity};EditText[] fields=new EditText[4];for(int i=0;i<4;i++){inputs.addView(ModernUi.text(this,labels[i],12,ModernUi.MUTED));fields[i]=new EditText(this);fields[i].setText(Float.toString(values[i]));fields[i].setInputType(4098|8192);inputs.addView(fields[i]);}android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(this).setTitle("Selected control").setView(inputs).setPositiveButton("Apply",null).setNegativeButton("Cancel",null).create();dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{float[] n=new float[4];for(int i=0;i<4;i++){n[i]=Float.parseFloat(fields[i].getText().toString());if(!Float.isFinite(n[i]))throw new NumberFormatException();}checkpoint();e.dx=finite(n[0],-2000,2000,0);e.dy=finite(n[1],-800,800,0);e.scale=finite(n[2],.35f,4,1);e.opacity=finite(n[3],0,1,1);dirty=true;updateSelection();canvas.invalidate();dialog.dismiss();}catch(NumberFormatException error){Toast.makeText(this,"Enter finite numbers in every field.",Toast.LENGTH_SHORT).show();}}));dialog.show();}
+    private void history(boolean forward){ArrayDeque<Map<String,float[]>> from=forward?redo:undo,to=forward?undo:redo;if(from.isEmpty())return;to.addLast(snapshot());restore(from.removeLast());updateHistory();}
+    private void numeric(){if(selectedKey==null)return;TouchLayoutDocument.Entry e=document.get(selectedKey);LinearLayout inputs=new LinearLayout(this);inputs.setOrientation(LinearLayout.VERTICAL);String[] labels={"Horizontal offset","Vertical offset","Scale","Opacity (0–1)"};float[] values={e.dx,e.dy,e.scale,e.opacity};EditText[] fields=new EditText[4];for(int i=0;i<4;i++){inputs.addView(ModernUi.text(this,labels[i],12,ModernUi.MUTED));fields[i]=new EditText(this);fields[i].setText(Float.toString(values[i]));fields[i].setInputType(4098|8192);inputs.addView(fields[i]);}android.app.AlertDialog dialog=ModernUi.builder(this).setTitle("Selected control").setView(inputs).setPositiveButton("Apply",null).setNegativeButton("Cancel",null).create();dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{float[] n=new float[4];for(int i=0;i<4;i++){n[i]=Float.parseFloat(fields[i].getText().toString());if(!Float.isFinite(n[i]))throw new NumberFormatException();}checkpoint();e.dx=finite(n[0],-2000,2000,0);e.dy=finite(n[1],-800,800,0);e.scale=finite(n[2],.35f,4,1);e.opacity=finite(n[3],0,1,1);dirty=true;updateSelection();canvas.invalidate();dialog.dismiss();}catch(NumberFormatException error){Toast.makeText(this,"Enter finite numbers in every field.",Toast.LENGTH_SHORT).show();}}));dialog.show();}
     private void pickLayout(boolean export){android.content.Intent i=new android.content.Intent(export?android.content.Intent.ACTION_CREATE_DOCUMENT:android.content.Intent.ACTION_OPEN_DOCUMENT);i.addCategory(android.content.Intent.CATEGORY_OPENABLE);i.setType("text/plain");if(export)i.putExtra(android.content.Intent.EXTRA_TITLE,"XHYN-IV-touch-layout.txt");try{startActivityForResult(i,export?REQUEST_LAYOUT_EXPORT:REQUEST_LAYOUT_IMPORT);}catch(Exception e){Toast.makeText(this,"No file picker available.",Toast.LENGTH_SHORT).show();}}
     @Override protected void onActivityResult(int request,int result,android.content.Intent data){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null||data.getData()==null)return;try{if(request==REQUEST_LAYOUT_EXPORT){File temp=new File(getCacheDir(),"layout-export");temp.mkdirs();try{document.save(temp);try(InputStream in=new FileInputStream(TouchLayoutDocument.file(temp));OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out==null)throw new IOException("Cannot write layout.");byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}}finally{SaveData.deleteTree(temp);}Toast.makeText(this,"Layout exported.",Toast.LENGTH_SHORT).show();}else if(request==REQUEST_LAYOUT_IMPORT){File temp=new File(getCacheDir(),"layout-import");temp.mkdirs();try{File f=TouchLayoutDocument.file(temp);f.getParentFile().mkdirs();try(InputStream in=getContentResolver().openInputStream(data.getData());OutputStream out=new FileOutputStream(f)){if(in==null)throw new IOException("Cannot read layout.");byte[] b=new byte[8192];int n,total=0;while((n=in.read(b))!=-1){if((total+=n)>1024*1024)throw new IOException("Layout is too large.");out.write(b,0,n);}}TouchLayoutDocument imported=TouchLayoutDocument.read(temp);if(imported.entries.isEmpty())throw new IOException("No valid control records found.");checkpoint();document.merge(imported);canvas.cancelDrag();dirty=true;updateSelection();canvas.invalidate();Toast.makeText(this,"Imported controls merged. Other controls and contexts are preserved. Save layout to apply.",Toast.LENGTH_LONG).show();}finally{SaveData.deleteTree(temp);}}}catch(IOException e){Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();}}
     private int dp(float value){return ModernUi.dp(this,value);}
@@ -203,7 +212,7 @@ public final class TouchEditorActivity extends Activity {
     }
     @Override @SuppressWarnings("deprecation") public void onBackPressed(){
         if(document==null||!dirty){finish();return;}
-        new android.app.AlertDialog.Builder(this).setTitle("Unsaved control layout")
+        ModernUi.builder(this).setTitle("Unsaved control layout")
             .setMessage("Save your changes before leaving?").setPositiveButton("Save",(d,w)->saveAndClose())
             .setNegativeButton("Discard",(d,w)->finish()).setNeutralButton("Keep editing",null).show();
     }

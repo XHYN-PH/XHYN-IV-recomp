@@ -27,6 +27,7 @@
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:banner="@drawable/launcher_banner"
         android:theme="@style/AppTheme.Fullscreen"
         android:allowBackup="false"
         android:appCategory="game"

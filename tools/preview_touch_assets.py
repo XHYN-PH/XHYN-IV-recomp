@@ -21,7 +21,7 @@ def main():
             for i,(name,label) in enumerate(items):
                 x=34+i*235;draw.ellipse((x+47,y+37,x+157,y+147),fill='#1e2023')
                 image=Image.open(io.BytesIO(apk.read('assets/touch-icons/'+name+'.png'))).convert('RGBA').resize((100,100),Image.Resampling.LANCZOS)
-                tinted=Image.new('RGBA',image.size,'#c2c2c2');tinted.putalpha(image.getchannel('A'));canvas.paste(tinted,(x+52,y+42),tinted)
+                canvas.paste(image,(x+52,y+42),image)
                 draw.text((x+102,y+161),label,font=small,anchor='mt',fill='#f4f1e8')
         y=802;draw.text((34,y),'XBOX LABELS + MATCHING ANALOG STICKS',font=body,fill='#dfc28a')
         for i,(name,color) in enumerate([('a','#41be50'),('b','#dc3c3c'),('x','#4b91f0'),('y','#f5cd32')]):

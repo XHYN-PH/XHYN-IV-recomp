@@ -2539,6 +2539,7 @@ std::string_view GetReflectionResolutionSelection(ReflectionFamily family) {
 
 std::pair<uint32_t, uint32_t> GetReflectionPhysicalExtent(const ReflectionResourceName& resource) {
   const std::string_view selection = GetReflectionResolutionSelection(resource.family);
+  if(selection=="half"||selection=="quarter"){const uint32_t divisor=selection=="half"?2:4;return {std::max(1u,resource.logical_width/divisor),std::max(1u,resource.logical_height/divisor)};}
   if (selection == "original") {
     return {resource.logical_width, resource.logical_height};
   }

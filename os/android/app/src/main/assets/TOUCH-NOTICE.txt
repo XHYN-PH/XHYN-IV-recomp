@@ -13,7 +13,7 @@ The additional GTA IV action and Xbox glyphs are original XHYN IV geometric
 artwork under the project license. Their editable SVG sources are included in
 artwork/touch-icons/. See the following separate attribution for imported art.
 
-R2 Test 2 icons fix: current mobile selection
+Imported mobile selection
 The current imported glyphs come from the user-provided es2.zip, described by the user as a fan-game archive. Its original creator and redistribution license were not supplied. Imported imagery is not represented as original XHYN artwork or covered by the project's code license. Existing Rockstar Games / Take-Two attribution is retained for GTA-related imagery. The circular border and backing are removed for the shared scalable button renderer. Source paths and input/output hashes are recorded in artwork/touch-icons/es2-provenance.json. gta3-provenance.json records the superseded Test 2 import. Additional GTA IV and Xbox glyphs retain their vector provenance. No full APK, character art, map textures or unrelated game data is packaged.
 
-Test7: pistol, eye and interact use the original project SVGs in artwork/touch-icons. Mobile Pause uses the original xbox_menu glyph. Other imported artwork and notices are retained.
+Test8: pistol, eye and interact retain the original project SVGs where the supplied pack has no matching action. Mobile Pause and camera use the supplied pause and cam-toggle artwork. Original glyph colours are preserved, with normalized opacity and a separate optional button-circle outline. Source mappings and hashes are recorded in artwork/touch-icons/es2-provenance.json.

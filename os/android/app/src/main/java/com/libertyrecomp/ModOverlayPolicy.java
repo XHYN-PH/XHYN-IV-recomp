@@ -77,7 +77,7 @@ final class ModOverlayPolicy {
                 if(relative.toString().isEmpty())return;
                 if(relative.getNameCount()>MAX_DEPTH)throw new IOException("Mod folders are too deep.");
                 String top=relative.getName(0).toString();
-                if(!top.equals("game")&&!top.equals("update"))throw new IOException("Use only game/ and update/ content.");
+                if(!top.equals("game")&&!top.equals("update"))throw new IOException("Unexpected folder or file: "+relative+". Put compatible Xbox 360 files inside this mod’s game/ or update/ folder. PC plugin packs cannot be loaded.");
             }
             @Override public FileVisitResult preVisitDirectory(Path path,BasicFileAttributes attrs)throws IOException{
                 check(path);return FileVisitResult.CONTINUE;

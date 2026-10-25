@@ -1,12 +1,32 @@
-# XHYN IV r2 — through Test7
+# XHYN IV r2 — through Test8
 
-**Android testing release · r2 Test7**
+**Android testing release · r2 Test8**
 
-[**Download the Android APK**](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test7/XHYN-IV-0.5.9.3-xhyn-r2-test7.apk)
+[**Download the Android APK**](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test8/XHYN-IV-0.5.9.3-xhyn-r2-test8.apk)
 
 Install it over your existing XHYN IV app. Back up saves first; uninstalling removes app data. This release includes all r2 changes since r1.
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
+
+## Test8 — easier menus, controls and performance tuning
+
+- Added a fullscreen editor for the performance overlay: drag its sample, adjust its appearance, move/collapse the tools, and save back to Settings.
+- Made the in-game menu and short dialogs more compact. Session details and Copy details sit side by side.
+- Added right-to-left menu opening, consistent closing motion, controller navigation, and clearer focus.
+- Simplified Logs into one report page. Play with logs and Play with detailed diagnostics sit together; the sessions/benchmarks browser and manual benchmark actions were removed.
+- Added inline On/Off choices and completed setting explanations, including graphics preparation time.
+- Cleaned up the controls editor with tool icons, control selection, precise movement, and clearer Undo/Redo state.
+- Kept the supplied mobile artwork, corrected Pause/camera mappings and game/editor tint, and added recovery for missing or damaged icon files. Xbox control geometry remains independent.
+- Added physical-controller deadzones, sensitivity, response curve, inversion, trigger threshold, vibration strength, and an input preview.
+- Added a configurable delay for walking/vehicle button changes. Zero keeps the earliest reliable switch.
+- Reworked data-file mods with clearer cards, setup help, conflicts, rejection messages, and unsaved-change protection.
+- Removed the restore-last-driver action. Advanced Turnip now includes cache layout, larger cache choices and a graphics-worker override.
+- Added one to five graphics compiler workers, half/quarter reflection sizes, an optional lower display refresh request, and a Balanced settings shortcut. Extra workers can increase heat; start with one or two.
+- Reduced audio producer blocking and added optional dropout protection. Lightweight graphics capture is the default; deeper captures remain available when needed.
+- Improved texture-retention work, bounded recovery for an initially suboptimal Android surface, and missing-asset diagnostics. Active VSync fallback is visible beside its setting.
+- Shadow distance stays at a minimum of 1×: shorter ranges can break nearby character and vehicle shadows. Use shadow detail or sun-shadow controls when reducing shadow cost.
+
+This is a testing release. Sustained performance, graphics changes and controller behavior still need feedback from real devices. Normal Play keeps full logs off; the next game replaces the previous full log.
 
 ## Fixed in Test7
 
@@ -102,7 +122,7 @@ Install it over your existing XHYN IV app. Back up saves first; uninstalling rem
 
 - Added the **ESMERINGHOY 27.0.0-devel (A7XX/A8XX)** experimental driver for compatible Adreno devices.
 - Included seven driver choices, with separate original V38 and Vauzi packages, additional Adreno options and experimental RADV for compatible Xclipse devices.
-- Added compatible-first ordering, clearer driver labels, per-driver options, advanced Turnip rendering/cache controls and last-working-driver recovery.
+- Added compatible-first ordering, clearer driver labels, per-driver options, advanced Turnip rendering/cache controls.
 - Show the actual loaded driver, including system-driver fallback.
 - Added imported-driver deletion with confirmation and blocked driver imports/removal while playing.
 - Improved driver import error handling. An interrupted replacement keeps the previous driver, and replacing or deleting a driver clears outdated records.
@@ -111,7 +131,7 @@ Install it over your existing XHYN IV app. Back up saves first; uninstalling rem
 
 ## Logs and troubleshooting
 
-- Added optional performance recordings with frame-rate, temperature and battery information, plus recent-session history.
+- Added optional performance recordings with frame-rate, temperature and battery information in the shareable report.
 - Added more useful graphics, settings and audio information to problem reports, with clearer messages when a recording is incomplete.
 - Kept normal Play free of diagnostic recording. Share/Delete actions are easier to find, and manual deletion asks for confirmation.
 - **Automatic cleanup of previous full logs remains enabled. Export your report before starting another session.**

@@ -58,6 +58,7 @@ REXCVAR_DEFINE_BOOL(gta4_touch_button_hints, true, "GTA IV/Input/Touch",
 REXCVAR_DEFINE_STRING(gta4_touch_move_mode, "fixed", "GTA IV/Input/Touch",
                       "Movement joystick: fixed, floating, or invisible")
     .allowed({"fixed", "floating", "invisible"});
+REXCVAR_DEFINE_INT32(gta4_touch_context_delay_ms,0,"GTA IV/Input/Touch","Vehicle layout transition hold; zero uses earliest reliable context").range(0,1000);
 REXCVAR_DEFINE_DOUBLE(gta4_touch_move_smoothing, 0.035, "GTA IV/Input/Touch",
                       "Movement smoothing time constant in seconds; zero disables smoothing")
     .range(0.0, 0.1);
@@ -102,7 +103,7 @@ enum class Icon : uint8_t {
 // missing.
 const char* IconFile(Icon icon) {
   switch (icon) {
-    case Icon::kMenu: return "xbox_menu";
+    case Icon::kMenu: return "house";
     case Icon::kInteract: return "interact";
     case Icon::kHouse: return "house";
     case Icon::kPhone: return "phone";
@@ -937,7 +938,7 @@ void DrawControl(ImDrawList* d, ImFont* font, State& s, size_t i, float unit) {
       // Icon PNG: square, about 82% of the button's diameter.
       const float half = c.r * 0.82f*visual_scale;
       d->AddImage(image.texture, ImVec2(c.center.x - half, c.center.y - half),
-                  ImVec2(c.center.x + half, c.center.y + half), image.uv_min, image.uv_max, tint);
+                  ImVec2(c.center.x + half, c.center.y + half), image.uv_min, image.uv_max, Alpha(IM_COL32(255,255,255,held?255:240),alpha));
     } else {
       const Pen fill{d, tint, 0.0f};
       // Cut-outs (windows, grooves) show the dark disc behind the icon.
@@ -1117,9 +1118,16 @@ bool UpdateAndDrawLibertyTouchOverlay(ImDrawList* draw, ImFont* font, float font
       s.gameplay_since = {};
     }
   }
-  const Screen screen = rex::input::TouchControlsVisible() && std::isfinite(width) && std::isfinite(height) && width > 0 && height > 0
+  Screen screen = rex::input::TouchControlsVisible() && std::isfinite(width) && std::isfinite(height) && width > 0 && height > 0
                             ? (s.editing?editor_screens[s.editor_screen]:CurrentScreen(s.forced_menu, s.pause_flag_verified, &s.logged_context))
                             : Screen::kHidden;
+  // Delay only gameplay-to-gameplay transitions. Menus/loading always take effect immediately.
+  static Screen pending_screen=Screen::kHidden;
+  static auto pending_since=std::chrono::steady_clock::now();
+  const auto transition_now=std::chrono::steady_clock::now();
+  if(screen!=pending_screen){pending_screen=screen;pending_since=transition_now;}
+  const auto gameplay_screen=[](Screen value){return value==Screen::kOnFoot||value==Screen::kDriving||value==Screen::kBike||value==Screen::kHelicopter||value==Screen::kPassenger;};
+  if(!s.editing&&gameplay_screen(screen)&&gameplay_screen(s.screen)&&screen!=s.screen&&transition_now-pending_since<std::chrono::milliseconds(REXCVAR_GET(gta4_touch_context_delay_ms)))screen=s.screen;
   // The host menu may reveal the game's pause screen behind it. Keep the
   // gameplay layout that was active when the player opened our menu.
   if(screen!=Screen::kHidden&&(s.editing||!TouchHostMenuOpen()))s.last_editor_context=int(screen)-1;

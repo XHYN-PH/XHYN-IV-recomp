@@ -36,7 +36,7 @@ final class DebugLaunchOptions {
         set(args,"gta4_profile_native_autostart","false");
         set(args,"gta4_profile_native_capture_trigger","0");
         set(args,"gta4_profile_native_samples","120");
-        set(args,"gta4_profile_native_detailed_cpu","true");
+        set(args,"gta4_profile_native_detailed_cpu","false");
         set(args,"gta4_profile_native_detailed_gpu","false");
         set(args,"gta4_profile_native_gpu_query_budget","64");
     }

@@ -98,6 +98,8 @@ public class LauncherActivity extends Activity {
     private final Handler mMain = new Handler(Looper.getMainLooper());
     private boolean mBusy;
 
+    private final ControllerNavigation menuNavigation=new ControllerNavigation();
+    @Override public boolean dispatchGenericMotionEvent(android.view.MotionEvent e){return menuNavigation.motion(getWindow(),e)||super.dispatchGenericMotionEvent(e);}
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -227,7 +229,7 @@ public class LauncherActivity extends Activity {
     }
     private String observedCompletion(){
         File completion=new File(mDataRoot,"LibertyRecomp/saves/last-session-completion.json");
-        try{if(completion.isFile()&&completion.length()<4096){JSONObject progress=new JSONObject(new String(java.nio.file.Files.readAllBytes(completion.toPath()),StandardCharsets.UTF_8));double value=progress.optDouble("percent",-1);if(Double.isFinite(value)&&value>=0&&value<=100)return String.format(Locale.ROOT," │ Last observed completion %.2f%%",value);}}catch(Exception ignored){}
+        try{if(completion.isFile()&&completion.length()<4096){JSONObject progress=new JSONObject(new String(java.nio.file.Files.readAllBytes(completion.toPath()),StandardCharsets.UTF_8));double value=progress.optDouble("percent",-1);if(Double.isFinite(value)&&value>=0&&value<=100)return String.format(Locale.ROOT," · Progress %.2f%%",value);}}catch(Exception ignored){}
         return "";
     }
     private View buildLayout() {
@@ -241,9 +243,9 @@ public class LauncherActivity extends Activity {
         block.addView(buildCrashCard(),matchWrap(dp(3)));
         mLastLaunch=ModernUi.text(this,"",12,0xffffb7a3);block.addView(mLastLaunch,matchWrap(dp(2)));
         block.addView(ModernUi.text(this,"LIBERTY CITY IS WAITING",12,ModernUi.ACCENT));
-        TextView brand=ModernUi.text(this,"XHYN IV",38,ModernUi.TEXT);brand.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));block.addView(brand,matchWrap(dp(3)));
-        mLaunchSummary=ModernUi.text(this,launchSummary(),12,ModernUi.MUTED);block.addView(mLaunchSummary,matchWrap(dp(3)));
-        mStatus=ModernUi.text(this,"Checking game files…",12,ModernUi.MUTED);LinearLayout.LayoutParams statusGap=matchWrap(dp(5));statusGap.bottomMargin=dp(7);block.addView(mStatus,statusGap);
+        TextView brand=ModernUi.text(this,"XHYN IV",38,ModernUi.TEXT);brand.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));block.addView(brand,matchWrap(dp(8)));
+        mLaunchSummary=ModernUi.text(this,launchSummary(),12,ModernUi.MUTED);block.addView(mLaunchSummary,matchWrap(dp(7)));
+        mStatus=ModernUi.text(this,"Checking game files…",12,ModernUi.MUTED);LinearLayout.LayoutParams statusGap=matchWrap(dp(5));statusGap.bottomMargin=dp(22);block.addView(mStatus,statusGap);
         mPlay=ModernUi.icon(this,"Play","play",true);mPlay.setTextSize(19);mPlay.setOnClickListener(v->play(false));LinearLayout playRow=new LinearLayout(this);playRow.addView(mPlay,new LinearLayout.LayoutParams(0,dp(50),1));Button overflow=ModernUi.button(this,"⋯",false);overflow.setTextSize(24);overflow.setContentDescription("More actions");LinearLayout.LayoutParams overflowSize=new LinearLayout.LayoutParams(dp(48),dp(50));overflowSize.leftMargin=dp(8);playRow.addView(overflow,overflowSize);overflow.setOnClickListener(v->showLogs());block.addView(playRow);
         LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.VERTICAL);
         launcherAction(actions,"Settings","settings",this::showSettings);launcherAction(actions,"Game files","folder",this::showFilesPanel);
@@ -278,13 +280,6 @@ public class LauncherActivity extends Activity {
         drivers.addView(ModernUi.text(this,"Applies next time you play.",13,ModernUi.MUTED));
         ModernUi.action(this,drivers,"Import driver ZIP",this::pickDriverZip);
         ModernUi.action(this,drivers,"Advanced Turnip options",()->TurnipSettingsUi.show(this,mDataRoot,gameRunning()));
-        ModernUi.action(this,drivers,"Restore last driver that published frames",()->{
-            if(gameRunning()){toast("Quit the game before changing drivers.");return;}
-            String working=DriverState.lastWorking(mDataRoot,Build.FINGERPRINT,Build.VERSION.SDK_INT);
-            if(working.isEmpty()){toast("No working driver has been recorded for this Android build yet.");return;}
-            if(working.startsWith(DriverBridge.CUSTOM_PREFIX)&&!new File(customRoot(),working.substring(DriverBridge.CUSTOM_PREFIX.length())).isDirectory()){toast("The recorded driver package is no longer installed. Choose System or import it again.");return;}
-            if(writeDriverMode(working)){refreshDrivers();toast("Recorded working driver selected for next launch.");}
-        });
         mDrivers=new RadioGroup(this);mDrivers.setOnCheckedChangeListener((group,id)->onDriverChecked(id));drivers.addView(mDrivers);
         mDriverNote=ModernUi.text(this,"",13,ModernUi.MUTED);drivers.addView(mDriverNote);
 
@@ -318,37 +313,20 @@ public class LauncherActivity extends Activity {
     private void showSettings(){MobileSettingsUi.graphics(this,mDataRoot,null,()->showLogs());}
     private void showLogs(){
         LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
-        panel.addView(ModernUi.text(this,"Play with logs records a report you can share after a problem. Previous logs are replaced automatically when the next game session starts. For an input capture, open the in-game menu → Diagnostics → Input test when ready.",14,ModernUi.MUTED));
-        ModernUi.action(this,panel,"Play with logs",()->{mDebugMode=0;play(true);});
-        ModernUi.action(this,panel,"Input diagnostics (start capture in-game)",()->{mDebugMode=1;play(true);});
-        ModernUi.action(this,panel,"Recorded sessions & benchmarks",()->SessionResultsUi.show(this,mDataRoot));
-        TextView latest=ModernUi.text(this,"",12,ModernUi.MUTED);panel.addView(latest);
-        LinearLayout logActions=new LinearLayout(this);panel.addView(logActions);
-        Button share=ModernUi.gridAction(this,logActions,"Share latest log",()->exportLatestLog());
-        final Runnable refreshLogs=()->{
-            String[] sessions=DebugLogArchive.sessions(mDataRoot,getFilesDir());
-            boolean launcher=LauncherCrashReport.available(mDataRoot);
-            latest.setText(sessions.length==0?(launcher?"A launcher failure report is ready to share.":"No saved log. Use Play with logs to create one."):"Latest saved log: "+sessions[0]+(gameRunning()?" · recording":""));
-            share.setEnabled(sessions.length>0||launcher);
-        };
-        ModernUi.gridAction(this,logActions,"Delete saved logs",()->{
-            if(gameRunning()){toast("Quit the game before deleting its log.");return;}
-            final AlertDialog[] confirm={null};
-            confirm[0]=ModernUi.dialog(this,"Delete saved logs?",
-                ModernUi.text(this,"Remove the saved game logs and diagnostic captures? Recorded performance results are kept.",14,ModernUi.TEXT),
-                "Cancel","Delete",()->{
-                    if(gameRunning()){toast("Quit the game before deleting its log.");return;}
-                    confirm[0].dismiss();share.setEnabled(false);
-                    new Thread(()->{String result;try{DebugLogArchive.clear(mDataRoot,getFilesDir());result="Logs deleted.";}catch(IOException e){result="Could not delete logs: "+e.getMessage();}
-                        String message=result;mMain.post(()->{if(isFinishing()||isDestroyed())return;refreshLogs.run();toast(message);});},"DeleteLogs").start();
-                });confirm[0].show();
-        });
-        refreshLogs.run();
-        LinearLayout advanced=new LinearLayout(this);advanced.setOrientation(LinearLayout.VERTICAL);advanced.setVisibility(View.GONE);
-        ModernUi.action(this,panel,"Advanced troubleshooting",()->advanced.setVisibility(advanced.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));
-        advanced.addView(ModernUi.text(this,"Use this when asked for a deeper report. Short timing and shadow captures are available from the in-game menu. Captures temporarily add overhead.",13,ModernUi.MUTED));
-        ModernUi.action(this,advanced,"Play with detailed diagnostics",()->{mDebugMode=3;play(true);});
-        panel.addView(advanced);ModernUi.dialog(this,"Logs",panel).show();
+        panel.addView(ModernUi.text(this,"Create one report to share when something goes wrong. Normal Play keeps full logging off. The next game replaces the previous log.",14,ModernUi.MUTED));
+        LinearLayout launch=new LinearLayout(this);launch.setOrientation(LinearLayout.VERTICAL);panel.addView(launch);
+        ModernUi.gridAction(this,launch,"Play with logs",()->{mDebugMode=0;play(true);});
+        ModernUi.gridAction(this,launch,"Play with detailed diagnostics",()->{mDebugMode=3;play(true);});
+        panel.addView(ModernUi.text(this,"Detailed diagnostics includes short graphics and control captures in the in-game menu. Capturing can temporarily slow the game.",12,ModernUi.MUTED));
+        TextView latest=ModernUi.text(this,"",12,ModernUi.MUTED);latest.setPadding(0,dp(12),0,dp(4));panel.addView(latest);
+        LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.VERTICAL);panel.addView(actions);
+        Button share=ModernUi.gridAction(this,actions,"Share report",this::exportLatestLog);
+        ModernUi.gridAction(this,actions,"Copy details",()->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(clipboard!=null)clipboard.setPrimaryClip(android.content.ClipData.newPlainText("XHYN IV",versionLine()+"\n"+Build.MODEL+" · Android "+Build.VERSION.RELEASE+"\n"+launchSummary()+"\n"+latest.getText()));toast("Details copied.");});
+        Runnable refresh=()->{String[] reports=DebugLogArchive.sessions(mDataRoot,getFilesDir());boolean crash=LauncherCrashReport.available(mDataRoot);latest.setText(reports.length==0?(crash?"A launcher crash report is available.":"No saved report yet."):"Latest report: "+reports[0]+(gameRunning()?" · recording":""));share.setEnabled(reports.length>0||crash);};
+        ModernUi.gridAction(this,actions,"Delete report",()->{
+            if(gameRunning()){toast("Quit the game before deleting its report.");return;}
+            AlertDialog[] confirm={null};confirm[0]=ModernUi.dialog(this,"Delete report?",ModernUi.text(this,"Remove the saved log and captures?",14,ModernUi.TEXT),"Cancel","Delete",()->{confirm[0].dismiss();new Thread(()->{String result;try{DebugLogArchive.clear(mDataRoot,getFilesDir());result="Report deleted.";}catch(IOException e){result="Could not delete report: "+e.getMessage();}String message=result;mMain.post(()->{if(!isFinishing()&&!isDestroyed()){refresh.run();toast(message);}});},"DeleteReport").start();});confirm[0].show();
+        });refresh.run();ModernUi.dialog(this,"Logs",panel).show();
     }
     private void exportLatestLog(){
         String[] sessions=DebugLogArchive.sessions(mDataRoot,getFilesDir());
@@ -393,19 +371,19 @@ public class LauncherActivity extends Activity {
     private void showGameLocation(){
         if(mBusy||gameRunning()){toast("Quit the game and finish the current task first.");return;}
         LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.addView(ModernUi.text(this,"Current location and extraction destination:\n"+Installer.installRoot(mDataRoot)+"\n\nNew installs extract here. Choose a location before installing, or copy the current installation here. Save slots and achievements stay in their existing folder.\n\nPicked folders are copied locally for native streaming; they are not used as a live SAF mount. Folder permission is needed only while copying. Keep this screen open until the copy finishes.",13,ModernUi.MUTED));
-        ModernUi.action(this,panel,"Use accessible Android/media folder",()->{try{File target=GameStorage.accessible(this);new android.app.AlertDialog.Builder(this).setTitle("Use accessible game folder?").setMessage(target+"\n\nExisting game files are copied and verified first. This needs enough free storage for a second copy. The original remains available.").setPositiveButton("Copy and select",(d,w)->storageOperation(()->GameStorage.switchTo(mDataRoot,target))).setNegativeButton("Cancel",null).show();}catch(IOException e){toast(e.getMessage());}});
+        ModernUi.action(this,panel,"Use accessible Android/media folder",()->{try{File target=GameStorage.accessible(this);ModernUi.builder(this).setTitle("Use accessible game folder?").setMessage(target+"\n\nExisting game files are copied and verified first. This needs enough free storage for a second copy. The original remains available.").setPositiveButton("Copy and select",(d,w)->storageOperation(()->GameStorage.switchTo(mDataRoot,target))).setNegativeButton("Cancel",null).show();}catch(IOException e){toast(e.getMessage());}});
         ModernUi.action(this,panel,"Use app data folder",()->storageOperation(()->GameStorage.switchTo(mDataRoot,new File(mDataRoot,"LibertyRecomp"))));
-        ModernUi.action(this,panel,"Copy an existing game folder here",()->{Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);new android.app.AlertDialog.Builder(this).setTitle("Import a local game copy?").setMessage("Choose the folder containing default.xex, or its parent containing game and optionally dlc. A validated copy replaces those folders here. Any replaced files are kept in folder-import-recovery; other app data stays in place.").setNegativeButton("Cancel",null).setPositiveButton("Choose folder",(d,w)->{try{startActivityForResult(pick,REQUEST_GAME_TREE);}catch(Exception e){toast("No folder picker available.");}}).show();});
+        ModernUi.action(this,panel,"Copy an existing game folder here",()->{Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);ModernUi.builder(this).setTitle("Import a local game copy?").setMessage("Choose the folder containing default.xex, or its parent containing game and optionally dlc. A validated copy replaces those folders here. Any replaced files are kept in folder-import-recovery; other app data stays in place.").setNegativeButton("Cancel",null).setPositiveButton("Choose folder",(d,w)->{try{startActivityForResult(pick,REQUEST_GAME_TREE);}catch(Exception e){toast("No folder picker available.");}}).show();});
         ModernUi.dialog(this,"Game file location",panel).show();
     }
     private void storageOperation(SlotTask task){if(mBusy||gameRunning())return;setBusy(true,"Preparing game folder…");new Thread(()->{String result;try{task.run();String catalog=Installer.prepareAchievements(this,mDataRoot);result="Game folder ready. Original files were kept."+(catalog==null||catalog.isEmpty()?"":" Achievement catalog: "+catalog);}catch(IOException|RuntimeException e){result="Game folder operation did not finish: "+e.getMessage();}String value=result;mMain.post(()->{setBusy(false,null);toast(value);refreshInstall();refreshStatus();});},"GameStorage").start();}
     private void showSaveData() {
         if(mBusy)return;if(gameRunning()){toast("Quit the game before managing saves.");return;}
-        new android.app.AlertDialog.Builder(this).setTitle("Save data").setItems(new String[]{"Manage individual slots","Export all saves & achievements","Import full backup"},(dialog,which)->{if(which==0)showSaveSlots();else if(which==1)pickSaveDocument(true);else new android.app.AlertDialog.Builder(this).setTitle("Restore full backup?").setMessage("Validate and replace included save data, keeping a recovery copy. Older save-only backups preserve achievements.").setPositiveButton("Choose ZIP",(d,w)->pickSaveDocument(false)).setNegativeButton("Cancel",null).show();}).show();
+        ModernUi.builder(this).setTitle("Save data").setItems(new String[]{"Manage individual slots","Export all saves & achievements","Import full backup"},(dialog,which)->{if(which==0)showSaveSlots();else if(which==1)pickSaveDocument(true);else ModernUi.builder(this).setTitle("Restore full backup?").setMessage("Validate and replace included save data, keeping a recovery copy. Older save-only backups preserve achievements.").setPositiveButton("Choose ZIP",(d,w)->pickSaveDocument(false)).setNegativeButton("Cancel",null).show();}).show();
     }
     private void showSaveSlots(){
         if(mBusy||gameRunning())return;setBusy(true,"Reading save slots…");new Thread(()->{try{java.util.List<SaveData.Slot> slots=SaveData.slots(SaveData.root(mDataRoot));mMain.post(()->{setBusy(false,null);if(slots.isEmpty()){toast("No save slots found. Make an in-game save first.");return;}String[] labels=new String[slots.size()];for(int i=0;i<labels.length;i++){SaveData.Slot slot=slots.get(i);labels[i]=slot.label()+"\n"+slot.details();}
-        new android.app.AlertDialog.Builder(this).setTitle("Individual save slots").setItems(labels,(d,index)->{mSelectedSlot=slots.get(index).relative;new android.app.AlertDialog.Builder(this).setTitle(slots.get(index).label()).setItems(new String[]{"Back up this slot","Restore this slot from ZIP","Delete this slot"},(choice,action)->{if(action<2)pickSlotDocument(action==0);else new android.app.AlertDialog.Builder(this).setTitle("Delete selected slot?").setMessage("Only this save package and its header are removed. Other slots and achievements are preserved.").setPositiveButton("Delete",(x,w)->slotOperation(()->SaveData.deleteSlot(SaveData.root(mDataRoot),mSelectedSlot),"Selected save removed.")).setNegativeButton("Cancel",null).show();}).show();}).show();});}catch(IOException e){mMain.post(()->{setBusy(false,null);toast(e.getMessage());});}},"ReadSaveSlots").start();
+        ModernUi.builder(this).setTitle("Individual save slots").setItems(labels,(d,index)->{mSelectedSlot=slots.get(index).relative;ModernUi.builder(this).setTitle(slots.get(index).label()).setItems(new String[]{"Back up this slot","Restore this slot from ZIP","Delete this slot"},(choice,action)->{if(action<2)pickSlotDocument(action==0);else ModernUi.builder(this).setTitle("Delete selected slot?").setMessage("Only this save package and its header are removed. Other slots and achievements are preserved.").setPositiveButton("Delete",(x,w)->slotOperation(()->SaveData.deleteSlot(SaveData.root(mDataRoot),mSelectedSlot),"Selected save removed.")).setNegativeButton("Cancel",null).show();}).show();}).show();});}catch(IOException e){mMain.post(()->{setBusy(false,null);toast(e.getMessage());});}},"ReadSaveSlots").start();
     }
     private interface SlotTask{void run()throws IOException;}
     private void slotOperation(SlotTask work,String message){if(mBusy||gameRunning()){toast("Quit the game and finish the current task first.");return;}setBusy(true,"Updating selected slot…");new Thread(()->{String result;try{work.run();result=message;}catch(IOException e){result="Save operation failed: "+e.getMessage();}String value=result;mMain.post(()->{setBusy(false,null);toast(value);refreshAchievementSummary();});},"ManageSaveSlot").start();}
@@ -771,7 +749,7 @@ public class LauncherActivity extends Activity {
     @SuppressWarnings("deprecation")
     private void chooseSource(int index) {
         if (!Installer.hasFileAccess(this)) {
-            new AlertDialog.Builder(this)
+            ModernUi.builder(this)
                     .setTitle("Allow file access")
                     .setMessage("To read the game files from anywhere on this device, Liberty "
                             + "Recompiled needs access to all files. Android opens the setting "
@@ -851,7 +829,7 @@ public class LauncherActivity extends Activity {
             mPlay.requestFocus();
         } else {
             if (result != null) {
-                new AlertDialog.Builder(this)
+                ModernUi.builder(this)
                         .setTitle("Installation failed")
                         .setMessage(result)
                         .setPositiveButton("OK", null)
@@ -985,7 +963,7 @@ public class LauncherActivity extends Activity {
     private void confirmRemoveDriver(String mode,String name){
         if(mBusy){toast("Finish the current task first.");return;}
         if(!mode.startsWith(DriverBridge.CUSTOM_PREFIX))return;
-        new AlertDialog.Builder(this).setTitle("Delete driver?").setMessage("Remove "+name+"? Automatic selection will be used next time you play.")
+        ModernUi.builder(this).setTitle("Delete driver?").setMessage("Remove "+name+"? Automatic selection will be used next time you play.")
             .setNegativeButton("Cancel",null).setPositiveButton("Delete",(d,w)->{
                 if(mBusy){toast("Finish the current task first.");return;}
                 if(gameRunning()){toast("Quit the game before deleting a driver.");return;}
@@ -1149,7 +1127,7 @@ public class LauncherActivity extends Activity {
             byte[] buffer = new byte[4096];
             int read;
             while ((read = in.read(buffer)) > 0) {if(bytes.size()+read>65536)return null;bytes.write(buffer, 0, read);}
-            return new JSONObject(bytes.toString("UTF-8").replace("﻿", ""));
+            return new JSONObject(bytes.toString("UTF-8").replace("\uFEFF", ""));
         } catch (Exception e) {
             return null;
         }
@@ -1424,7 +1402,7 @@ public class LauncherActivity extends Activity {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 new FileInputStream(file), StandardCharsets.UTF_8))) {
             String line = reader.readLine();
-            return line == null ? null : line.replace("﻿", "").trim();
+            return line == null ? null : line.replace("\uFEFF", "").trim();
         } catch (IOException e) {
             return null;
         }

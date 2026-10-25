@@ -12,6 +12,9 @@ public class MobileOptionsTest {
         }return bytes.toByteArray();
     }
     public static void main(String[] args)throws Exception {
+        assert RefreshPolicy.choose(new float[]{60,90,120},30,true)==60;
+        assert RefreshPolicy.choose(new float[]{60,90,120},30,false)==120;
+
         assert PhoneRumblePolicy.amplitude(0,0,1)==0;
         assert PhoneRumblePolicy.amplitude(65535,0,1)==255;
         assert PhoneRumblePolicy.amplitude(0,65535,.5f)==128;

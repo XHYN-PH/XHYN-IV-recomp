@@ -151,14 +151,14 @@ REXCVAR_DEFINE_UINT32(gta4_shadow_map_base_size, REX_PLATFORM_ANDROID ? 256 : 51
 REXCVAR_DEFINE_DOUBLE(gta4_shadow_distance_guard_factor, 1.0, "GTA IV/Graphics/Shadows",
                       "Multiplier on the shadow distance owned by the 30 FPS guard")
     .range(0.1, 1.0);
-REXCVAR_DEFINE_DOUBLE(gta4_shadow_distance_scale, 2.0, "GTA IV/Graphics/Shadows",
+REXCVAR_DEFINE_DOUBLE(gta4_shadow_distance_scale, REX_PLATFORM_ANDROID ? 1.0 : 2.0, "GTA IV/Graphics/Shadows",
                       "Multiplier applied to GTA IV's directional shadow range")
     .range(0.1, 4.0)
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_STRING(gta4_reflection_resolution, REX_PLATFORM_ANDROID ? "original" : "1080p",
                       "GTA IV/Graphics/Reflections",
                       "Reflection resolution preset: original, 1080p, or full")
-    .allowed({"original", "1080p", "full"})
+    .allowed({"half", "quarter", "original", "1080p", "full"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_STRING(gta4_reflection_resolution_cap, "1440p", "GTA IV/Graphics/Reflections",
                       "Maximum Full reflection resolution: 1080p, 1440p, or display")
@@ -167,18 +167,18 @@ REXCVAR_DEFINE_STRING(gta4_reflection_resolution_cap, "1440p", "GTA IV/Graphics/
 REXCVAR_DEFINE_STRING(gta4_mirror_reflection_resolution, "inherit",
                       "GTA IV/Graphics/Reflections/Advanced",
                       "Mirror reflection override: inherit, original, 1080p, or full")
-    .allowed({"inherit", "original", "1080p", "full"})
+    .allowed({"inherit", "half", "quarter", "original", "1080p", "full"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_STRING(gta4_water_reflection_resolution, "inherit",
                       "GTA IV/Graphics/Reflections/Advanced",
                       "Water reflection override: inherit, original, 1080p, or full")
-    .allowed({"inherit", "original", "1080p", "full"})
+    .allowed({"inherit", "half", "quarter", "original", "1080p", "full"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_STRING(gta4_environment_reflection_resolution, "inherit",
                       "GTA IV/Graphics/Reflections/Advanced",
                       "Vehicle/world environment reflection override: inherit, original, 1080p, "
                       "or full")
-    .allowed({"inherit", "original", "1080p", "full"})
+    .allowed({"inherit", "half", "quarter", "original", "1080p", "full"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_STRING(gta4_reflection_aa, "original", "GTA IV/Graphics/Reflections",
                       "Native reflection capture anti-aliasing: original, off, 2x, or 4x")

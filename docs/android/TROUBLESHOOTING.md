@@ -24,6 +24,8 @@ Use drivers made for your phone's GPU. An experimental driver may work different
 
 Lower the resolution in **Settings → Video**. Shadows and reflections are under **Settings → Graphics**; FPS limits are under **Settings → Performance**.
 
+The **Balanced** shortcut in Performance turns on Thermal Guard and requests a lower compatible screen refresh rate. Graphics compiler workers can be set from one to five; more workers may reduce preparation time but increase CPU use and heat. Start with one or two.
+
 Try one change at a time so you can see whether it helps. Performance can drop as the phone heats up. A higher FPS limit does not guarantee a higher frame rate.
 
 ## Buttons are misplaced or hard to use
@@ -42,8 +44,10 @@ Use an APK from this repository's [releases](https://github.com/XHYN-PH/XHYN-IV-
 
 1. Open the **three dots beside Play**, or **Settings → Logs**.
 2. Choose **Play with logs** and reproduce the problem.
-3. Return to the launcher and choose **Share latest log**.
+3. Choose **Share report** from Logs in the launcher, or from **Diagnostics** in the in-game menu.
 4. Send the ZIP in [Telegram](https://t.me/xhynports), with your phone model, Android version, selected driver, settings, and what you were doing.
+
+Use **Play with detailed diagnostics** beside Play with logs if a graphics capture is needed. All completed captures go into the same ZIP. Detailed captures can temporarily slow the game.
 
 A screenshot or short video helps with visual problems. If Play will not open, share any available launcher report from **Logs**.
 

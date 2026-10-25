@@ -43,6 +43,6 @@ final class CompatibilityPage {
         catch(IOException ignored){text.append("\nCould not read last launch report.");}
         TextView view=new TextView(a);view.setText(text);int pad=Math.round(18*a.getResources().getDisplayMetrics().density);view.setPadding(pad,pad,pad,pad);view.setTextIsSelectable(true);
         ScrollView scroll=new ScrollView(a);scroll.addView(view);
-        return new AlertDialog.Builder(a).setTitle("Graphics compatibility").setView(scroll).setPositiveButton("Close",null).show();
+        return ModernUi.builder(a).setTitle("Graphics compatibility").setView(scroll).setPositiveButton("Close",null).show();
     }
 }

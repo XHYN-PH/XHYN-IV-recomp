@@ -12,7 +12,7 @@ final class DisplayRefresh {
         Display.Mode current=display.getMode();ArrayList<Display.Mode> compatible=new ArrayList<>();
         for(Display.Mode mode:display.getSupportedModes())if(mode.getPhysicalWidth()==current.getPhysicalWidth()&&mode.getPhysicalHeight()==current.getPhysicalHeight())compatible.add(mode);
         float[] rates=new float[compatible.size()];for(int i=0;i<rates.length;i++)rates[i]=compatible.get(i).getRefreshRate();
-        float target=RefreshPolicy.choose(rates,cap);if(target<=0)return;
+        float target=RefreshPolicy.choose(rates,cap,UiPreferences.get(a,"battery_refresh"));if(target<=0)return;
         WindowManager.LayoutParams params=a.getWindow().getAttributes();int previousMode=params.preferredDisplayModeId;
         for(Display.Mode mode:compatible)if(Math.abs(mode.getRefreshRate()-target)<0.1f){params.preferredDisplayModeId=mode.getModeId();break;}
         boolean changed=previousMode!=params.preferredDisplayModeId||Math.abs(params.preferredRefreshRate-target)>.1f;params.preferredRefreshRate=target;if(changed)a.getWindow().setAttributes(params);

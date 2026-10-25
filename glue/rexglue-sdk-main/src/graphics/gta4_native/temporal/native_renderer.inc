@@ -15,6 +15,10 @@ bool Gta4NativeGraphicsSystem::EnsureTemporalAssets() {
 #else
   const auto path = executable_folder / "shaders" / "vulkan-temporal.bin";
 #endif
+#if REX_PLATFORM_ANDROID
+  std::error_code asset_error;
+  if(!std::filesystem::is_regular_file(path,asset_error)){REXLOG_INFO("gta4-native-temporal: optional temporal assets are not installed; native, FXAA, SMAA and FSR 1 remain available");return false;}
+#endif
   if (!temporal_shader_archive_.Load(path, error) ||
       !temporal_scene_.Initialize(device)) {
     REXLOG_WARN("gta4-native-temporal: unavailable: {} {}", error, temporal_scene_.error());

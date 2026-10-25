@@ -17,6 +17,7 @@ public final class TouchIconAssetsTest {
         for(String name:source(false).names())assert Arrays.equals(Files.readAllBytes(target.toPath().resolve(name)),IMAGE);
         Files.delete(target.toPath().resolve("gas.png"));TouchIconAssets.sync(internal.toFile(),source(false),"30:1");assert Files.isRegularFile(target.toPath().resolve("gas.png"));
         Files.write(target.toPath().resolve("aim.png"),new byte[40]);TouchIconAssets.sync(internal.toFile(),source(false),"30:1");assert Arrays.equals(Files.readAllBytes(target.toPath().resolve("aim.png")),IMAGE);
+        Files.write(target.toPath().resolve("aim.png"),Arrays.copyOf(IMAGE,32));TouchIconAssets.sync(internal.toFile(),source(false),"30:1");assert Arrays.equals(Files.readAllBytes(target.toPath().resolve("aim.png")),IMAGE);
         try{TouchIconAssets.sync(internal.toFile(),source(true),"30:2");throw new AssertionError("Expected interrupted copy");}catch(IOException expected){}
         assert !Files.exists(target.toPath().resolve(".version"));assert Arrays.equals(Files.readAllBytes(target.toPath().resolve("gas.png")),IMAGE);
         TouchIconAssets.sync(internal.toFile(),source(false),"30:2");assert Files.readString(target.toPath().resolve(".version")).equals("30:2");

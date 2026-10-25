@@ -7,25 +7,27 @@
 <p align="center">Grand Theft Auto IV for Android.</p>
 
 <p align="center">
-  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test7/XHYN-IV-0.5.9.3-xhyn-r2-test7.apk"><strong>Download APK</strong></a> ·
-  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test7">What's new</a> ·
+  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test8/XHYN-IV-0.5.9.3-xhyn-r2-test8.apk"><strong>Download APK</strong></a> ·
+  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test8">What's new</a> ·
   <a href="https://t.me/xhynports">Telegram</a> ·
   <a href="https://youtube.com/@xhyn_ph">YouTube</a>
 </p>
 
-**Current version: Test7 — 0.5.9.3-xhyn-r2-test7.** This is a testing release. Performance still needs work, and improvements will continue through future updates.
+**Current version: Test8 — 0.5.9.3-xhyn-r2-test8.** This is a testing release. Performance still needs work, and improvements will continue through future updates.
 
 **Bring your own Xbox 360 GTA IV USA disc image and Title Update 8 (0.0.8.5).** Game files and the update are not included.
 
 ## Get started
 
-1. [Download the APK](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test7/XHYN-IV-0.5.9.3-xhyn-r2-test7.apk) and install it on your phone.
+1. [Download the APK](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test8/XHYN-IV-0.5.9.3-xhyn-r2-test8.apk) and install it on your phone.
 2. Open **Game files**, choose your GTA IV disc image and Title Update 8, then press **Install**.
 3. Wait for installation to finish, return to the main menu, and press **Play**.
 
 Updating? Install over your existing XHYN IV app. Back up your saves first; uninstalling removes app data.
 
 Need more help? Read the [installation guide](docs/android/INSTALL.md) or [troubleshooting guide](docs/android/TROUBLESHOOTING.md).
+
+You can adjust physical controllers in **Settings → Controller**, and position the performance display in **Settings → Overlay → Edit overlay**.
 
 ## What you need
 
@@ -46,9 +48,9 @@ Performance depends on your phone, temperature, graphics settings, and driver.
 - In-game menu with quick access to controls, settings, achievements, and cheats.
 - Graphics and FPS options, a movable minimap, and an adjustable performance overlay.
 - Save backups, individual save-slot management, and compatible [data-file mods](docs/MOD_SUPPORT.md).
-- Built-in driver choices, including **ESMERINGHOY** for compatible Adreno 7xx/8xx devices, plus driver import and recovery.
+- Built-in driver choices, including **ESMERINGHOY** for compatible Adreno 7xx/8xx devices, plus driver import.
 
-See the [release notes](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test7) for the full list of changes.
+See the [release notes](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test8) for the full list of changes.
 
 ## Find your settings
 
@@ -58,7 +60,8 @@ See the [release notes](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0
 | Resolution and anti-aliasing | **Settings → Video** |
 | Shadows and reflections | **Settings → Graphics** |
 | FPS limit and performance options | **Settings → Performance** |
-| FPS display and overlay position | **Settings → Overlay** |
+| FPS display and overlay position | **Settings → Overlay → Edit overlay** |
+| Physical controller tuning and test | **Settings → Controller** |
 | Graphics driver | **Drivers** on the main menu, before starting the game |
 | Back up or restore saves | **Game files → Save data** |
 
@@ -72,7 +75,7 @@ Check [troubleshooting](docs/android/TROUBLESHOOTING.md) first. To send a report
 
 1. Open the **three dots beside Play**, or **Settings → Logs**.
 2. Choose **Play with logs** and reproduce the problem.
-3. Return to the launcher, choose **Share latest log**, and send the ZIP in [Telegram](https://t.me/xhynports).
+3. Return to the launcher, choose **Share report**, and send the ZIP in [Telegram](https://t.me/xhynports).
 
 Include your phone model, Android version, selected driver, and what happened. Screenshots or a short video help with visual issues. If Play will not open, share any available launcher report from **Logs**.
 
@@ -84,10 +87,10 @@ Include your phone model, Android version, selected driver, and what happened. S
 
 - [vaduur/LibertyRecompAndroid](https://github.com/vaduur/LibertyRecompAndroid) for the Android base.
 - [OZORDI/LibertyRecomp](https://github.com/OZORDI/LibertyRecomp) and [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) for the underlying project and runtime.
-- [prollynotzjay/LibertyRecompAndroidMaliVer](https://github.com/prollynotzjay/LibertyRecompAndroidMaliVer) for the adapted mobile touch layout and icons. See [touch artwork credits](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test7/os/android/app/src/main/assets/TOUCH-NOTICE.txt).
-- SDL, Mesa, libadrenotools, and other upstream contributors. See [driver sources and licenses](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test7/os/android/native/DRIVERS.md).
+- [prollynotzjay/LibertyRecompAndroidMaliVer](https://github.com/prollynotzjay/LibertyRecompAndroidMaliVer) for the adapted mobile touch layout and icons. See [touch artwork credits](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test8/os/android/app/src/main/assets/TOUCH-NOTICE.txt).
+- SDL, Mesa, libadrenotools, and other upstream contributors. See [driver sources and licenses](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test8/os/android/native/DRIVERS.md).
 - **XHYN-PH** for this fork's Android refinements, interface, and releases.
 
-[Source code](https://github.com/XHYN-PH/XHYN-IV-recomp/tree/xhyn/r2-test7) · [Original project README](README_UPSTREAM.md) · [Artwork notices](docs/android/ARTWORK.md)
+[Source code](https://github.com/XHYN-PH/XHYN-IV-recomp/tree/xhyn/r2-test8) · [Original project README](README_UPSTREAM.md) · [Artwork notices](docs/android/ARTWORK.md)
 
 Source is distributed under [GNU GPL v3](COPYING). Third-party components keep their own licenses and credits. Artwork and trademarks belong to their respective owners. This unofficial project is not affiliated with Rockstar Games or Take-Two Interactive.

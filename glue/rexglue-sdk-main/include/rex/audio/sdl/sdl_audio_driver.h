@@ -46,6 +46,7 @@ class SDLAudioDriver : public AudioDriver {
   bool sdl_initialized_ = false;
   bool silent_fallback_ = false;
   bool low_latency_ = false;
+  bool rebuffering_ = true;
   std::chrono::steady_clock::time_point starvation_window_start_=std::chrono::steady_clock::now();
   uint8_t sdl_device_channels_ = 0;
 

@@ -12,6 +12,17 @@ final class UiIcon extends Drawable {
     protected boolean onStateChange(int[] states){invalidateSelf();return true;}
     public void draw(Canvas c){Rect b=getBounds();c.save();c.translate(b.left,b.top);c.scale(b.width()/24f,b.height()/24f);p.setColor(color);for(int state:getState())if(state==android.R.attr.state_pressed||state==android.R.attr.state_focused)p.setColor(ModernUi.BG);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.7f);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
         switch(name){
+            case "left":line(c,15,5,8,12,15,19);break;
+            case "right":line(c,9,5,16,12,9,19);break;
+            case "up":line(c,5,15,12,8,19,15);break;
+            case "down":line(c,5,9,12,16,19,9);break;
+            case "undo":line(c,9,4,3,10,9,16);c.drawArc(4,7,21,23,205,205,false,p);break;
+            case "redo":line(c,15,4,21,10,15,16);c.drawArc(3,7,20,23,130,-205,false,p);break;
+            case "import":line(c,12,2,12,15,7,10);line(c,12,15,17,10);line(c,3,16,3,21,21,21,21,16);break;
+            case "export":line(c,12,16,12,3,7,8);line(c,12,3,17,8);line(c,3,16,3,21,21,21,21,16);break;
+            case "reset":c.drawArc(4,4,20,20,-60,290,false,p);line(c,3,3,3,10,10,10);break;
+            case "save":line(c,4,3,18,3,21,6,21,21,3,21,3,3);c.drawRect(7,3,16,9,p);c.drawRect(7,14,17,21,p);break;
+            case "position":line(c,12,2,12,22);line(c,2,12,22,12);line(c,8,6,12,2,16,6);line(c,8,18,12,22,16,18);break;
             case "play":line(c,8,4,20,12,8,20,8,4);break;
             case "close":line(c,6,6,18,18);line(c,18,6,6,18);break;
             case "back":line(c,13,5,6,12,13,19);line(c,6,12,21,12);break;

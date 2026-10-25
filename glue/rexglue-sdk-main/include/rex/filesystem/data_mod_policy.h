@@ -107,7 +107,7 @@ inline void Validate(Mod& mod) {
     if (depth == 1 && OwnMetadata(path) && std::filesystem::is_regular_file(item_status)) continue;
     const auto top = Utf8(*relative.begin());
     if (depth > kMaxDepth || (top != "game" && top != "update")) {
-      mod.error = "Use game/ and update/ content within the depth limit."; break;
+      mod.error = depth>kMaxDepth?"Mod folder nesting is too deep: "+path:"Unexpected path: "+path+". Put compatible Xbox 360 data under this mod’s game/ or update/ folder; PC plugins are unsupported."; break;
     }
     if (std::filesystem::is_directory(item_status)) continue;
     const auto ext = PathKey(Utf8(item.path().extension()));

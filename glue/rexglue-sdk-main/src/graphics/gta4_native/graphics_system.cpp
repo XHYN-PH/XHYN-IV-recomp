@@ -150,6 +150,7 @@
 
 
 REXCVAR_DEFINE_BOOL(gta4_native_texture_reuse_extended,false,"GTA IV/Performance","Retain age-evicted textures longer only below existing soft memory limits");
+REXCVAR_DEFINE_INT32(gta4_native_pipeline_workers,1,"GTA IV/Performance","Background graphics compiler workers; additional workers may increase heat").range(1,5).lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_INT32(gta4_native_startup_prepare_seconds,3,"GTA IV/Performance","Bounded preparation of learned pipeline shaders before gameplay; zero skips").range(0,20);
 REXCVAR_DEFINE_BOOL(gta4_native_preparation_cancel,false,"GTA IV/Status","Skip remaining startup graphics preparation");
 REXCVAR_DEFINE_STRING(gta4_native_preparation_status,"","GTA IV/Status","Known startup work, not every game shader");
@@ -17398,7 +17399,7 @@ bool Gta4NativeGraphicsSystem::InitializeNativeRendererObjects() {
   native_pipeline_compiler_->writer = std::make_unique<NativePipelineCompilerState::Writer>(1);
   native_pipeline_compiler_->checkpoint_tick.store(rex::chrono::Clock::QueryHostTickCount());
   native_pipeline_compiler_->compiler = std::make_unique<NativePipelineCompilerState::Compiler>(
-      64, [this] { ScheduleNativePipelineCheckpoint(); });
+      64, [this] { ScheduleNativePipelineCheckpoint(); }, size_t(REXCVAR_GET(gta4_native_pipeline_workers)));
   LoadNativePipelineRecipes();
   const int preparation_seconds = REXCVAR_GET(gta4_native_startup_prepare_seconds);
   const auto preparation_started = std::chrono::steady_clock::now();
@@ -17408,7 +17409,7 @@ bool Gta4NativeGraphicsSystem::InitializeNativeRendererObjects() {
   const auto status = [&](bool active, const char* requested_outcome, const char* reason) {
     const auto progress = native_pipeline_compiler_->compiler->GetProgress();
     const size_t replay = native_pipeline_compiler_->replay.size();
-    const size_t remaining = replay + progress.queued + progress.completed + (progress.active ? 1 : 0);
+    const size_t remaining = replay + progress.queued + progress.completed + progress.active_count;
     const size_t shaders_remaining = known.size() - prepared;
     const bool cancelled = REXCVAR_GET(gta4_native_preparation_cancel);
     const bool expired = !active && !requested_outcome && !cancelled && remaining + shaders_remaining > 0 &&
@@ -17424,14 +17425,14 @@ bool Gta4NativeGraphicsSystem::InitializeNativeRendererObjects() {
         "\"queued\":{},\"compiling\":{},\"unpublished\":{},\"pending\":{},\"remaining\":{},"
         "\"failed\":{},\"elapsed_ms\":{},\"cancelled\":{},\"budget_expired\":{}}}",
         active, outcome, reason, std::string_view(outcome) == "skipped", prepared, known.size(),
-        shaders_remaining, native_pipelines_.size(), progress.queued, progress.active ? 1 : 0,
+        shaders_remaining, native_pipelines_.size(), progress.queued, progress.active_count,
         progress.completed, replay, remaining, native_pipeline_compiler_->failures,
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - preparation_started).count(), cancelled, expired));
     if (!active) REXLOG_INFO(
         "graphics-preparation: outcome={} ready={} queued={} compiling={} unpublished={} "
         "recipes={} shaders_remaining={} failed={}; unseen pipelines still compile on demand",
-        outcome, native_pipelines_.size(), progress.queued, progress.active ? 1 : 0,
+        outcome, native_pipelines_.size(), progress.queued, progress.active_count,
         progress.completed, replay, shaders_remaining, native_pipeline_compiler_->failures);
   };
   if (REXCVAR_GET(gta4_native_pipeline_prewarm) && preparation_seconds > 0 &&
@@ -17801,7 +17802,7 @@ VkPipeline Gta4NativeGraphicsSystem::PublishNativePipeline(
   size_t queued_preparation=0,active_preparation=0,awaiting_preparation=0;
   if(native_pipeline_compiler_&&native_pipeline_compiler_->compiler){
     const auto preparation=native_pipeline_compiler_->compiler->GetProgress();
-    queued_preparation=preparation.queued;active_preparation=preparation.active?1:0;
+    queued_preparation=preparation.queued;active_preparation=preparation.active_count;
     awaiting_preparation=native_pipeline_compiler_->replay.size();
   }
   rex::cvar::SetFlagByName("gta4_native_pipeline_status",fmt::format(
@@ -20774,6 +20775,7 @@ void Gta4NativeGraphicsSystem::EvictNativeTextureImages(uint32_t submitted_frame
   }
 
   const auto frame_cap=rex::cvar::Query<uint32_t>("gta4_frame_limit");
+  const bool extended_reuse=REXCVAR_GET(gta4_native_texture_reuse_extended);
   const auto retention=[&](uint32_t heap,bool pressure){
     uint64_t soft=mobile_memory.TextureRetentionLimit();
     const auto constrain=[&](uint64_t limit){if(limit)soft=soft?std::min(soft,limit):limit;};
@@ -20781,13 +20783,15 @@ void Gta4NativeGraphicsSystem::EvictNativeTextureImages(uint32_t submitted_frame
     if(heap<budgets.heap_count&&budgets.available)constrain(budgets.budget[heap]/4);
     const uint64_t resident=heap<native_texture_usage.size()?native_texture_usage[heap]:UINT64_MAX;
     const auto ordinary=MobileTextureRetentionFrames(frame_cap,resident,soft,pressure||mobile_memory.pressure());
-    return REXCVAR_GET(gta4_native_texture_reuse_extended)&&soft&&resident<soft&&!pressure&&!mobile_memory.pressure()?std::min(uint32_t(3600),ordinary*2):ordinary;
+    return extended_reuse&&soft&&resident<soft&&!pressure&&!mobile_memory.pressure()?std::min(uint32_t(7200),ordinary*3):ordinary;
   };
+  std::array<uint32_t,VK_MAX_MEMORY_HEAPS> retention_by_heap{};
+  for(uint32_t heap=0;heap<VK_MAX_MEMORY_HEAPS;++heap)retention_by_heap[heap]=retention(heap,texture_budget_pressure_active_);
   auto consider = [&](uint64_t generation, const NativeTextureImage* image) {
     if (!image || !image->source ||
         !CanDiscardNativeTextureImageContents(image->source->gpu_produced, !image->source->payload.empty()) ||
         protected_texture_generations_.contains(generation)) return;
-    const auto grace=retention(image->memory_heap,texture_budget_pressure_active_);
+    const auto grace=image->memory_heap<VK_MAX_MEMORY_HEAPS?retention_by_heap[image->memory_heap]:kNativeTextureCacheRetentionFrames;
     if (!allocation_recovery && !ShouldEvictNativeTextureCandidate(false, true, submitted_frame,
           image->last_used_frame, grace)) {
       if(grace>kNativeTextureCacheRetentionFrames&&ShouldEvictNativeTextureCandidate(false,true,submitted_frame,image->last_used_frame,kNativeTextureCacheRetentionFrames))++texture_retention_preserved_;

@@ -11,7 +11,7 @@ Game files and title updates are not included. Other regions and update versions
 
 ## Install and play
 
-1. [Download the Test7 APK](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test7/XHYN-IV-0.5.9.3-xhyn-r2-test7.apk).
+1. [Download the Test8 APK](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test8/XHYN-IV-0.5.9.3-xhyn-r2-test8.apk).
 2. Open the APK and install it. If Android asks, allow your browser or file manager to install this APK.
 3. Open XHYN IV and choose **Game files**.
 4. Select the GTA IV disc image and Title Update 8. Allow file access when asked.
@@ -32,9 +32,9 @@ A driver must match your phone's GPU. The available choices and results can vary
 
 Open **Touch controls** on the main menu. Choose the mobile or Xbox layout, then edit the buttons' positions, size, and opacity. Save the layout when finished.
 
-While playing, open the in-game menu for **Touch controls**, **Controller**, or **Edit controls**. Mobile and Xbox layouts are saved separately. A physical controller can also be used.
+While playing, open the in-game menu for **Touch controls**, **Controller**, or **Edit controls**. Mobile and Xbox layouts are saved separately. A physical controller can also be used. Open **Settings → Controller** for deadzones, sensitivity, inversion, trigger threshold, vibration strength, and the input test.
 
-For resolution, open **Settings → Video**. For shadows and reflections, use **Settings → Graphics**. FPS limits are under **Settings → Performance**.
+For resolution, open **Settings → Video**. For shadows and reflections, use **Settings → Graphics**. FPS limits are under **Settings → Performance**. Open **Settings → Overlay → Edit overlay** to move the FPS display directly. Drag the sample; the tools can also be moved or collapsed. Save the editor, then save Settings.
 
 ## Update the app
 

@@ -33,20 +33,30 @@ bool ContextTouchOverlay::ResolveIcon(void* context, std::string_view id, Contex
       !std::all_of(id.begin(), id.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; })) return false;
   const std::string key(id);
   auto found = self.icons_.find(key);
+  if(found!=self.icons_.end()&&!found->second){
+    if(self.icon_attempts_[key]>=3||std::chrono::steady_clock::now()<self.icon_retries_[key])return false;
+    self.icons_.erase(found);found=self.icons_.end();
+  }
   if (found == self.icons_.end()) {
     if (self.icons_.size() >= 256) return false;
     std::unique_ptr<rex::ui::ImmediateTexture> texture;
+    const char* reason="file-unavailable";
+    ++self.icon_attempts_[key];
     std::ifstream file(self.icon_directory_ / (key + ".png"), std::ios::binary | std::ios::ate);
     if (file) {
+      reason="invalid-file-size";
       const auto length = file.tellg();
       if (length > 0 && length <= 4194304) {
         std::vector<uint8_t> bytes(static_cast<size_t>(length));
         file.seekg(0);
+        reason="read-failed";
         if (file.read(reinterpret_cast<char*>(bytes.data()), length)) {
+          reason="decode-or-image-budget-failed";
           int width = 0, height = 0;
           const auto rgba = rex::ui::DecodeImageRGBA(bytes.data(), bytes.size(), width, height, 1024, 1024);
           if (!rgba.empty() && width > 0 && height > 0 &&
               rgba.size() <= 33554432 - self.decoded_icon_bytes_) {
+            reason="texture-unavailable";
             texture = self.immediate_->CreateTexture(static_cast<uint32_t>(width),
                 static_cast<uint32_t>(height), rex::ui::ImmediateTextureFilter::kLinear, false, rgba.data());
             if (texture) self.decoded_icon_bytes_ += rgba.size();
@@ -54,7 +64,8 @@ bool ContextTouchOverlay::ResolveIcon(void* context, std::string_view id, Contex
         }
       }
     }
-    REXLOG_INFO("touch-icon: name={} bitmap_loaded={} vector_fallback={}",key,bool(texture),!texture);
+    if(!texture)self.icon_retries_[key]=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+    REXLOG_INFO("touch-icon: name={} bitmap_loaded={} vector_fallback={} reason={} attempt={}",key,bool(texture),!texture,texture?"ready":reason,self.icon_attempts_[key]);
     found = self.icons_.emplace(key, std::move(texture)).first;
   }
   if (!found->second) return false;

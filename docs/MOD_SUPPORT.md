@@ -26,7 +26,7 @@ When two mods replace the same file, the one with the higher priority number win
 
 ## If a mod does not work
 
-Check its message in the mod menu and the **Last launch** result. If it causes a crash or unwanted changes, quit the game, disable it, save, and launch again.
+Check its **Needs attention** message and the **Last launch** result. If it causes a crash or unwanted changes, quit the game, disable it, save, and launch again.
 
 Mods must use paths and file contents that match the Xbox 360 version. A PC mod is not automatically compatible. Try one mod at a time and keep a save backup.
 

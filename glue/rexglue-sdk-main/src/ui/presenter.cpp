@@ -1852,13 +1852,13 @@ Presenter::PaintResult Presenter::PaintAndPresent(bool execute_ui_drawers) {
       // suboptimal while an asynchronous fullscreen transition is settling;
       // retry that case once without allowing an endless recreate loop.
       bool reconnect_suboptimal = surface_paint_connection_was_optimal_at_successful_paint_;
-#if REX_PLATFORM_MAC
+#if REX_PLATFORM_MAC || REX_PLATFORM_ANDROID
       if (!reconnect_suboptimal &&
           !surface_paint_connection_initial_suboptimal_retry_attempted_) {
         surface_paint_connection_initial_suboptimal_retry_attempted_ = true;
         reconnect_suboptimal = true;
         REXLOG_INFO(
-            "Presenter: Initial macOS surface paint was suboptimal; scheduling one recovery "
+            "Presenter: Initial surface paint was suboptimal; scheduling one recovery "
             "reconnect");
       }
 #endif

@@ -15,16 +15,18 @@
 
 namespace rex::graphics::gta4_native {
 
-// One compiler, with bounded admission including unconsumed results. Callers
+// A bounded compiler pool, including active and unconsumed results. Callers
 // publish results on their owner thread. Stop joins the active driver call;
 // shader modules, layouts, caches and the device must outlive this object.
 template <typename Key, typename Result, typename Hash>
 class NativePipelineCompiler {
  public:
   using Compile = std::function<Result()>;
-  explicit NativePipelineCompiler(size_t capacity, std::function<void()> idle = {})
-      : capacity_(std::max<size_t>(capacity, 1)), idle_(std::move(idle)),
-        thread_([this] { Run(); }) {}
+  explicit NativePipelineCompiler(size_t capacity, std::function<void()> idle = {}, size_t workers = 1)
+      : capacity_(std::max<size_t>(capacity, 1)), idle_(std::move(idle)) {
+    try{for(size_t i=0;i<std::clamp<size_t>(workers,1,5);++i)threads_.emplace_back([this]{Run();});}
+    catch(...){Stop();throw;}
+  }
   ~NativePipelineCompiler() { Stop(); }
   NativePipelineCompiler(const NativePipelineCompiler&) = delete;
   NativePipelineCompiler& operator=(const NativePipelineCompiler&) = delete;
@@ -102,10 +104,10 @@ class NativePipelineCompiler {
     std::lock_guard lock(mutex_);
     return jobs_.contains(key);
   }
-  struct Progress { size_t queued=0, completed=0; bool active=false; };
+  struct Progress { size_t queued=0, completed=0; bool active=false; size_t active_count=0; };
   Progress GetProgress() const {
     std::lock_guard lock(mutex_);
-    return {queue_.size(),completed_.size(),active_};
+    return {queue_.size(),completed_.size(),active_!=0,active_};
   }
   void WaitUntilIdle() {
     std::unique_lock lock(mutex_);
@@ -118,9 +120,7 @@ class NativePipelineCompiler {
       queue_.clear();
       changed_.notify_all();
     }
-    if (thread_.joinable()) {
-      thread_.join();
-    }
+    for(auto& thread:threads_)if(thread.joinable())thread.join();
   }
 
  private:
@@ -148,7 +148,7 @@ class NativePipelineCompiler {
       const Key key = queue_.front();
       queue_.pop_front();
       const auto job = jobs_.at(key);
-      active_ = true;
+      ++active_;
       lock.unlock();
       Result result{};
       try {
@@ -161,17 +161,17 @@ class NativePipelineCompiler {
       job->result = std::move(result);
       completed_.insert(key);
       job->compile = {};
-      active_ = false;
+      --active_;
       changed_.notify_all();
-      if (!stopping_ && queue_.empty() && idle_) {
-        active_ = true;
+      if (!stopping_ && queue_.empty() && !active_ && idle_) {
+        ++active_;
         lock.unlock();
         try {
           idle_();
         } catch (...) {
         }
         lock.lock();
-        active_ = false;
+        --active_;
         changed_.notify_all();
       }
     }
@@ -182,11 +182,11 @@ class NativePipelineCompiler {
   mutable std::mutex mutex_;
   std::condition_variable changed_;
   bool stopping_ = false;
-  bool active_ = false;
+  size_t active_ = 0;
   std::deque<Key> queue_;
   std::unordered_map<Key, std::shared_ptr<Job>, Hash> jobs_;
   std::unordered_set<Key, Hash> completed_;
-  std::thread thread_;
+  std::vector<std::thread> threads_;
 };
 
 }  // namespace rex::graphics::gta4_native

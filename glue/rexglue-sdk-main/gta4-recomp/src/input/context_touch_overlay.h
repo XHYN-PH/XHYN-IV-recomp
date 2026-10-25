@@ -3,6 +3,7 @@
 #include <rex/ui/imgui_dialog.h>
 #include <rex/ui/immediate_drawer.h>
 #include <filesystem>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -31,6 +32,8 @@ class ContextTouchOverlay final : public rex::ui::ImGuiDialog {
   std::filesystem::path icon_directory_;
   std::unordered_map<std::string, std::unique_ptr<rex::ui::ImmediateTexture>> icons_;
   size_t decoded_icon_bytes_ = 0;
+  std::unordered_map<std::string,uint8_t> icon_attempts_;
+  std::unordered_map<std::string,std::chrono::steady_clock::time_point> icon_retries_;
   ContextTouchIconResolver icon_resolver_ = nullptr;
   void* icon_context_ = nullptr;
   std::unique_ptr<ContextTouchEditorMouse> editor_mouse_;

@@ -26,6 +26,7 @@
 #include <SDL3/SDL.h>
 
 REXCVAR_DEFINE_BOOL(audio_mute, false, "Audio", "Mute audio output");
+REXCVAR_DEFINE_BOOL(audio_adaptive_buffer,true,"Audio","Rebuild a short audio queue after dropouts");
 REXCVAR_DEFINE_BOOL(audio_low_latency, false, "Audio",
                     "Android: open AAudio in low-latency (MMAP) mode. Its buffer is a couple of "
                     "2 ms bursts, so any scheduling hiccup becomes a gap; the normal mode buffers "
@@ -192,8 +193,7 @@ void SDLAudioDriver::SubmitFrame(uint32_t frame_ptr) {
 
   static uint32_t sdl_submit_count = 0;
   if (sdl_submit_count < 10) {
-    REXAPU_DEBUG("SDLAudioDriver::SubmitFrame: frame_ptr={:08X} queued_count={}", frame_ptr,
-                 frames_queued_.size() + 1);
+    REXAPU_DEBUG("SDLAudioDriver::SubmitFrame: frame_ptr={:08X}", frame_ptr);
     sdl_submit_count++;
   }
 
@@ -239,6 +239,7 @@ void SDLAudioDriver::Flush() {
 
 void SDLAudioDriver::FlushQueuedFrames() {
   std::unique_lock<std::mutex> guard(frames_mutex_);
+  rebuffering_=true;
   while (!frames_queued_.empty()) {
     frames_unused_.push(frames_queued_.front());
     frames_queued_.pop();
@@ -300,12 +301,14 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
       driver->silent_fills_ = driver->filled_blocks_ = 0;
       driver->starvation_window_start_=now;driver->next_starvation_report_ = now + std::chrono::seconds(10);
     }
-    if (driver->frames_queued_.empty()) {
+    if(driver->frames_queued_.empty())driver->rebuffering_=true;
+    if (driver->frames_queued_.empty() || (REXCVAR_GET(audio_adaptive_buffer)&&driver->rebuffering_&&driver->frames_queued_.size()<2)) {
       ++driver->silent_fills_;
       if (driver->callback_log_count_ < 10) {
         REXAPU_DEBUG("SDLCallback: no frames queued (silence)");
         driver->callback_log_count_++;
       }
+      guard.unlock();
       std::memset(data, 0, len);
       if (!SDL_PutAudioStreamData(stream, data, len)) {
         REXAPU_ERROR("SDL_PutAudioStreamData() failed while filling silence: {}", SDL_GetError());
@@ -313,9 +316,11 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
       }
       additional_amount -= len;
     } else {
+      driver->rebuffering_=false;
       ++driver->filled_blocks_;
       auto buffer = driver->frames_queued_.front();
       driver->frames_queued_.pop();
+      guard.unlock();  // Conversion/driver calls must never block the guest audio producer.
       if (REXCVAR_GET(audio_mute)) {
         std::memset(data, 0, len);
       } else {
@@ -333,10 +338,10 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
       }
       if (!SDL_PutAudioStreamData(stream, data, len)) {
         REXAPU_ERROR("SDL_PutAudioStreamData() failed: {}", SDL_GetError());
-        driver->frames_unused_.push(buffer);
+        {std::lock_guard lock(driver->frames_mutex_);driver->frames_unused_.push(buffer);}
         break;
       }
-      driver->frames_unused_.push(buffer);
+      {std::lock_guard lock(driver->frames_mutex_);driver->frames_unused_.push(buffer);}
 
       auto ret = driver->semaphore_->Release(1, nullptr);
       assert_true(ret);
