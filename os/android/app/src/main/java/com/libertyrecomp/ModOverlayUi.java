@@ -60,7 +60,7 @@ final class ModOverlayUi {
                         if(row.mod.conflictCount>0)status+="\nConflicts: "+row.mod.conflictCount+" (later mount wins)";
                         String last=loaded.get(ModOverlayPolicy.identity(row.mod.folder.getName()));
                         status+="\nLast launch: "+(last==null?"no per-mod result":last);
-                        row.state.setText(status);row.priority.setText("Priority: "+row.mod.priority);rows.addView(row.panel);
+                        row.state.setText(status);row.priority.setText("Priority: "+row.mod.priority);ModernUi.optionSpacing(a,row.panel);LinearLayout.LayoutParams rowSpace=new LinearLayout.LayoutParams(-1,-2);rowSpace.topMargin=ModernUi.dp(a,8);rows.addView(row.panel,rowSpace);
                     }
                 };
                 for(Row row:views){

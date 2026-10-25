@@ -19,6 +19,7 @@ val sdlJavaDir = rootProject.file(
 android {
     namespace   = "com.libertyrecomp"
     compileSdk  = 35
+    buildToolsVersion = "35.0.0"
     ndkVersion  = "29.0.14206865"
 
     defaultConfig {
@@ -26,8 +27,8 @@ android {
         // 28: ASharedMemory (26) for guest memory and AAudio (27) for audio.
         minSdk        = 29
         targetSdk     = 35
-        versionCode = 34
-        versionName   = "0.5.9.3-xhyn-r2-test6"
+        versionCode = 35
+        versionName   = "0.5.9.3-xhyn-r2-test7"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -79,5 +80,21 @@ android {
     lint {
         checkReleaseBuilds = false
         abortOnError = false
+    }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+}
+
+tasks.withType<Test>().configureEach {
+    maxHeapSize = "1536m"
+    maxParallelForks = 1
+    for (key in listOf("http.proxyHost", "http.proxyPort", "https.proxyHost", "https.proxyPort", "xhyn.screenshots")) {
+        System.getProperty(key)?.let { systemProperty(key, it) }
     }
 }

@@ -94,7 +94,7 @@ enum class Anchor : uint8_t { kLeft, kRight, kCenter };
 enum class Icon : uint8_t {
   kNone, kMenu, kPhone, kView, kCrouch, kCover, kPistol, kDoor, kReload, kFist, kAim, kBullet,
   kJump, kRun, kSteerLeft, kSteerRight, kRadio, kHorn, kEye, kHandbrake, kGas, kBrake,
-  kUp, kDown, kLeft, kRight, kCheck, kBack, kHangUp, kLB, kRB, kReset, kSkip, kHouse, kGamepad
+  kUp, kDown, kLeft, kRight, kCheck, kBack, kHangUp, kLB, kRB, kReset, kSkip, kHouse, kGamepad, kInteract
 };
 
 // Icon image files (assets/touch-icons/<name>.png, copied to the user folder by
@@ -102,7 +102,8 @@ enum class Icon : uint8_t {
 // missing.
 const char* IconFile(Icon icon) {
   switch (icon) {
-    case Icon::kMenu: return "menu";
+    case Icon::kMenu: return "xbox_menu";
+    case Icon::kInteract: return "interact";
     case Icon::kHouse: return "house";
     case Icon::kPhone: return "phone";
     case Icon::kView: return "view";
@@ -185,7 +186,7 @@ const std::vector<Spec>& Layout(Screen screen) {
       {"move", Kind::kStick, Anchor::kLeft, 400, 540, 112, Icon::kNone, "MOVE", 0, 0, kWhite},
       {"crouch", Kind::kButton, Anchor::kLeft, 92, 260, 34, Icon::kCrouch, "CROUCH", X_INPUT_GAMEPAD_LEFT_THUMB, 0, kWhite},
       {"cover", Kind::kButton, Anchor::kLeft, 92, 375, 34, Icon::kCover, "COVER", X_INPUT_GAMEPAD_RIGHT_SHOULDER, 0, kWhite},
-      {"left_shoulder", Kind::kButton, Anchor::kLeft, 92, 490, 30, Icon::kLB, "LB", X_INPUT_GAMEPAD_LEFT_SHOULDER, 0, kWhite},
+      {"left_shoulder", Kind::kButton, Anchor::kLeft, 92, 490, 30, Icon::kInteract, "INTERACT", X_INPUT_GAMEPAD_LEFT_SHOULDER, 0, kWhite},
       {"weapon_prev", Kind::kButton, Anchor::kRight, 251, 140, 22, Icon::kLeft, nullptr, X_INPUT_GAMEPAD_DPAD_LEFT, 0, kWhite},
       {"weapon", Kind::kButton, Anchor::kRight, 175, 140, 44, Icon::kPistol, "WEAPON", X_INPUT_GAMEPAD_DPAD_RIGHT, 0, kWhite},
       {"weapon_next", Kind::kButton, Anchor::kRight, 99, 140, 22, Icon::kRight, nullptr, X_INPUT_GAMEPAD_DPAD_RIGHT, 0, kWhite},
@@ -269,8 +270,8 @@ const std::vector<Spec>& Layout(Screen screen) {
       {"map_move", Kind::kStick, Anchor::kLeft, 450, 520, 75, Icon::kNone, "MOVE MAP", 0, 0, kWhite},
       {"map_x", Kind::kButton, Anchor::kRight, 95, 350, 30, Icon::kCheck, "X", X_INPUT_GAMEPAD_X, 0, kWhite},
       {"map_y", Kind::kButton, Anchor::kRight, 175, 350, 30, Icon::kCheck, "Y", X_INPUT_GAMEPAD_Y, 0, kWhite},
-      {"prev_tab", Kind::kButton, Anchor::kLeft, 215, 290, 38, Icon::kLB, "PREV TAB", X_INPUT_GAMEPAD_LEFT_SHOULDER, 0, kWhite},
-      {"next_tab", Kind::kButton, Anchor::kRight, 215, 290, 38, Icon::kRB, "NEXT TAB", X_INPUT_GAMEPAD_RIGHT_SHOULDER, 0, kWhite},
+      {"prev_tab", Kind::kButton, Anchor::kLeft, 215, 290, 38, Icon::kLeft, "PREV TAB", X_INPUT_GAMEPAD_LEFT_SHOULDER, 0, kWhite},
+      {"next_tab", Kind::kButton, Anchor::kRight, 215, 290, 38, Icon::kRight, "NEXT TAB", X_INPUT_GAMEPAD_RIGHT_SHOULDER, 0, kWhite},
       {"up", Kind::kButton, Anchor::kLeft, 200, 425, 42, Icon::kUp, "UP", X_INPUT_GAMEPAD_DPAD_UP, 0, kWhite},
       {"down", Kind::kButton, Anchor::kLeft, 200, 615, 42, Icon::kDown, "DOWN", X_INPUT_GAMEPAD_DPAD_DOWN, 0, kWhite},
       {"left", Kind::kButton, Anchor::kLeft, 105, 520, 42, Icon::kLeft, "LEFT", X_INPUT_GAMEPAD_DPAD_LEFT, 0, kWhite},
@@ -574,6 +575,9 @@ bool CameraScreen(Screen screen) {
       screen==Screen::kHelicopter || screen==Screen::kPassenger;
 }
 std::array<float,4> SafeArea(float w,float h) {
+#if defined(__ANDROID__)
+  return theme::FullscreenArea(w,h);
+#else
   rex::input::TouchPresentationState p{};
   std::array<float,4> safe{0,0,w,h};
   if (rex::input::GetTouchPresentationState(&p) && p.valid && p.logical_width>0 && p.logical_height>0 &&
@@ -585,6 +589,7 @@ std::array<float,4> SafeArea(float w,float h) {
     if (std::isfinite(x+y+right+bottom) && right>x && bottom>y) safe={x,y,right-x,bottom-y};
   }
   return safe;
+#endif
 }
 void Place(State& s,float w,float h) {
   const auto safe=SafeArea(w,h);
@@ -637,8 +642,7 @@ int HitTest(const State& s, ImVec2 p) {
 }
 
 // ---------------- drawing ----------------
-// Each icon is drawn twice: a dark, slightly thicker pass (outline) and the
-// coloured pass, like the mockups' outlined white icons.
+// Geometric fallback glyphs use one clean pass when a texture is unavailable.
 struct Pen {
   ImDrawList* d;
   ImU32 col;
@@ -729,6 +733,7 @@ void DrawIcon(const Pen& p, Icon icon, ImVec2 c, float r, ImU32 hole) {
       p.Arc(c, r * 0.62f, -0.87f, 4.1f, w);
       p.Tri(P(c, r, 0.33f, -0.93f), P(c, r, 0.78f, -0.38f), P(c, r, 0.1f, -0.3f));
       break;
+    case Icon::kInteract:
     case Icon::kFist:
       p.Rect(P(c, r, -0.62f, -0.45f), P(c, r, 0.5f, 0.55f), r * 0.22f);
       if (p.grow == 0)
@@ -921,6 +926,7 @@ void DrawControl(ImDrawList* d, ImFont* font, State& s, size_t i, float unit) {
     theme::DrawStickGrip(d, knob, c.r, Alpha(IM_COL32(194, 194, 194, held ? 225 : 170), alpha));
   } else {
     DrawRing(d, c.center, c.r*visual_scale, alpha, held);
+    if(REXCVAR_GET(gta4_touch_icon_outline))theme::DrawButtonOutline(d,c.center,c.r*visual_scale,Alpha(kIconGrey,alpha));
     const float ir = c.r * 0.66f*visual_scale;
     const ImU32 tint = Alpha(held ? IM_COL32(255, 255, 255, 240) : kIconGrey, alpha);
     ContextTouchIcon image;
@@ -930,11 +936,9 @@ void DrawControl(ImDrawList* d, ImFont* font, State& s, size_t i, float unit) {
     if (drew_image) {
       // Icon PNG: square, about 82% of the button's diameter.
       const float half = c.r * 0.82f*visual_scale;
-      if(REXCVAR_GET(gta4_touch_icon_outline))theme::DrawImageOutline(d,image.texture,c.center,half,image.uv_min,image.uv_max,Alpha(IM_COL32(8,8,8,230),alpha));
       d->AddImage(image.texture, ImVec2(c.center.x - half, c.center.y - half),
                   ImVec2(c.center.x + half, c.center.y + half), image.uv_min, image.uv_max, tint);
     } else {
-      if(REXCVAR_GET(gta4_touch_icon_outline))DrawIcon(Pen{d,Alpha(IM_COL32(8,8,8,230),alpha),std::max(1.f,ir*.055f)},spec.icon,c.center,ir,hole);
       const Pen fill{d, tint, 0.0f};
       // Cut-outs (windows, grooves) show the dark disc behind the icon.
       DrawIcon(fill, spec.icon, c.center, ir, Alpha(IM_COL32(20, 20, 22, 120), alpha));

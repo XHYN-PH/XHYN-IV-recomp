@@ -35,7 +35,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "menu",
+        "image": "xbox_menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -106,10 +106,10 @@
         "x": 92.0,
         "y": 490.0,
         "r": 30.0,
-        "icon": "LB",
-        "image": "lb",
+        "icon": "Interact",
+        "image": "interact",
         "hint": "LB",
-        "label": "LB"
+        "label": "INTERACT"
       },
       {
         "id": "weapon_prev",
@@ -293,7 +293,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "menu",
+        "image": "xbox_menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -515,7 +515,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "menu",
+        "image": "xbox_menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -725,7 +725,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "menu",
+        "image": "xbox_menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -923,7 +923,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "menu",
+        "image": "xbox_menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -958,10 +958,10 @@
         "x": 92.0,
         "y": 490.0,
         "r": 30.0,
-        "icon": "LB",
-        "image": "lb",
+        "icon": "Interact",
+        "image": "interact",
         "hint": "LB",
-        "label": "LB"
+        "label": "INTERACT"
       },
       {
         "id": "weapon_prev",
@@ -1073,7 +1073,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "menu",
+        "image": "xbox_menu",
         "hint": "START",
         "label": "PAUSE"
       },
@@ -1234,8 +1234,8 @@
         "x": 215.0,
         "y": 290.0,
         "r": 38.0,
-        "icon": "LB",
-        "image": "lb",
+        "icon": "Left",
+        "image": "left",
         "hint": "LB",
         "label": "PREV TAB"
       },
@@ -1246,8 +1246,8 @@
         "x": 215.0,
         "y": 290.0,
         "r": 38.0,
-        "icon": "RB",
-        "image": "rb",
+        "icon": "Right",
+        "image": "right",
         "hint": "RB",
         "label": "NEXT TAB"
       },
@@ -1331,7 +1331,7 @@
         "y": 460.0,
         "r": 38.0,
         "icon": "Menu",
-        "image": "menu",
+        "image": "xbox_menu",
         "hint": "START",
         "label": "RESUME"
       }
@@ -1349,7 +1349,7 @@
         "y": 58.0,
         "r": 28.0,
         "icon": "Menu",
-        "image": "menu",
+        "image": "xbox_menu",
         "hint": "START",
         "label": "PAUSE"
       },

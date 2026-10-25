@@ -12,8 +12,7 @@ import java.util.*;
 
 /** Full-screen preview using gameplay geometry, icons and saved edits. */
 public final class TouchEditorActivity extends Activity {
-    private boolean grid=true,snap=true,guides=true,iconOutline;private float snapStrength=1;
-    private TouchViewport.Snapshot calibratedViewport;private String viewportToken="",viewportSettings="";private long viewportGeneration;
+    private boolean grid=true,snap=true,guides=true,iconOutline,hitAreas;private float snapStrength=1;
     private int gridSize=20;
     private final ArrayDeque<Map<String,float[]>> undo=new ArrayDeque<>(),redo=new ArrayDeque<>();
     private static final int REQUEST_LAYOUT_IMPORT=740,REQUEST_LAYOUT_EXPORT=741;
@@ -21,7 +20,7 @@ public final class TouchEditorActivity extends Activity {
     private TouchLayoutDocument document;
     private JSONArray contexts;
     private int context;
-    private float buttonScale=1,cameraScale=1,panelX=.35f,panelY;
+    private float buttonScale=1,cameraScale=1,buttonOpacity=1,cameraOpacity=1,panelX=.35f,panelY;
     private boolean xbox,dirty,collapsed,hints=true,actionNames;
     private String selectedKey;
     private FrameLayout page;
@@ -42,11 +41,9 @@ public final class TouchEditorActivity extends Activity {
             getWindow().setAttributes(attrs);
         }
         hideSystemBars();xbox=getIntent().getBooleanExtra("xbox",false);
-        root=getExternalFilesDir(null);if(root==null)root=getFilesDir();calibratedViewport=TouchViewport.snapshot(root);
-        viewportToken=getIntent().getStringExtra("viewport_token");if(viewportToken==null)viewportToken="";
-        viewportGeneration=getIntent().getLongExtra("viewport_generation",0);viewportSettings=ViewportIdentity.savedSettings(root);
+        root=getExternalFilesDir(null);if(root==null)root=getFilesDir();
         android.content.SharedPreferences aids=getPreferences(MODE_PRIVATE);
-        grid=aids.getBoolean("grid",true);snap=aids.getBoolean("snap",true);guides=aids.getBoolean("guides",true);
+        grid=aids.getBoolean("grid",true);snap=aids.getBoolean("snap",true);guides=aids.getBoolean("guides",true);hitAreas=aids.getBoolean("hit_areas",false);
         gridSize=Math.max(5,Math.min(40,aids.getInt("spacing",20)));snapStrength=finite(aids.getFloat("strength",1),.25f,1,1);
         try{
             TouchLayoutDocument.migrate(root,getFilesDir());document=TouchLayoutDocument.read(root);
@@ -59,14 +56,14 @@ public final class TouchEditorActivity extends Activity {
         try{
             Map<String,String> settings=MobileConfig.read(MobileConfig.file(root));
             buttonScale=Float.parseFloat(settings.getOrDefault("gta4_touch_gamepad_scale","1"));
-            cameraScale=Float.parseFloat(settings.getOrDefault("gta4_touch_camera_scale","1"));
+            cameraScale=Float.parseFloat(settings.getOrDefault("gta4_touch_camera_scale","1"));buttonOpacity=Float.parseFloat(settings.getOrDefault("gta4_touch_gamepad_opacity","1"));cameraOpacity=Float.parseFloat(settings.getOrDefault("gta4_touch_camera_opacity","1"));
             iconOutline="true".equals(settings.get("gta4_touch_icon_outline"));hints=!"false".equals(settings.get("gta4_touch_button_hints"));actionNames="true".equals(settings.get("gta4_touch_labels"));
         }catch(Exception ignored){}
-        buttonScale=finite(buttonScale,.5f,2,1);cameraScale=finite(cameraScale,.25f,3,1);
+        buttonScale=finite(buttonScale,.5f,2,1);cameraScale=finite(cameraScale,.25f,3,1);buttonOpacity=finite(buttonOpacity,0,1.6f,1);cameraOpacity=finite(cameraOpacity,0,1,1);
         context=Math.max(0,Math.min(contexts.length()-1,state==null?getIntent().getIntExtra("context",0):state.getInt("context",0)));
         if(state!=null){
             dirty=state.getBoolean("dirty");collapsed=state.getBoolean("collapsed");selectedKey=state.getString("selected");
-            grid=state.getBoolean("grid",grid);snap=state.getBoolean("snap",snap);guides=state.getBoolean("guides",guides);
+            grid=state.getBoolean("grid",grid);snap=state.getBoolean("snap",snap);guides=state.getBoolean("guides",guides);hitAreas=state.getBoolean("hit_areas",hitAreas);
             gridSize=Math.max(5,Math.min(40,state.getInt("spacing",gridSize)));snapStrength=finite(state.getFloat("strength",snapStrength),.25f,1,1);
             panelX=finite(state.getFloat("panel_x",.35f),0,1,.35f);panelY=finite(state.getFloat("panel_y",0),0,1,0);
             Bundle draft=state.getBundle("draft");
@@ -140,6 +137,8 @@ public final class TouchEditorActivity extends Activity {
         Button strength=ModernUi.button(this,"Snap: "+Math.round(snapStrength*100)+"%",false);alignment.addView(strength,new LinearLayout.LayoutParams(0,dp(36),1));body.addView(alignment);
         strength.setContentDescription("Snap strength. Tap to cycle 25, 50, 75 and 100 percent.");
         strength.setOnClickListener(v->{snapStrength=snapStrength>=1?.25f:snapStrength+.25f;strength.setText("Snap: "+Math.round(snapStrength*100)+"%");});
+        CheckBox touchBounds=new CheckBox(this);touchBounds.setText("Touch areas & overlaps");touchBounds.setTextColor(ModernUi.TEXT);touchBounds.setChecked(hitAreas);body.addView(touchBounds);
+        touchBounds.setOnCheckedChangeListener((b,on)->{hitAreas=on;updateSelection();canvas.invalidate();});
         LinearLayout history=new LinearLayout(this);Button backStep=ModernUi.button(this,"Undo",false),forwardStep=ModernUi.button(this,"Redo",false),export=ModernUi.button(this,"Export",false),imported=ModernUi.button(this,"Import",false);
         for(Button action:new Button[]{backStep,forwardStep,export,imported}){action.setTextSize(11);action.setMinWidth(0);action.setPadding(dp(3),0,dp(3),0);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(36),1);lp.setMargins(dp(2),0,dp(2),0);history.addView(action,lp);}body.addView(history);backStep.setOnClickListener(v->history(false));forwardStep.setOnClickListener(v->history(true));
         Button numeric=ModernUi.button(this,"Position, scale & opacity",false);selectionTools.addView(numeric,new LinearLayout.LayoutParams(-1,dp(36)));numeric.setOnClickListener(v->numeric());
@@ -181,7 +180,7 @@ public final class TouchEditorActivity extends Activity {
         }
         selectionTools.setVisibility(control==null?View.GONE:View.VISIBLE);
         if(control==null){selectedKey=null;return;}
-        TouchLayoutDocument.Entry e=document.get(selectedKey);selected.setText("Selected: "+control.optString("label"));
+        TouchLayoutDocument.Entry e=document.get(selectedKey);selected.setText("Selected: "+control.optString("label")+(hitAreas?canvas.overlapLabel(control):""));
         amount.setText(sizeLabel(e.scale));size.setProgress(Math.round((e.scale-.35f)*100));hidden.setChecked(e.hidden);
     }
     private interface ControlVisitor {void accept(String key,JSONObject control);}
@@ -192,7 +191,7 @@ public final class TouchEditorActivity extends Activity {
     }
     @Override protected void onSaveInstanceState(Bundle state){
         if(document!=null){
-            state.putBoolean("grid",grid);state.putBoolean("snap",snap);state.putBoolean("guides",guides);state.putInt("spacing",gridSize);state.putFloat("strength",snapStrength);
+            state.putBoolean("grid",grid);state.putBoolean("snap",snap);state.putBoolean("guides",guides);state.putBoolean("hit_areas",hitAreas);state.putInt("spacing",gridSize);state.putFloat("strength",snapStrength);
             state.putInt("context",context);state.putBoolean("dirty",dirty);state.putBoolean("collapsed",collapsed);state.putString("selected",selectedKey);
             state.putFloat("panel_x",panelX);state.putFloat("panel_y",panelY);Bundle draft=new Bundle();
             forEachControl((key,c)->{TouchLayoutDocument.Entry e=document.get(key);draft.putFloatArray(key,new float[]{e.dx,e.dy,e.scale,e.hidden?1:0,e.opacity});});state.putBundle("draft",draft);
@@ -202,16 +201,20 @@ public final class TouchEditorActivity extends Activity {
         try{document.save(root);setResult(RESULT_OK);Toast.makeText(this,"Layout saved.",Toast.LENGTH_SHORT).show();finish();}
         catch(IOException e){Toast.makeText(this,"Could not save layout: "+e.getMessage(),Toast.LENGTH_LONG).show();}
     }
-    @Override @SuppressWarnings("deprecation") public void onBackPressed(){if(document!=null&&dirty)saveAndClose();else finish();}
+    @Override @SuppressWarnings("deprecation") public void onBackPressed(){
+        if(document==null||!dirty){finish();return;}
+        new android.app.AlertDialog.Builder(this).setTitle("Unsaved control layout")
+            .setMessage("Save your changes before leaving?").setPositiveButton("Save",(d,w)->saveAndClose())
+            .setNegativeButton("Discard",(d,w)->finish()).setNeutralButton("Keep editing",null).show();
+    }
     private void hideSystemBars(){getWindow().getDecorView().setSystemUiVisibility(5894);}
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus)hideSystemBars();}
-    @Override protected void onStop(){getPreferences(MODE_PRIVATE).edit().putBoolean("grid",grid).putBoolean("snap",snap).putBoolean("guides",guides).putInt("spacing",gridSize).putFloat("strength",snapStrength).apply();super.onStop();}
+    @Override protected void onStop(){getPreferences(MODE_PRIVATE).edit().putBoolean("grid",grid).putBoolean("snap",snap).putBoolean("guides",guides).putBoolean("hit_areas",hitAreas).putInt("spacing",gridSize).putFloat("strength",snapStrength).apply();super.onStop();}
     @Override protected void onDestroy(){icons.clear();super.onDestroy();}
 
     private final class Editor extends View {
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
-        private final ColorFilter iconTint=new PorterDuffColorFilter(0xffdedede,PorterDuff.Mode.SRC_IN);
-        private final ColorFilter outlineTint=new PorterDuffColorFilter(0xff080808,PorterDuff.Mode.SRC_IN);
+        private final ColorFilter iconTint=new PorterDuffColorFilter(0xffc2c2c2,PorterDuff.Mode.SRC_IN);
         private final Map<Integer,ColorFilter> xboxTints=new HashMap<>();
         private final RectF gripBounds=new RectF();
         private float lastX,lastY;
@@ -220,14 +223,7 @@ public final class TouchEditorActivity extends Activity {
         Editor(){super(TouchEditorActivity.this);setContentDescription("Full-screen control layout. Drag a control, then use the floating editor panel to resize or hide it.");}
         private JSONArray controls(){return contexts.optJSONObject(context).optJSONArray("controls");}
         private String key(JSONObject c){return contexts.optJSONObject(context).optString("id")+"/"+c.optString("id");}
-        private RectF viewport(){
-            RectF area=new RectF(0,0,getWidth(),getHeight());
-            if(!xbox&&calibratedViewport!=null&&calibratedViewport.matches(ViewportIdentity.display(TouchEditorActivity.this),viewportSettings,viewportToken,viewportGeneration,System.currentTimeMillis())){
-                float[] actual=TouchViewport.project(calibratedViewport.values,getWidth(),getHeight());if(actual!=null)return new RectF(actual[0],actual[1],actual[2],actual[3]);
-            }WindowInsets insets=getRootWindowInsets();
-            if(!xbox&&insets!=null&&insets.getDisplayCutout()!=null){DisplayCutout cutout=insets.getDisplayCutout();area.set(cutout.getSafeInsetLeft(),cutout.getSafeInsetTop(),getWidth()-cutout.getSafeInsetRight(),getHeight()-cutout.getSafeInsetBottom());}
-            return area;
-        }
+        private RectF viewport(){return new RectF(0,0,getWidth(),getHeight());}
         private float unit(){return viewport().height()/737f;}
         private float x(JSONObject c){
             RectF a=viewport();float r=radius(c);TouchLayoutDocument.Entry e=document.get(key(c));
@@ -259,7 +255,7 @@ public final class TouchEditorActivity extends Activity {
         }
         @Override protected void onDraw(Canvas out){
             super.onDraw(out);out.drawColor(0xff080a0d);if(getWidth()<=0||getHeight()<=0)return;
-            RectF safe=viewport();paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1);paint.setColor(0xff56616c);out.drawRect(safe,paint);
+            RectF safe=viewport();
             if(grid){paint.setColor(0x244f6478);float step=gridSize*unit();if(step>0){for(float x=safe.left;x<=safe.right;x+=step)out.drawLine(x,safe.top,x,safe.bottom,paint);for(float y=safe.top;y<=safe.bottom;y+=step)out.drawLine(safe.left,y,safe.right,y,paint);}paint.setColor(0x707c94ad);out.drawLine(safe.centerX(),safe.top,safe.centerX(),safe.bottom,paint);out.drawLine(safe.left,safe.centerY(),safe.right,safe.centerY(),paint);}paint.setStyle(Paint.Style.FILL);
             if(guides&&dragging!=null){float[] target=guideTargets(dragging);paint.setColor(0xff55c9eb);paint.setStrokeWidth(dp(1));
                 if(Float.isFinite(target[0]))out.drawLine(target[0],safe.top,target[0],safe.bottom,paint);
@@ -269,9 +265,11 @@ public final class TouchEditorActivity extends Activity {
             for(int i=0;i<controls.length();i++){
                 JSONObject c=controls.optJSONObject(i);String key=key(c);TouchLayoutDocument.Entry e=document.get(key);float x=x(c),y=y(c),r=radius(c);
                 boolean stick=xbox?c.optString("id").endsWith("_stick"):c.optString("kind").equals("stick");
-                paint.setStyle(Paint.Style.FILL);paint.setColor(0x60121212);out.drawCircle(x,y,r,paint);
+                float alpha=e.hidden?0:e.opacity*buttonOpacity*((c.optString("id").equals("camera")||xbox&&c.optString("id").equals("right_stick"))?cameraOpacity:1);
+                paint.setStyle(Paint.Style.FILL);paint.setColor(faded(0x60121212,alpha*(!xbox&&stick?.9f:1)));out.drawCircle(x,y,r,paint);
+                if(iconOutline&&!stick){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(Math.max(1,r*.025f));paint.setColor(faded(0xe1c2c2c2,alpha));out.drawCircle(x,y,r,paint);paint.setStyle(Paint.Style.FILL);}
                 paint.setStyle(Paint.Style.FILL);
-                if(stick){paint.setColor(0xbec2c2c2);out.drawCircle(x,y,r*.30f,paint);
+                if(stick){paint.setColor(faded(xbox?0xbec2c2c2:0xaac2c2c2,alpha));out.drawCircle(x,y,r*.30f,paint);
                     gripBounds.set(x-r*.41f,y-r*.41f,x+r*.41f,y+r*.41f);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(r*.06f);
                     for(int mark=0;mark<4;mark++)out.drawArc(gripBounds,mark*90-22,44,false,paint);paint.setStyle(Paint.Style.FILL);}
                 else{
@@ -279,18 +277,29 @@ public final class TouchEditorActivity extends Activity {
                     if(image!=null){float half=r*(xbox?1f:.82f);
                         int tint=0xffc2c2c2;
                         if(xbox)switch(c.optString("id")){case "a":tint=0xff41be50;break;case "b":tint=0xffdc3c3c;break;case "x":tint=0xff4b91f0;break;case "y":tint=0xfff5cd32;break;}
-                        if(iconOutline){paint.setColorFilter(outlineTint);paint.setAlpha(Math.round(230*Math.max(.2f,e.opacity)));float stroke=Math.max(1,half*.055f);for(int oy=-1;oy<=1;oy++)for(int ox=-1;ox<=1;ox++)if(ox!=0||oy!=0)out.drawBitmap(image,null,new RectF(x-half+ox*stroke,y-half+oy*stroke,x+half+ox*stroke,y+half+oy*stroke),paint);}
-                        paint.setColorFilter(xbox?xboxTints.computeIfAbsent(tint,color->new PorterDuffColorFilter(color,PorterDuff.Mode.SRC_IN)):iconTint);paint.setAlpha(Math.round((xbox?170:205)*Math.max(.2f,e.opacity)));out.drawBitmap(image,null,new RectF(x-half,y-half,x+half,y+half),paint);paint.setColorFilter(null);paint.setAlpha(255);}
-                    else{paint.setColor(0xffdedede);paint.setTextAlign(Paint.Align.CENTER);paint.setTextSize(Math.max(9,Math.min(dp(16),r*.7f)));out.drawText(c.optString("label"),x,y-(paint.ascent()+paint.descent())*.5f,paint);}
+
+                        paint.setColorFilter(xbox?xboxTints.computeIfAbsent(tint,color->new PorterDuffColorFilter(color,PorterDuff.Mode.SRC_IN)):iconTint);paint.setAlpha(Color.alpha(faded(xbox&&Arrays.asList("a","b","x","y").contains(c.optString("id"))?0xaa000000:0xe1000000,alpha)));out.drawBitmap(image,null,new RectF(x-half,y-half,x+half,y+half),paint);paint.setColorFilter(null);paint.setAlpha(255);}
+                    else{paint.setColor(faded(0xffdedede,alpha));paint.setTextAlign(Paint.Align.CENTER);paint.setTextSize(Math.max(9,Math.min(dp(16),r*.7f)));out.drawText(c.optString("label"),x,y-(paint.ascent()+paint.descent())*.5f,paint);}
                 }
-                paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(key.equals(selectedKey)?3:2);paint.setColor(e.hidden?0xfff65a5a:0xfff6cf5c);out.drawCircle(x,y,r*1.12f,paint);
-                paint.setStyle(Paint.Style.FILL);paint.setColor(0xffdedede);paint.setTextAlign(Paint.Align.CENTER);
+                if(hitAreas||key.equals(selectedKey)||e.hidden){
+                    paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(key.equals(selectedKey)?dp(1.5f):dp(.6f));paint.setColor(e.hidden?0xfff65a5a:key.equals(selectedKey)?0xffdfc28a:0x9055c9eb);out.drawCircle(x,y,r*(hitAreas?(xbox?1.4f:stick?1.5f:1.35f):1f),paint);
+                }
+                paint.setStyle(Paint.Style.FILL);paint.setColor(faded(0xffffffff,alpha*.95f));paint.setTextAlign(Paint.Align.CENTER);
                 String hint=c.optString("hint");float textY=y+r+Math.max(2,unit()*4);
                 if(!xbox&&hints&&!hint.isEmpty()){
                     paint.setTextSize(Math.max(8,Math.min(r*.36f,19*unit())));textY=Math.min(textY,getHeight()-paint.descent()+paint.ascent());out.drawText(hint,x,textY-paint.ascent(),paint);textY+=paint.getTextSize()*1.2f;
                 }
                 if(!xbox&&actionNames){paint.setTextSize(Math.max(9,Math.min(r*.30f,17*unit())));out.drawText(c.optString("label"),x,Math.min(textY-paint.ascent(),getHeight()-paint.descent()),paint);}
             }
+        }
+        private int faded(int color,float opacity){
+            float factor=xbox?opacity:Math.max(0,Math.min(1,opacity));
+            return (color&0x00ffffff)|(Math.max(0,Math.min(255,(int)(Color.alpha(color)*factor)))<<24);
+        }
+        private float captureRadius(JSONObject control){boolean stick=xbox?control.optString("id").endsWith("_stick"):control.optString("kind").equals("stick");return radius(control)*(xbox?1.4f:stick?1.5f:1.35f);}
+        private String overlapLabel(JSONObject control){
+            int overlaps=0;JSONArray all=controls();for(int i=0;i<all.length();i++){JSONObject other=all.optJSONObject(i);if(key(other).equals(key(control))||document.get(key(other)).hidden)continue;if(Math.hypot(x(control)-x(other),y(control)-y(other))<captureRadius(control)+captureRadius(other))overlaps++;}
+            return overlaps==0?"\nNo overlapping buttons":"\nOverlaps "+overlaps+" control"+(overlaps==1?"":"s");
         }
         // A guide only attracts controls already within a small screen-space radius.
         private float[] guideTargets(JSONObject control){
@@ -328,7 +337,7 @@ public final class TouchEditorActivity extends Activity {
                 float px=event.getX(index),py=event.getY(index);TouchLayoutDocument.Entry e=document.get(selectedKey);
                 float sign=dragging.optString("anchor").equals("right")?-1:1;
                 float dx=finite(e.dx+sign*(px-lastX)/unit(),-2000,2000,0),dy=finite(e.dy+(py-lastY)/unit(),-800,800,0);
-                moved|=dx!=e.dx||dy!=e.dy;dirty|=dx!=e.dx||dy!=e.dy;e.dx=dx;e.dy=dy;lastX=px;lastY=py;invalidate();return true;
+                moved|=dx!=e.dx||dy!=e.dy;dirty|=dx!=e.dx||dy!=e.dy;e.dx=dx;e.dy=dy;lastX=px;lastY=py;if(hitAreas)updateSelection();invalidate();return true;
             }
             if(action==MotionEvent.ACTION_CANCEL||action==MotionEvent.ACTION_UP||(action==MotionEvent.ACTION_POINTER_UP&&event.getPointerId(event.getActionIndex())==pointer)){
                 if(action!=MotionEvent.ACTION_CANCEL)applySnap();cancelDrag();invalidate();if(action!=MotionEvent.ACTION_CANCEL)performClick();return true;

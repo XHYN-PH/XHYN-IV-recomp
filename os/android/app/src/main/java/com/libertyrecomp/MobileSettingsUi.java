@@ -62,7 +62,7 @@ final class MobileSettingsUi {
         new Choice("gta4_phone_gyro_invert_y","Invert gyro vertically","false",false,"false","true"),
         new Choice("gta4_touch_aim_hold_lock","Hold-to-lock aim","true",false,"true","false"),
         new Choice("gta4_touch_aim_hold_seconds","Aim lock hold duration","0.4",false,.2,1.5,.05),
-        new Choice("gta4_touch_icon_outline","Touch icon outline","false",false,"false","true"),
+        new Choice("gta4_touch_icon_outline","Button circle outline","false",false,"false","true"),
         new Choice("gta4_touch_animations","Button animations","true",false,"true","false"),
         new Choice("gta4_phone_rumble_strength","Phone vibration","0.5",false,0,1,.05),
         new Choice("gta4_touch_camera","Camera movement","swipe",false,"swipe","stick"),
@@ -101,6 +101,7 @@ final class MobileSettingsUi {
     static final Set<String> KEYS=new LinkedHashSet<>();
     static {for(Choice c:GRAPHICS)KEYS.add(c.key);for(Choice c:TOUCH)KEYS.add(c.key);for(Choice c:PERFORMANCE)KEYS.add(c.key);}
     static AlertDialog graphics(Activity a,File data,Runtime runtime){return show(a,data,runtime,false,null);}
+    static AlertDialog graphics(Activity a,File data,Runtime runtime,Runnable logs){return show(a,data,runtime,false,null,logs);}
     static AlertDialog touch(Activity a,File data,Runtime runtime){return touch(a,data,runtime,xbox->a.startActivity(new Intent(a,TouchEditorActivity.class).putExtra("xbox",xbox)));}
     static AlertDialog touch(Activity a,File data,Runtime runtime,java.util.function.Consumer<Boolean> edit){return show(a,data,runtime,true,edit);}
     private static boolean restart(Choice c,Map<String,String> before){return c.restart||(c.key.equals("gta4_native_anti_aliasing")&&!Arrays.asList("off","fxaa","smaa").contains(before.get(c.key)));}
@@ -113,6 +114,9 @@ final class MobileSettingsUi {
         return "Video";
     }
     private static AlertDialog show(Activity a,File data,Runtime runtime,boolean touch,java.util.function.Consumer<Boolean> edit){
+        return show(a,data,runtime,touch,edit,null);
+    }
+    private static AlertDialog show(Activity a,File data,Runtime runtime,boolean touch,java.util.function.Consumer<Boolean> edit,Runnable logs){
         final Map<String,String> saved;
         try{if(runtime==null)MobileConfig.migrateRemovedUpscaler(MobileConfig.file(data));saved=MobileConfig.read(MobileConfig.file(data));saved.putAll(PendingSettings.read(data));}
         catch(IOException e){Toast.makeText(a,"Cannot read settings: "+e.getMessage(),Toast.LENGTH_LONG).show();return null;}
@@ -147,6 +151,16 @@ final class MobileSettingsUi {
             state.scroll.put(selected[0],scroll.getScrollY());if(before.equals(draft))return true;
             new AlertDialog.Builder(a).setTitle("Unsaved settings").setMessage("Save your changes before leaving?").setPositiveButton("Save",(d,w)->{if(commit.getAsBoolean())current[0].dismiss();}).setNegativeButton("Discard",(d,w)->current[0].dismiss()).setNeutralButton("Keep editing",null).show();return false;
         };
+        if(logs!=null){
+            Button reports=ModernUi.icon(a,"Logs","diagnostics",false);reports.setContentDescription("Logs & troubleshooting");
+            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-2,ModernUi.dp(a,36));rp.rightMargin=ModernUi.dp(a,8);footer.addView(reports,1,rp);
+            reports.setOnClickListener(v->{Runnable leave=()->{current[0].dismiss();logs.run();};
+                if(before.equals(draft)){leave.run();return;}
+                new AlertDialog.Builder(a).setTitle("Unsaved settings").setMessage("Save your changes before opening Logs?")
+                    .setPositiveButton("Save",(d,w)->{if(commit.getAsBoolean())leave.run();})
+                    .setNegativeButton("Discard",(d,w)->leave.run()).setNeutralButton("Keep editing",null).show();
+            });
+        }
         java.util.function.Consumer<Choice> explain=c->{helpTitle.setText(c.label.toUpperCase(Locale.ROOT));helpText.setText(guide(c.key)+"\n\nDefault: "+(c.values==null?numericLabel(c,Double.parseDouble(c.initial)):pretty(c.key,c.initial))+"\n\n"+(c.restart?"Saved for the next launch. You can quit after saving to apply it.":"Applies when you save.")+(c.key.equals("gta4_present_mode")&&runtime!=null?"\n\nActive presentation: "+runtime.get("gta4_session_present_mode"):"")+(c.key.equals("gta4_native_anti_aliasing")&&runtime!=null?"\n\n"+activeAa(runtime):""));};
         final java.util.function.Consumer<Boolean> editor=edit!=null?edit:runtime==null?xbox->a.startActivity(new Intent(a,TouchEditorActivity.class).putExtra("xbox",xbox)):null;
         ArrayList<Button> tabButtons=new ArrayList<>();
@@ -160,14 +174,28 @@ final class MobileSettingsUi {
                 boolean restart=restart(c,before);boolean enabled=(!c.key.startsWith("gta4_phone_gyro")||phoneGyroAvailable(a))&&(!c.key.equals("gta4_native_smaa_quality")||"smaa".equals(draft.get("gta4_native_anti_aliasing")))&&(!c.key.startsWith("gta4_fsr1_")||"fsr1".equals(draft.get("gta4_native_upscaler")));
                 LinearLayout row=new LinearLayout(a);row.setGravity(Gravity.CENTER_VERTICAL);row.setBaselineAligned(false);row.setMinimumHeight(ModernUi.dp(a,42));row.setPadding(ModernUi.dp(a,9),ModernUi.dp(a,3),ModernUi.dp(a,9),ModernUi.dp(a,3));row.setBackground(ModernUi.surface(a,0xff202123,10));
                 TextView label=ModernUi.text(a,c.label+(restart?" · restart":""),14,enabled?ModernUi.TEXT:ModernUi.MUTED);label.setFocusable(true);row.addView(label,new LinearLayout.LayoutParams(0,-2,1.1f));label.setOnClickListener(v->explain.accept(c));label.setOnFocusChangeListener((v,on)->{if(on)explain.accept(c);});
-                if(c.values!=null){Button value=ModernUi.button(a,pretty(c.key,draft.get(c.key)),false);value.setEnabled(enabled);row.addView(value,new LinearLayout.LayoutParams(0,ModernUi.dp(a,36),1));value.setOnFocusChangeListener((v,on)->{if(on)explain.accept(c);});value.setOnClickListener(v->{explain.accept(c);String[] labels=new String[c.values.length];for(int i=0;i<labels.length;i++)labels[i]=pretty(c.key,c.values[i]);ModernUi.choose(a,c.label,labels,Arrays.asList(c.values).indexOf(draft.get(c.key)),i->{draft.put(c.key,c.values[i]);value.setText(labels[i]);updatePending.run();render[0].run();});});}
+                if(c.values!=null){
+                    Button value=ModernUi.button(a,pretty(c.key,draft.get(c.key)),false);value.setEnabled(enabled);
+                    row.addView(value,new LinearLayout.LayoutParams(0,ModernUi.dp(a,36),1));
+                    value.setOnFocusChangeListener((v,on)->{if(on)explain.accept(c);});
+                    value.setOnClickListener(v->{
+                        explain.accept(c);String[] labels=new String[c.values.length];
+                        for(int i=0;i<labels.length;i++)labels[i]=pretty(c.key,c.values[i]);
+                        ModernUi.choose(a,c.label,labels,Arrays.asList(c.values).indexOf(draft.get(c.key)),i->{
+                            state.scroll.put(selected[0],scroll.getScrollY());draft.put(c.key,c.values[i]);updatePending.run();render[0].run();
+                            rows.post(()->{for(int j=0;j<rows.getChildCount();j++)if(c.key.equals(rows.getChildAt(j).getTag())){
+                                View target=((LinearLayout)rows.getChildAt(j)).getChildAt(1);target.requestFocus();break;
+                            }});
+                        });
+                    });
+                }
                 else{
                     double parsed;try{parsed=Double.parseDouble(draft.get(c.key));if(!Double.isFinite(parsed))throw new NumberFormatException();}catch(Exception e){parsed=Double.parseDouble(c.initial);}
                     LinearLayout field=new LinearLayout(a);field.setOrientation(LinearLayout.HORIZONTAL);field.setGravity(Gravity.CENTER_VERTICAL);field.setBaselineAligned(false);row.addView(field,new LinearLayout.LayoutParams(0,-2,1.5f));TextView amount=ModernUi.text(a,numericLabel(c,parsed),13,ModernUi.ACCENT);amount.setPadding(0,0,0,ModernUi.dp(a,3));amount.setFocusable(true);amount.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);field.addView(amount,new LinearLayout.LayoutParams(ModernUi.dp(a,65),ModernUi.dp(a,36)));SeekBar slider=new SeekBar(a);slider.setMax((int)Math.round((c.max-c.min)/c.step));slider.setProgress((int)Math.round((Math.max(c.min,Math.min(c.max,parsed))-c.min)/c.step));slider.setEnabled(enabled);ModernUi.tint(slider);field.addView(slider,new LinearLayout.LayoutParams(0,ModernUi.dp(a,36),1));
                     slider.setOnFocusChangeListener((v,on)->{if(on)explain.accept(c);});slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar bar,int value,boolean user){if(user){double n=c.min+value*c.step;draft.put(c.key,number(n));amount.setText(numericLabel(c,n));explain.accept(c);updatePending.run();}}public void onStartTrackingTouch(SeekBar b){explain.accept(c);}public void onStopTrackingTouch(SeekBar b){}});
                     amount.setOnClickListener(v->{if(!enabled)return;explain.accept(c);EditText input=new EditText(a);input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL|android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);input.setText(draft.get(c.key));new AlertDialog.Builder(a).setTitle(c.label+" ("+c.min+"–"+c.max+")").setView(input).setPositiveButton("Apply",(d,w)->{try{double n=Double.parseDouble(input.getText().toString());if(!Double.isFinite(n))throw new NumberFormatException();n=Math.max(c.min,Math.min(c.max,n));slider.setProgress((int)Math.round((n-c.min)/c.step));draft.put(c.key,number(c.min+slider.getProgress()*c.step));amount.setText(numericLabel(c,Double.parseDouble(draft.get(c.key))));updatePending.run();}catch(Exception e){Toast.makeText(a,"Enter a valid number.",Toast.LENGTH_SHORT).show();}}).setNegativeButton("Cancel",null).show();});
                 }
-                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=ModernUi.dp(a,4);rows.addView(row,lp);
+                row.setTag(c.key);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=ModernUi.dp(a,8);rows.addView(row,lp);
             }
             if(count==0)rows.addView(ModernUi.text(a,"No settings match this search.",14,ModernUi.MUTED));updatePending.run();scroll.post(()->scroll.scrollTo(0,state.scroll.getOrDefault(selected[0],0)));
         };
@@ -190,7 +218,7 @@ final class MobileSettingsUi {
             case "gta4_phone_gyro_smoothing":return "Filters small sensor vibrations. Higher values smooth movement but add response delay. Zero responds directly.";
             case "gta4_phone_gyro_invert_x":return "Reverses horizontal camera movement from the phone gyroscope.";
             case "gta4_phone_gyro_invert_y":return "Reverses vertical camera movement from the phone gyroscope.";
-            case "gta4_touch_icon_outline":return "Adds a dark outline following the supplied glyph shapes. Optional; touch positions and sizes stay the same.";
+            case "gta4_touch_icon_outline":return "Adds an outline around each circular touch button. Icons stay clean; positions and hit areas are unchanged.";
             case "gta4_overlay_edge_gap":return "Gap from the usable screen edge. Cutout and gesture safety areas are retained.";
             case "gta4_performance_overlay":return "Shows publisher FPS and average frame interval while playing. Detailed also shows app RAM, thermal status and effective graphics. These are game publications, not a physical display FPS measurement.";
             case "gta4_overlay_position":return "Places the performance overlay in a screen corner, inside the safe area. Top positions stay below the menu controls.";

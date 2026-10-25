@@ -13,12 +13,36 @@ final class TurnipSettingsUi {
   if(playing){Toast.makeText(a,"Quit the game before changing driver settings.",Toast.LENGTH_LONG).show();return;}
   final String mode=selected(data);
   if(!DriverBridge.isTurnip(data,mode)){Toast.makeText(a,"Select a Turnip driver to edit its options.",Toast.LENGTH_LONG).show();return;}
-  final Map<String,String> v;try{v=values(data);}catch(IOException e){Toast.makeText(a,e.getMessage(),Toast.LENGTH_LONG).show();return;}
-  LinearLayout body=new LinearLayout(a);body.setOrientation(LinearLayout.VERTICAL);body.addView(ModernUi.text(a,"Options for "+mode+" only. Applies next launch. Forced modes are requests; a source-forced policy can ignore them. env.txt keeps its final override. Driver shader cache and the game's pipeline cache are separate.",13,ModernUi.MUTED));
-  String[] keys={"rendering","disk_cache","cache_size"},labels={"Rendering policy","Driver disk shader cache","Driver cache limit"};String[][] options={{"launcher","auto","sysmem","gmem"},{"true","false"},{"128M","256M","512M","1G"}};
-  for(int n=0;n<keys.length;n++){final int i=n;Button b=ModernUi.button(a,labels[i]+": "+v.getOrDefault(keys[i],i==0?"launcher":i==1?"true":"256M"),false);body.addView(b,new LinearLayout.LayoutParams(-1,ModernUi.dp(a,42)));b.setOnClickListener(x->ModernUi.choose(a,labels[i],options[i],Arrays.asList(options[i]).indexOf(v.get(keys[i])),choice->{v.put(keys[i],options[i][choice]);b.setText(labels[i]+": "+options[i][choice]);}));}
-  ModernUi.action(a,body,"Reset driver options",()->{v.clear();v.put("rendering","launcher");v.put("disk_cache","true");v.put("cache_size","256M");Toast.makeText(a,"Defaults selected. Save to apply.",Toast.LENGTH_SHORT).show();});
-  ModernUi.dialog(a,"Advanced Turnip",body,"Save",()->{try{DriverState.saveOptions(data,mode,v);Toast.makeText(a,"Driver options saved for next launch.",Toast.LENGTH_LONG).show();}catch(IOException e){Toast.makeText(a,e.getMessage(),Toast.LENGTH_LONG).show();}}).show();
+  final Map<String,String> draft;
+  try{draft=new LinkedHashMap<>(values(data));}catch(IOException e){Toast.makeText(a,e.getMessage(),Toast.LENGTH_LONG).show();return;}
+  String[] keys={"rendering","disk_cache","cache_size"};
+  String[] labels={"Rendering policy","Driver disk shader cache","Driver cache limit"};
+  String[] defaults={"launcher","true","256M"};
+  String[][] values={{"launcher","auto","sysmem","gmem"},{"true","false"},{"128M","256M","512M","1G"}};
+  String[][] names={{"Launcher default","Automatic","System memory","Tile memory"},{"On","Off"},{"128 MB","256 MB","512 MB","1 GB"}};
+  for(int i=0;i<keys.length;i++)draft.putIfAbsent(keys[i],defaults[i]);
+  Map<String,String> original=new LinkedHashMap<>(draft);
+  LinearLayout body=new LinearLayout(a);body.setOrientation(LinearLayout.VERTICAL);
+  body.addView(ModernUi.text(a,"Applies to the selected Turnip driver on the next launch. Driver shader cache and the game's pipeline cache are separate.",13,ModernUi.MUTED));
+  Button[] buttons=new Button[keys.length];
+  Runnable refresh=()->{for(int i=0;i<keys.length;i++){int n=Arrays.asList(values[i]).indexOf(draft.get(keys[i]));buttons[i].setText(labels[i]+": "+(n<0?draft.get(keys[i]):names[i][n]));}};
+  for(int n=0;n<keys.length;n++){
+   final int i=n;Button button=ModernUi.button(a,"",false);button.setGravity(android.view.Gravity.START|android.view.Gravity.CENTER_VERTICAL);buttons[i]=button;
+   LinearLayout.LayoutParams row=new LinearLayout.LayoutParams(-1,ModernUi.dp(a,44));row.topMargin=ModernUi.dp(a,8);body.addView(button,row);
+   button.setOnClickListener(v->ModernUi.choose(a,labels[i],names[i],Arrays.asList(values[i]).indexOf(draft.get(keys[i])),choice->{draft.put(keys[i],values[i][choice]);refresh.run();}));
+  }
+  ModernUi.action(a,body,"Reset driver options",()->new AlertDialog.Builder(a).setTitle("Reset driver options?").setMessage("Select defaults for this driver. Save to apply.").setNegativeButton("Cancel",null).setPositiveButton("Reset",(d,w)->{for(int i=0;i<keys.length;i++)draft.put(keys[i],defaults[i]);refresh.run();}).show());
+  refresh.run();
+  java.util.function.BooleanSupplier save=()->{try{DriverState.saveOptions(data,mode,draft);original.clear();original.putAll(draft);return true;}catch(IOException e){Toast.makeText(a,e.getMessage(),Toast.LENGTH_LONG).show();return false;}};
+  AlertDialog[] dialog={null};
+  java.util.function.BooleanSupplier close=()->{
+   if(original.equals(draft))return true;
+   new AlertDialog.Builder(a).setTitle("Unsaved driver options").setMessage("Save your changes before leaving?")
+    .setPositiveButton("Save",(d,w)->{if(save.getAsBoolean())dialog[0].dismiss();})
+    .setNegativeButton("Discard",(d,w)->dialog[0].dismiss()).setNeutralButton("Keep editing",null).show();return false;
+  };
+  ScrollView scroll=new ScrollView(a);scroll.addView(body);
+  dialog[0]=ModernUi.screen(a,"Advanced Turnip",scroll,"Save",()->{if(save.getAsBoolean())Toast.makeText(a,"Driver options saved for next launch.",Toast.LENGTH_SHORT).show();},close);dialog[0].show();
  }
  private TurnipSettingsUi(){}
 }

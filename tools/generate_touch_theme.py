@@ -32,6 +32,7 @@ def line(d,width=8):
 arrow = path('M16 50 47 23V40H84V60H47V77Z')
 person_head = circle(56,22,11)
 icons = {
+ 'interact': path('M30 82V49L19 44Q12 38 18 32Q22 28 29 34L37 40V16Q37 7 45 7Q52 7 52 16V38L57 34Q64 29 68 36Q76 32 80 40Q89 39 89 50L80 80Q77 91 65 92H44Q35 91 30 82Z'),
  'phone': path('M34 9H66Q74 9 74 17V83Q74 91 66 91H34Q26 91 26 83V17Q26 9 34 9Z M36 20V48H64V20Z M36 58V65H43V58Z M47 58V65H54V58Z M58 58V65H65V58Z M36 71V78H43V71Z M47 71V78H54V71Z M58 71V78H65V71Z'),
  'cover': circle(36,23,10)+path('M32 36 44 35 56 48 49 57 37 47 29 60 47 60 52 70 43 89H29L37 73H20Q11 70 17 58Z')+rect(65,33,22,56,2),
  'crouch': person_head+path('M48 35 61 35 73 48 85 49 83 60 66 59 56 49 44 62 66 62Q75 62 70 74L58 91H44L53 74H38L25 87H11L31 61Z'),
@@ -99,12 +100,12 @@ def main():
     for name,body in icons.items():
         svg=f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="white">{body}</svg>\n'
         (SOURCE/f'{name}.svg').write_text(svg)
-        if name not in imported:cairosvg.svg2png(bytestring=svg.encode(),write_to=str(OUT/f'{name}.png'),output_width=256,output_height=256)
+        if name not in imported or name in {"pistol","eye","interact"}:cairosvg.svg2png(bytestring=svg.encode(),write_to=str(OUT/f'{name}.png'),output_width=256,output_height=256)
     # Xbox Start keeps its three-line symbol when mobile Menu uses an imported pause glyph.
     menu_svg=(SOURCE/'menu.svg').read_bytes()
     cairosvg.svg2png(bytestring=menu_svg,write_to=str(OUT/'xbox_menu.png'),output_width=256,output_height=256)
-    (SOURCE/'README.md').write_text('The SVG files are original XHYN IV geometric glyphs under the project license.\nActive imported PNGs are preserved separately: see es2-provenance.json for the current user-provided archive and gta3-provenance.json for the previous import. Their creator/redistribution license is not established by the code license.\nRegenerate original glyphs with `python3 tools/generate_touch_theme.py` (CairoSVG required). Reimport the current set with `python3 tools/import_es2_touch_icons.py --zip /path/to/es2.zip`.\nDiscs, tint and animations are drawn by the app; glyph backgrounds are transparent.\n')
-    print(f'Prepared {len(icons)} glyphs; preserved {len(imported)} imported variants')
+    (SOURCE/'README.md').write_text('The SVG files are original XHYN IV geometric glyphs under the project license.\nImported PNG provenance is retained separately; pistol, eye and interact use the original SVGs: see es2-provenance.json for the current user-provided archive and gta3-provenance.json for the previous import. Their creator/redistribution license is not established by the code license.\nRegenerate original glyphs with `python3 tools/generate_touch_theme.py` (CairoSVG required). Reimport the current set with `python3 tools/import_es2_touch_icons.py --zip /path/to/es2.zip`.\nDiscs, tint and animations are drawn by the app; glyph backgrounds are transparent.\n')
+    print(f'Prepared {len(icons)} glyphs; retained imported variants except the documented original pistol/eye/interact replacements')
     if args.preview:preview(args.preview);print(args.preview)
 
 if __name__=='__main__':main()

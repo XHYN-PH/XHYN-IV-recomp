@@ -73,6 +73,15 @@ public class AndroidLogFilesTest {
         assert !new File(logs,chosen).exists()&&!large.exists()&&!profile.exists();
         assert !new File(logs,chosen+".1").exists()&&unrelated.isFile()&&similarName.isFile();
         assert DebugLogArchive.sessions(root,fallback).length==1:"Only the latest log session should remain";
+        LauncherCrashReport.save(root,new ClassCastException("launcher menu cast"));
+        assert LauncherCrashReport.available(root);
+        ByteArrayOutputStream crashZip=new ByteArrayOutputStream();DebugLogArchive.write(crashZip,root,fallback,"launcher");
+        try(ZipInputStream zip=new ZipInputStream(new ByteArrayInputStream(crashZip.toByteArray()))){
+            assert zip.getNextEntry().getName().equals("launcher/launcher-crash.txt");
+            assert new String(zip.readAllBytes(),StandardCharsets.UTF_8).contains("launcher menu cast");
+            assert zip.getNextEntry()==null;
+        }
+        DebugLogArchive.clear(root,fallback);assert !LauncherCrashReport.available(root);
         System.out.println("Logcat startup failure/fallback, early file writes, bounded rotation, export failures and layout persistence passed");
     }
 }

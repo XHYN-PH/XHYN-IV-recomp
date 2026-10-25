@@ -22,6 +22,7 @@
 #include "input/gamepad_touch_overlay.h"
 #include "input/liberty_touch_overlay.h"
 #include "input/aim_hold_policy.h"
+#include "input/touch_theme.h"
 
 namespace rex::input::mnk {bool ReadVirtualControllerCompatibilityGamepad(uint32_t,X_INPUT_GAMEPAD&){return false;}}
 namespace rex::input {
@@ -65,11 +66,22 @@ static rex::input::X_INPUT_GAMEPAD Frame(bool draw=true) {
   rex::input::ReadTouchGamepad(0,&pad);
   ImGui::Render();return pad;
 }
+static unsigned ThemedImageIndices(){
+  unsigned count=0;const auto* data=ImGui::GetDrawData();
+  for(int i=0;i<data->CmdListsCount;++i)for(const auto& cmd:data->CmdLists[i]->CmdBuffer)
+    if(cmd.GetTexID()==static_cast<ImTextureID>(1))count+=cmd.ElemCount;
+  return count;
+}
 static void Touch(float x,float y,int id=1){fingers={{SDL_FingerID(id),x/1600,y/737,1}};}
 static void Release(){fingers.clear();Frame();}
 static void Mode(gta4::input::ContextTouchMode mode){Release();context.base_mode=mode;Frame();}
 
 int main(int argc,char** argv){
+  // Game render scaling, letterboxing and cutouts must not shrink Android controls.
+  for(const auto size:{std::array<float,2>{1600,737},{2048,921},{2400,1080}}){
+    const auto area=gta4::input::theme::FullscreenArea(size[0],size[1]);
+    assert(area[0]==0&&area[1]==0&&area[2]==size[0]&&area[3]==size[1]);
+  }
   {
     gta4::input::AimHoldPolicy aim;
     assert(aim.Update(true,100,400,true));
@@ -90,7 +102,7 @@ int main(int argc,char** argv){
   std::filesystem::remove_all(user_folder);std::filesystem::create_directories(user_folder);
   ImGui::CreateContext();auto& io=ImGui::GetIO();io.DisplaySize={1600,737};io.DeltaTime=1.0f/60;
   io.IniFilename=nullptr;io.Fonts->AddFontDefault();unsigned char* pixels;int w,h;
-  io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
+  io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);io.Fonts->SetTexID(static_cast<ImTextureID>(2));
   auto& service=rex::input::GetAbsolutePointerService();
   rex::ui::GuestOutputTransform transform;
   transform.revision=1;transform.surface_width=transform.host_render_target_width=transform.output_width=1600;
@@ -195,8 +207,10 @@ int main(int argc,char** argv){
     }
   }
   const int plain_vertices=ImGui::GetDrawData()->TotalVtxCount;
+  const unsigned plain_images=ThemedImageIndices();assert(plain_images>0);
   assert(rex::cvar::SetFlagByName("gta4_touch_icon_outline","true"));Frame();
   assert(ImGui::GetDrawData()->TotalVtxCount>plain_vertices);
+  assert(ThemedImageIndices()==plain_images); // Outline adds circle geometry, never extra glyph images.
   for(int list=0;list<ImGui::GetDrawData()->CmdListsCount;++list)
     for(const auto& vertex:ImGui::GetDrawData()->CmdLists[list]->VtxBuffer)
       assert(std::isfinite(vertex.pos.x)&&std::isfinite(vertex.pos.y)&&std::isfinite(vertex.uv.x)&&std::isfinite(vertex.uv.y));

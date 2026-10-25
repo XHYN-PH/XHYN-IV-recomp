@@ -144,7 +144,7 @@ extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_libertyrecomp_LibertyActivity_nativeTouchViewport(JNIEnv* env,jclass) {
   rex::input::TouchPresentationState p{};
   if(!rex::input::GetTouchPresentationState(&p)||!p.valid||p.logical_width<=0||p.logical_height<=0)return nullptr;
-  const jfloat values[6]={p.logical_safe_x/p.logical_width,p.logical_safe_y/p.logical_height,(p.logical_safe_x+p.logical_safe_width)/p.logical_width,(p.logical_safe_y+p.logical_safe_height)/p.logical_height,p.logical_width,p.logical_height};
+  const jfloat values[6]={0,0,1,1,p.logical_width,p.logical_height};
   auto result=env->NewFloatArray(6);if(result)env->SetFloatArrayRegion(result,0,6,values);return result;
 }
 extern "C" JNIEXPORT jlong JNICALL

@@ -41,6 +41,9 @@ jobs:
           python3 tools/check_android_ui.py
           --android-jar "$ANDROID_HOME/platforms/android-35/android.jar"
           --aapt2 "$ANDROID_HOME/build-tools/35.0.0/aapt2"
+      - name: Android menu interaction regressions
+        working-directory: os/android
+        run: ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest
       - name: Native ASan and UBSan regressions
         run: python3 tools/run_android_host_tests.py
       - name: Address shader rewrite and rejection checks

@@ -330,15 +330,6 @@ public class LibertyActivity extends SDLActivity {
         setHostMenu(true);
         nativeSetTouchLayout(xbox);
         Intent editor=new Intent(this,TouchEditorActivity.class);editor.putExtra("context",nativeTouchEditorContext());editor.putExtra("xbox",xbox);
-        try{
-            long generation=nativeTouchViewportGeneration();float[] viewport=nativeTouchViewport();
-            if(generation>0&&generation==nativeTouchViewportGeneration()&&TouchViewport.valid(viewport)){
-                String token=java.util.UUID.randomUUID().toString();java.util.Map<String,String> effective=new java.util.LinkedHashMap<>();
-                for(String key:ViewportIdentity.KEYS){String value=mRuntimeSettings.get(key);if(value!=null&&!value.isEmpty())effective.put(key,value);}
-                TouchViewport.save(mDataRoot,viewport,generation,token,ViewportIdentity.display(this),ViewportIdentity.settings(effective));
-                editor.putExtra("viewport_token",token);editor.putExtra("viewport_generation",generation);
-            }
-        }catch(IOException e){DebugLog.note("Touch viewport calibration unavailable: "+e.getMessage());}
         startActivityForResult(editor,REQUEST_TOUCH_EDITOR);
     }
     public void onNativeTouchEditorRequested(){

@@ -38,7 +38,7 @@ inline constexpr auto kRegistry = std::to_array<Entry>({
     {"gta4_cheat_achievements",Kind::kGameplay,"false","permit local achievement award events while cheats are used"},
     {"gta4_touch_aim_hold_lock",Kind::kSetting,"","long-hold mobile aim latch"},
     {"gta4_touch_aim_hold_seconds",Kind::kSetting,"","mobile aim latch hold duration"},
-    {"gta4_touch_icon_outline",Kind::kSetting,"","optional touch glyph outline"},
+    {"gta4_touch_icon_outline",Kind::kSetting,"","optional circular touch-button outline"},
     {"gta4_overlay_edge_gap",Kind::kSetting,"","overlay safe edge gap"},
     {"gta4_touch_animations",Kind::kSetting,"","touch-button press feedback"},
     {"gta4_safe_mode", Kind::kSetting, "", "safe-mode control"},

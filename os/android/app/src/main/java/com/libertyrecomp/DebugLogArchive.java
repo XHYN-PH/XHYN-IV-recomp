@@ -15,6 +15,7 @@ final class DebugLogArchive {
     /** Delete only app-owned diagnostics, including their rotated files and profiles. */
     static void clear(File primary,File fallback) throws IOException {
         for(File root:new File[]{primary,fallback}) {
+            java.nio.file.Files.deleteIfExists(LauncherCrashReport.file(root).toPath());
             File directory=new File(root,DebugLog.DIRECTORY);
             File[] files=directory.listFiles();if(files==null)continue;
             for(File file:files) {
@@ -48,6 +49,11 @@ final class DebugLogArchive {
         write(output,primary,fallback,names[0]);
     }
     static void write(OutputStream output,File primary,File fallback,String session) throws IOException {
+        if("launcher".equals(session)){
+            if(!LauncherCrashReport.available(primary))throw new IOException("The launcher report is no longer available.");
+            try(ZipOutputStream zip=new ZipOutputStream(output)){add(zip,LauncherCrashReport.file(primary),"launcher/launcher-crash.txt");}
+            return;
+        }
         if(session==null||!session.matches("debug-[0-9-]+\\.log"))throw new IOException("Invalid session.");
         File folder=new File(primary,"debug_logs");
         if(!new File(folder,session).isFile())folder=new File(fallback,"debug_logs");
@@ -63,7 +69,7 @@ final class DebugLogArchive {
                 }
             }
             File diagnostics=SessionHistory.directory(primary);
-            for(String name:new String[]{"last-session.properties","previous-exit.properties"}){File f=new File(diagnostics,name);if(f.isFile()&&!java.nio.file.Files.isSymbolicLink(f.toPath())&&f.length()<=65536)add(zip,f,"context/"+name);}
+            for(String name:new String[]{"last-session.properties","previous-exit.properties","previous-launcher-exit.properties","launcher-crash.txt"}){File f=new File(diagnostics,name);if(f.isFile()&&!java.nio.file.Files.isSymbolicLink(f.toPath())&&f.length()<=65536)add(zip,f,"context/"+name);}
             zip.putNextEntry(new ZipEntry("README.txt"));
             zip.write(("XHYN IV diagnostics. Selected session: "+session+"\nOnly the selected session logs are included. The context folder contains timestamped last-session and historical Android exit summaries, which may describe a different session. Large text logs retain startup and the latest entries with an omission marker. Publisher frame rate is not a measurement of displayed frames; publisher wall time includes waits. CSV benchmark data is kept complete.\n").getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();

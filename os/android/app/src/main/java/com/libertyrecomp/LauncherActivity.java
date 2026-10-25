@@ -113,6 +113,7 @@ public class LauncherActivity extends Activity {
         }
         File external = getExternalFilesDir(null);
         mDataRoot = external != null ? external : getFilesDir();
+        LauncherCrashCapture.install(mDataRoot);
         PreviousExitCapture.capture(this,mDataRoot);
         if(!gameRunning()){
             migrateTouchPreferences();migratePerformanceGraphics();try{MobileConfig.ensureDefaults(MobileConfig.file(mDataRoot));}catch(IOException e){Log.w(TAG,"Default settings deferred",e);}
@@ -220,10 +221,7 @@ public class LauncherActivity extends Activity {
     private TextView mLaunchSummary,mAchievementSummary;
     private String launchSummary(){
         try{java.util.Map<String,String> c=MobileConfig.read(MobileConfig.file(mDataRoot));c.putAll(PendingSettings.read(mDataRoot));String mode=readFirstLine(new File(mDataRoot,"driver.txt"));if(mode==null)mode="Automatic";String driver=BundledDrivers.ALL.containsKey(mode)?BundledDrivers.ALL.get(mode).label:mode.replace("custom:","");String summary=c.getOrDefault("resolution","720p")+" · Cap "+c.getOrDefault("gta4_frame_limit","30")+" FPS · "+c.getOrDefault("gta4_native_anti_aliasing","fxaa").toUpperCase(Locale.ROOT)+" / "+c.getOrDefault("gta4_native_upscaler","native")+"\n"+driver+" · Android "+Build.VERSION.RELEASE+" · "+GpuInfo.renderer();
-            ActivityManager manager=(ActivityManager)getSystemService(Context.ACTIVITY_SERVICE);if(manager!=null){ActivityManager.MemoryInfo memory=new ActivityManager.MemoryInfo();manager.getMemoryInfo(memory);summary+=String.format(Locale.ROOT,"\nFree RAM %.1f GB",memory.availMem/1073741824.0);}if(Build.VERSION.SDK_INT>=31)summary+=" · "+Build.SOC_MODEL;summary+=" · Preparation runs at startup";if(PendingSettings.pending(mDataRoot))summary+=" · Restart pending";
-            try{java.util.Properties last=SessionHistory.load(new File(SessionHistory.directory(mDataRoot),"last-session.properties"));double fps=SessionHistory.number(last,"fps",-1);if(fps>=0)summary+=String.format(Locale.ROOT,"\nLast session %.1f FPS · %.0f MB app RAM",fps,SessionHistory.number(last,"ram.mb",0));
-                if(last.containsKey("driver.actual"))summary+="\nLast rendered: "+last.getProperty("gpu","GPU unknown")+" · "+last.getProperty("driver.actual");
-                if(last.containsKey("gta4_native_preparation_status"))try{JSONObject prep=new JSONObject(last.getProperty("gta4_native_preparation_status"));summary+="\nLast preparation: "+prep.optString("outcome","unknown")+" · "+prep.optInt("ready")+" ready · "+prep.optInt("remaining")+" remaining";}catch(org.json.JSONException ignored){}}catch(IOException ignored){}
+            if(PendingSettings.pending(mDataRoot))summary+=" · Restart pending";
             return summary;
         }catch(Exception e){return "Configured graphics and driver apply when you play.";}
     }
@@ -236,7 +234,7 @@ public class LauncherActivity extends Activity {
         android.widget.FrameLayout canvas=new android.widget.FrameLayout(this);
         LauncherArtView artwork=new LauncherArtView(this);canvas.addView(artwork,new android.widget.FrameLayout.LayoutParams(-1,-1));
         View shade=new View(this);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xe808090a,0xa008090a,0x1808090a}));canvas.addView(shade,new android.widget.FrameLayout.LayoutParams(-1,-1));
-        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(26),dp(12),dp(26),dp(10));ModernUi.safeInsets(this,root,26,12);canvas.addView(root,new android.widget.FrameLayout.LayoutParams(-1,-1));
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);ModernUi.safeInsets(this,root,26,8,0);canvas.addView(root,new android.widget.FrameLayout.LayoutParams(-1,-1));
         ScrollView viewport=new ScrollView(this);viewport.setFillViewport(true);viewport.setVerticalScrollBarEnabled(false);
         LinearLayout block=new LinearLayout(this);block.setOrientation(LinearLayout.VERTICAL);block.setGravity(Gravity.BOTTOM);viewport.addView(block,new ScrollView.LayoutParams(-1,-1));
         int width=Math.min(dp(500),(int)(getResources().getDisplayMetrics().widthPixels*.48f));root.addView(viewport,new LinearLayout.LayoutParams(width,0,1));
@@ -257,12 +255,15 @@ public class LauncherActivity extends Activity {
             LinearLayout achievements=ModernUi.panel(this);achievements.setBackground(ModernUi.surface(this,0xc4181a1c,12));
             achievements.addView(ModernUi.text(this,"ACHIEVEMENTS",11,ModernUi.ACCENT));mAchievementSummary=ModernUi.text(this,"Prepare the installed game’s achievement list",14,ModernUi.TEXT);mAchievementSummary.setPadding(0,dp(6),0,dp(6));achievements.addView(mAchievementSummary);
             Button browse=ModernUi.icon(this,"View achievements","trophy",false);browse.setOnClickListener(v->showAchievements());achievements.addView(browse,new LinearLayout.LayoutParams(-1,dp(38)));
-            android.widget.FrameLayout.LayoutParams card=new android.widget.FrameLayout.LayoutParams(dp(235),-2,Gravity.RIGHT|Gravity.BOTTOM);card.setMargins(0,0,dp(26),dp(54));canvas.addView(achievements,card);ModernUi.enter(this,achievements,80);
+            android.widget.FrameLayout.LayoutParams card=new android.widget.FrameLayout.LayoutParams(dp(235),-2,Gravity.RIGHT|Gravity.BOTTOM);canvas.addView(achievements,card);
+            footer.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{android.widget.FrameLayout.LayoutParams p=(android.widget.FrameLayout.LayoutParams)achievements.getLayoutParams();int margin=canvas.getHeight()-root.getTop()-footer.getTop()+dp(8);if(p.bottomMargin!=margin||p.rightMargin!=root.getPaddingRight()){p.setMargins(0,0,root.getPaddingRight(),margin);achievements.setLayoutParams(p);}});
+            ModernUi.enter(this,achievements,0);
         }
-        ModernUi.enter(this,block,0);ModernUi.enter(this,footer,80);buildSecondaryPanels();return canvas;
+        footer.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->artwork.setNavigationTop(root.getTop()+footer.getTop()));
+        ModernUi.enter(this,block,0);buildSecondaryPanels();return canvas;
     }
     private void addFooterLink(LinearLayout links,String label,String url){
-        TextView link=ModernUi.text(this,label,12,ModernUi.ACCENT);link.setPadding(dp(10),dp(7),dp(3),dp(7));link.setMinHeight(dp(32));link.setGravity(Gravity.CENTER);link.setSingleLine(true);
+        TextView link=ModernUi.text(this,label,12,ModernUi.ACCENT);link.setPadding(dp(10),dp(4),dp(3),0);link.setMinHeight(dp(24));link.setGravity(Gravity.CENTER);link.setSingleLine(true);
         link.setContentDescription(label+", "+url);
         link.setFocusable(true);link.setOnClickListener(v->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception ignored){toast(url);}});links.addView(link);
     }
@@ -314,7 +315,7 @@ public class LauncherActivity extends Activity {
         if(panel.getParent() instanceof ViewGroup)((ViewGroup)panel.getParent()).removeView(panel);
         ModernUi.dialog(this,title,panel).show();
     }
-    private void showSettings(){MobileSettingsUi.graphics(this,mDataRoot,null);}
+    private void showSettings(){MobileSettingsUi.graphics(this,mDataRoot,null,()->showLogs());}
     private void showLogs(){
         LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
         panel.addView(ModernUi.text(this,"Play with logs records a report you can share after a problem. Previous logs are replaced automatically when the next game session starts. For an input capture, open the in-game menu → Diagnostics → Input test when ready.",14,ModernUi.MUTED));
@@ -323,12 +324,12 @@ public class LauncherActivity extends Activity {
         ModernUi.action(this,panel,"Recorded sessions & benchmarks",()->SessionResultsUi.show(this,mDataRoot));
         TextView latest=ModernUi.text(this,"",12,ModernUi.MUTED);panel.addView(latest);
         LinearLayout logActions=new LinearLayout(this);panel.addView(logActions);
-        ModernUi.gridAction(this,logActions,"Share latest log",()->exportLatestLog());
-        Button share=(Button)logActions.getChildAt(0);
+        Button share=ModernUi.gridAction(this,logActions,"Share latest log",()->exportLatestLog());
         final Runnable refreshLogs=()->{
             String[] sessions=DebugLogArchive.sessions(mDataRoot,getFilesDir());
-            latest.setText(sessions.length==0?"No saved log. Use Play with logs to create one.":"Latest saved log: "+sessions[0]+(gameRunning()?" · recording":""));
-            share.setEnabled(sessions.length>0);
+            boolean launcher=LauncherCrashReport.available(mDataRoot);
+            latest.setText(sessions.length==0?(launcher?"A launcher failure report is ready to share.":"No saved log. Use Play with logs to create one."):"Latest saved log: "+sessions[0]+(gameRunning()?" · recording":""));
+            share.setEnabled(sessions.length>0||launcher);
         };
         ModernUi.gridAction(this,logActions,"Delete saved logs",()->{
             if(gameRunning()){toast("Quit the game before deleting its log.");return;}
@@ -351,8 +352,8 @@ public class LauncherActivity extends Activity {
     }
     private void exportLatestLog(){
         String[] sessions=DebugLogArchive.sessions(mDataRoot,getFilesDir());
-        if(sessions.length==0){toast("Use Play with logs first.");return;}
-        mLogSession=sessions[0];Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);save.addCategory(Intent.CATEGORY_OPENABLE);
+        if(sessions.length==0&&!LauncherCrashReport.available(mDataRoot)){toast("Use Play with logs first.");return;}
+        mLogSession=sessions.length==0?"launcher":sessions[0];Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);save.addCategory(Intent.CATEGORY_OPENABLE);
         save.setType("application/zip");save.putExtra(Intent.EXTRA_TITLE,"XHYN-IV-"+mLogSession+".zip");
         try{startActivityForResult(save,REQUEST_DEBUG_EXPORT);}catch(Exception e){toast("No file picker is available.");}
     }

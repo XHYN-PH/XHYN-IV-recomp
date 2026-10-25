@@ -14,6 +14,9 @@ final class ModernUi {
     static final int BG=0xff080808,CARD=0xff151515,TEXT=0xfff4f1e8,MUTED=0xffaaa9a5,ACCENT=0xffdfc28a;
     static int dp(Activity a,float n){return Math.round(n*a.getResources().getDisplayMetrics().density);}
     static void safeInsets(Activity a,View view,int horizontal,int vertical){
+        safeInsets(a,view,horizontal,vertical,vertical);
+    }
+    static void safeInsets(Activity a,View view,int horizontal,int topPadding,int bottomPadding){
         view.setOnApplyWindowInsetsListener((v,insets)->{
             DisplayCutout cutout=insets.getDisplayCutout();
             int left,right,top,bottom;
@@ -28,7 +31,7 @@ final class ModernUi {
                 top=Math.max(fullscreen?0:insets.getSystemWindowInsetTop(),cutout==null?0:cutout.getSafeInsetTop());
                 bottom=Math.max(insets.getSystemWindowInsetBottom(),insets.getMandatorySystemGestureInsets().bottom);
             }
-            v.setPadding(dp(a,horizontal)+left,dp(a,vertical)+top,dp(a,horizontal)+right,dp(a,vertical)+bottom);return insets;
+            v.setPadding(dp(a,horizontal)+left,dp(a,topPadding)+top,dp(a,horizontal)+right,dp(a,bottomPadding)+bottom);return insets;
         });view.requestApplyInsets();
     }
     static void immersive(Window window){
@@ -39,12 +42,13 @@ final class ModernUi {
     static TextView text(Activity a,String value,int size,int color){TextView t=new TextView(a);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setTypeface(Typeface.create("sans-serif-condensed",Typeface.NORMAL));return t;}
     static boolean motion(android.content.Context a){return ValueAnimator.areAnimatorsEnabled()&&!UiPreferences.get(a,"reduce_motion");}
     static void enter(Activity a,View view,int delay){
-        if(!motion(a))return;
-        view.setAlpha(0);view.setTranslationY(dp(a,14));
-        view.animate().alpha(1).translationY(0).setStartDelay(delay).setDuration(240)
+        view.animate().cancel();view.setTranslationX(0);view.setTranslationY(0);
+        if(!motion(a)){view.setAlpha(1);return;}
+        view.setAlpha(0);
+        view.animate().alpha(1).setStartDelay(0).setDuration(120)
             .setInterpolator(new DecelerateInterpolator()).start();
     }
-    static void slideIn(Activity a,View view){if(!motion(a))return;view.setTranslationX(dp(a,110));view.setAlpha(0);view.animate().translationX(0).alpha(1).setDuration(230).setInterpolator(new DecelerateInterpolator()).start();}
+    static void slideIn(Activity a,View view){enter(a,view,0);}
     static LinearLayout panel(Activity a){LinearLayout p=new LinearLayout(a);p.setOrientation(LinearLayout.VERTICAL);int pad=dp(a,12);p.setPadding(pad,pad,pad,pad);p.setBackground(surface(a,CARD,14));return p;}
     static Button button(Activity a,String title,boolean primary){
         Button b=new Button(a){
@@ -55,9 +59,7 @@ final class ModernUi {
                     if(!enabled)background.jumpToCurrentState();
                 }
                 super.drawableStateChanged();
-                if(getWindowToken()!=null){float scale=isPressed()&&isEnabled()?.96f:1;
-                    if(motion(a))animate().scaleX(scale).scaleY(scale).setStartDelay(0).setDuration(90).start();
-                    else{animate().cancel();setScaleX(1);setScaleY(1);}}
+                if(getWindowToken()!=null){setScaleX(1);setScaleY(1);}
             }
             @Override protected void onDetachedFromWindow(){animate().cancel();super.onDetachedFromWindow();}
         };b.setText(title);b.setAllCaps(false);b.setTextSize(14);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
@@ -71,11 +73,11 @@ final class ModernUi {
     static Button icon(Activity a,String title,String glyph,boolean primary){Button b=button(a,title,primary);UiIcon icon=new UiIcon(glyph,primary?BG:TEXT);int size=dp(a,19);icon.setBounds(0,0,size,size);b.setCompoundDrawables(icon,null,null,null);b.setCompoundDrawablePadding(dp(a,9));return b;}
     static Button iconButton(Activity a,String glyph,String description){Button b=button(a,"",false);UiIcon icon=new UiIcon(glyph,TEXT);int size=dp(a,20);icon.setBounds(0,0,size,size);b.setCompoundDrawables(null,null,null,null);b.setBackground(new android.graphics.drawable.LayerDrawable(new Drawable[]{b.getBackground(),icon}));android.graphics.drawable.LayerDrawable layer=(android.graphics.drawable.LayerDrawable)b.getBackground();layer.setLayerGravity(1,Gravity.CENTER);layer.setLayerSize(1,size,size);b.setContentDescription(description);return b;}
     static void action(Activity a,LinearLayout panel,String title,Runnable run){Button b=button(a,title,false);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(a,42));lp.topMargin=dp(a,6);panel.addView(b,lp);b.setOnClickListener(v->run.run());}
-    static void gridAction(Activity a,LinearLayout grid,String title,Runnable run){
+    static Button gridAction(Activity a,LinearLayout grid,String title,Runnable run){
         View last=grid.getChildCount()==0?null:grid.getChildAt(grid.getChildCount()-1);
         LinearLayout row=last instanceof LinearLayout&&"action-row".equals(last.getTag())?(LinearLayout)last:null;
         if(row==null||row.getChildCount()==2){row=new LinearLayout(a);row.setTag("action-row");row.setGravity(Gravity.CENTER_VERTICAL);grid.addView(row,new LinearLayout.LayoutParams(-1,-2));}
-        Button b=button(a,title,false);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(a,42),1);lp.topMargin=dp(a,6);if(row.getChildCount()>0)lp.leftMargin=dp(a,8);row.addView(b,lp);b.setOnClickListener(v->run.run());
+        Button b=button(a,title,false);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(a,42),1);lp.topMargin=dp(a,8);if(row.getChildCount()>0)lp.leftMargin=dp(a,8);row.addView(b,lp);b.setOnClickListener(v->run.run());return b;
     }
     static AlertDialog dialog(Activity a,String title,View body){
         return dialog(a,title,body,null,null);
@@ -84,6 +86,7 @@ final class ModernUi {
         return dialog(a,title,body,"Back",actionLabel,action);
     }
     static AlertDialog dialog(Activity a,String title,View body,String backLabel,String actionLabel,Runnable action){
+        if(body instanceof LinearLayout)optionSpacing(a,(LinearLayout)body);
         LinearLayout panel=panel(a),header=new LinearLayout(a);header.setGravity(Gravity.CENTER_VERTICAL);
         TextView h=text(a,title.toUpperCase(java.util.Locale.ROOT),20,TEXT);h.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));header.addView(h,new LinearLayout.LayoutParams(0,-2,1));
         boolean iconBack=backLabel==null||backLabel.equals("Back");Button back=iconBack?iconButton(a,"back","Back"):button(a,backLabel,false);header.addView(back,new LinearLayout.LayoutParams(iconBack?dp(a,42):-2,dp(a,42)));panel.addView(header);
@@ -100,6 +103,7 @@ final class ModernUi {
     /** Wide landscape screen with an independently scrolling content area. */
     static AlertDialog screen(Activity a,String title,View body,String actionLabel,Runnable action,
                               java.util.function.BooleanSupplier close){
+        if(body instanceof LinearLayout)optionSpacing(a,(LinearLayout)body);
         LinearLayout panel=panel(a),header=new LinearLayout(a);header.setGravity(Gravity.CENTER_VERTICAL);
         TextView heading=text(a,title.toUpperCase(java.util.Locale.ROOT),20,TEXT);
         heading.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));
@@ -117,5 +121,15 @@ final class ModernUi {
         return d;
     }
     static void tint(SeekBar slider){slider.setProgressTintList(ColorStateList.valueOf(ACCENT));slider.setThumbTintList(ColorStateList.valueOf(ACCENT));}
+    static void optionSpacing(Activity a,LinearLayout body){
+        if(body.getOrientation()!=LinearLayout.VERTICAL)return;
+        for(int i=0;i<body.getChildCount();i++){
+            View child=body.getChildAt(i);
+            if(child instanceof LinearLayout)optionSpacing(a,(LinearLayout)child);
+            if(i>0&&(child instanceof Button||child instanceof CheckBox)&&child.getLayoutParams() instanceof LinearLayout.LayoutParams){
+                LinearLayout.LayoutParams p=(LinearLayout.LayoutParams)child.getLayoutParams();p.topMargin=Math.max(p.topMargin,dp(a,8));child.setLayoutParams(p);
+            }
+        }
+    }
     private ModernUi(){}
 }

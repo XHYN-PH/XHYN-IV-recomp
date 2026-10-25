@@ -1,8 +1,4 @@
 The SVG files are original XHYN IV geometric glyphs under the project license.
-Active mobile PNGs now use the user-provided es2.zip; see es2-provenance.json and
-the separate attribution in TOUCH-NOTICE.txt. Imported artwork is not licensed
-as original XHYN artwork. The vector generator preserves imported PNG variants.
-Use tools/import_es2_touch_icons.py with the supplied ZIP to recreate them.
-gta3-provenance.json records the superseded Test 2 import. The archive's creator
-and redistribution license were not supplied. The actual mobile pause lookup is
-house.png; that alias and menu.png both use the supplied pause glyph.
+Imported PNG provenance is retained separately; pistol, eye and interact use the original SVGs: see es2-provenance.json for the current user-provided archive and gta3-provenance.json for the previous import. Their creator/redistribution license is not established by the code license.
+Regenerate original glyphs with `python3 tools/generate_touch_theme.py` (CairoSVG required). Reimport the current set with `python3 tools/import_es2_touch_icons.py --zip /path/to/es2.zip`.
+Discs, tint and animations are drawn by the app; glyph backgrounds are transparent.

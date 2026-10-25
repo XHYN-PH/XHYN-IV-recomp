@@ -16,7 +16,7 @@ final class SessionHistory {
         try(InputStream in=new FileInputStream(file)){ByteArrayOutputStream bytes=new ByteArrayOutputStream();byte[] b=new byte[1024];int n;while((n=in.read(b))!=-1){if(bytes.size()+n>LIMIT)throw new IOException("Diagnostic record too large.");bytes.write(b,0,n);}p.load(new ByteArrayInputStream(bytes.toByteArray()));}catch(IllegalArgumentException error){throw new IOException("Invalid diagnostic record encoding.",error);}return p;
     }
     static synchronized void save(File data,String id,Properties values)throws IOException {
-        if(!id.matches("(?:last-session|previous-exit|session-[0-9-]+|benchmark-[0-9-]+)"))throw new IOException("Invalid diagnostic identity.");
+        if(!id.matches("(?:last-session|previous-exit|previous-launcher-exit|session-[0-9-]+|benchmark-[0-9-]+)"))throw new IOException("Invalid diagnostic identity.");
         File folder=directory(data);Files.createDirectories(folder.toPath());if(Files.isSymbolicLink(folder.toPath()))throw new IOException("Invalid diagnostic folder.");
         File target=new File(folder,id+".properties");if(Files.isSymbolicLink(target.toPath()))throw new IOException("Invalid diagnostic path.");
         Properties bounded=new Properties();if(values.size()>256)throw new IOException("Too many diagnostic fields.");

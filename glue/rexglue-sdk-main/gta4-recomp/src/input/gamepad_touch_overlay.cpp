@@ -48,7 +48,7 @@ REXCVAR_DEFINE_DOUBLE(gta4_touch_gamepad_opacity, 1.0, "GTA IV/Input/Touch",
                       "Opacity of the on-screen gamepad (0.3 faint to 1.6 strong)");
 REXCVAR_DECLARE(std::string,gta4_touch_move_mode);
 REXCVAR_DECLARE(double,gta4_touch_move_smoothing);
-REXCVAR_DEFINE_BOOL(gta4_touch_icon_outline,false,"GTA IV/Input/Touch","Add a dark outline following each touch glyph");
+REXCVAR_DEFINE_BOOL(gta4_touch_icon_outline,false,"GTA IV/Input/Touch","Outline circular touch buttons without outlining glyphs");
 REXCVAR_DEFINE_BOOL(gta4_touch_animations,true,"GTA IV/Input/Touch","Animate touch-button press feedback");
 
 namespace gta4::input {
@@ -241,9 +241,9 @@ void Draw(ImDrawList* draw, ImFont* font, float font_size, State& s) {
     }
     const ImVec2 center(control.x, control.y);
     draw->AddCircleFilled(center,radius,faded(active?kFillHeld:kFill),48);
+    if(REXCVAR_GET(gta4_touch_icon_outline))theme::DrawButtonOutline(draw,center,radius,faded(kLabel));
     ContextTouchIcon image;
     if (kThemeIcons[i] && ResolveLibertyIcon(kThemeIcons[i], &image)) {
-      if(REXCVAR_GET(gta4_touch_icon_outline))theme::DrawImageOutline(draw,image.texture,center,radius,image.uv_min,image.uv_max,faded(IM_COL32(8,8,8,230)));
       draw->AddImage(image.texture, ImVec2(center.x-radius, center.y-radius),
                      ImVec2(center.x+radius, center.y+radius), image.uv_min,
                      image.uv_max, faded(control.label_color ? control.label_color : kLabel));

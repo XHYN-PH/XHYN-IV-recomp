@@ -1,12 +1,14 @@
 #pragma once
 
 #include <imgui.h>
+#include <array>
 
 namespace gta4::input::theme {
 
-inline void DrawImageOutline(ImDrawList* draw,ImTextureRef texture,ImVec2 center,float half,ImVec2 uv0,ImVec2 uv1,ImU32 color){
-  const float stroke=half*.055f>1.f?half*.055f:1.f;
-  for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x)if(x||y)draw->AddImage(texture,ImVec2(center.x-half+x*stroke,center.y-half+y*stroke),ImVec2(center.x+half+x*stroke,center.y+half+y*stroke),uv0,uv1,color);
+// Host controls use the whole window, independently of game output scaling.
+inline std::array<float,4> FullscreenArea(float width,float height){return {0,0,width,height};}
+inline void DrawButtonOutline(ImDrawList* draw,ImVec2 center,float radius,ImU32 color){
+  draw->AddCircle(center,radius,color,48,radius*.025f>1.f?radius*.025f:1.f);
 }
 
 // A gray cap and four separated grip marks, matching the approved button set.
