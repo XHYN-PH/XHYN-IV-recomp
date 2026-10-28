@@ -762,6 +762,7 @@ CMakeUserPresets.json
 !/.github/workflows/repository-checks.yml
 !/.github/workflows/android-checks.yml
 !/.github/workflows/build-macos.yml
+!/.github/workflows/publish-android-test10.yml
 
 # Reproducible touch regression runner and arithmetic fixtures.
 !/tools/test_native_capture_png.py
