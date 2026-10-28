@@ -247,7 +247,7 @@ public class LibertyActivity extends SDLActivity {
     }
     private void recordRuntimeSettings(String reason){
         try{org.json.JSONObject report=new org.json.JSONObject();for(String key:MobileSettingsUi.KEYS)if(!key.startsWith("ui_"))report.put(key,nativeGetSetting(key));
-            report.put("renderer_device",new org.json.JSONObject(nativeGetSetting("gta4_session_device_json")));report.put("shader_compatibility",nativeGetSetting("vulkan_shader_compatibility_status"));report.put("actual_present_mode",nativeGetSetting("gta4_session_present_mode"));report.put("session_stats",new org.json.JSONObject(nativeGetSetting("gta4_session_stats")));report.put("display_hz",getWindowManager().getDefaultDisplay().getRefreshRate());android.os.PowerManager power=(android.os.PowerManager)getSystemService(POWER_SERVICE);if(power!=null)report.put("thermal_status",power.getCurrentThermalStatus());
+            report.put("renderer_device",new org.json.JSONObject(nativeGetSetting("gta4_session_device_json")));report.put("shader_compatibility",nativeGetSetting("vulkan_shader_compatibility_status"));report.put("actual_present_mode",nativeGetSetting("gta4_session_present_mode"));report.put("thermal_protection",new org.json.JSONObject(nativeGetSetting("gta4_thermal_status")));report.put("session_stats",new org.json.JSONObject(nativeGetSetting("gta4_session_stats")));report.put("display_hz",getWindowManager().getDefaultDisplay().getRefreshRate());android.os.PowerManager power=(android.os.PowerManager)getSystemService(POWER_SERVICE);if(power!=null)report.put("thermal_status",power.getCurrentThermalStatus());
             DebugLog.note("runtime-settings: reason="+reason+" "+report);
         }catch(Exception error){DebugLog.note("runtime-settings: unavailable="+error.getClass().getSimpleName());}
     }
@@ -287,7 +287,7 @@ public class LibertyActivity extends SDLActivity {
         if(mDebugLog){
             actions.put("Share report",this::exportCurrentReport);
             if(getIntent()!=null&&getIntent().getBooleanExtra(EXTRA_RENDERER_CAPTURE,false))actions.put("Capture renderer timings",()->{mGameMenu.dismiss();chooseGraphicsCapture();});
-            actions.put("Capture shadow issue",()->{mGameMenu.dismiss();triggerDiagnostic("gta4_shadow_capture_trigger","Recording shadow state for six frames.");});
+            actions.put("Capture shadow issue",()->{mGameMenu.dismiss();triggerDiagnostic("gta4_shadow_capture_trigger","Capturing shadow images and camera state. Keep rotating the camera briefly.");});
         }
         mGameMenu=SessionMenuUi.show(this,mRuntimeSettings,mDriverMode,mSessionState,actions,()->{if(!mKeepMenuPaused)setHostMenu(false);hideSystemBars();});
     }
@@ -300,7 +300,7 @@ public class LibertyActivity extends SDLActivity {
             ModernUi.action(this,panel,"Capture shadow issue",()->{
                 hub.dismiss();android.widget.Toast.makeText(this,"Shadow capture starts in one second. Keep the issue visible.",android.widget.Toast.LENGTH_LONG).show();
                 new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->{
-                    if(!isFinishing()&&!isDestroyed())triggerDiagnostic("gta4_shadow_capture_trigger","Recording shadow state for six frames.");
+                    if(!isFinishing()&&!isDestroyed())triggerDiagnostic("gta4_shadow_capture_trigger","Capturing shadow images and camera state. Keep rotating the camera briefly.");
                 },1000);
             });
             if(getIntent()!=null&&getIntent().getBooleanExtra(EXTRA_RENDERER_CAPTURE,false))ModernUi.action(this,panel,"Capture renderer timings",()->{hub.dismiss();triggerDiagnostic("gta4_profile_native_capture_trigger","Recording a short renderer capture. It adds overhead.");});
@@ -319,7 +319,7 @@ public class LibertyActivity extends SDLActivity {
         try{startActivityForResult(save,REQUEST_REPORT_EXPORT);}catch(Exception error){android.widget.Toast.makeText(this,"No file picker is available.",android.widget.Toast.LENGTH_LONG).show();showGameMenu();}
     }
     private void chooseGraphicsCapture(){
-        ModernUi.choose(this,"Graphics capture",new String[]{"Quick timing report","Processor detail (slower)","Graphics detail (slower)"},0,mode->{nativeApplySettings(new String[]{"gta4_profile_native_detailed_cpu","gta4_profile_native_detailed_gpu"},new String[]{Boolean.toString(mode==1),Boolean.toString(mode==2)});triggerDiagnostic("gta4_profile_native_capture_trigger","Recording a short graphics capture. Detailed modes add overhead.");});
+        ModernUi.choose(this,"Graphics capture",new String[]{"Quick timing report","Processor detail","Graphics detail (slower)","Command transport (heavy)"},0,mode->{nativeApplySettings(new String[]{"gta4_profile_native_detailed_cpu","gta4_profile_native_detailed_gpu","gta4_profile_native_transport","gta4_profile_native_gpu_query_budget"},new String[]{Boolean.toString(mode==1||mode==3),Boolean.toString(mode==2),Boolean.toString(mode==3),mode==2?"512":"64"});triggerDiagnostic("gta4_profile_native_capture_trigger","Recording a short graphics capture. Detailed modes add overhead.");});
     }
     private void triggerDiagnostic(String key,String message){
         recordRuntimeSettings("capture-"+key);
@@ -606,6 +606,7 @@ public class LibertyActivity extends SDLActivity {
             }
         }
         try{arguments.add("--data_file_mods="+MobileConfig.read(MobileConfig.file(dataRoot)).getOrDefault("data_file_mods","false"));}catch(IOException e){Log.w(TAG,"Mod setting unavailable",e);}
+        arguments.add("--gta4_touch_icon_directory="+TouchIconAssets.directory(getFilesDir()).getAbsolutePath());
         arguments.add("--game_data_root="+new File(GameStorage.installRoot(dataRoot),"game").getAbsolutePath());
         arguments.add("--gta4_touch_layout="+(mXboxTouch?"gamepad":"liberty"));
         java.util.LinkedHashMap<String,String> unique=new java.util.LinkedHashMap<>();int positional=0;
@@ -624,7 +625,7 @@ public class LibertyActivity extends SDLActivity {
     private void configureDriverChoice(File dataRoot){
         String driver = readFirstLine(new File(dataRoot, "driver.txt"));
         mDriverText = driver;
-        String lower = driver == null ? "" : driver.toLowerCase(Locale.ROOT);
+        String lower = DriverState.normalize(driver);
         if (lower.startsWith(DriverBridge.CUSTOM_PREFIX)) {
             mDriverMode = DriverBridge.CUSTOM_PREFIX
                     + driver.substring(DriverBridge.CUSTOM_PREFIX.length()).trim();

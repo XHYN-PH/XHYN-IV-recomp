@@ -3,6 +3,7 @@
 from pathlib import Path
 import os
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
@@ -28,9 +29,10 @@ def obj(path):
     if not output.exists() or any(not p.exists() or p.stat().st_mtime > output.stat().st_mtime
                                   for p in dependencies):
         # The factory in this TU mentions physical backends not linked by
-        # this host harness. Keep ASan/UBSan, but avoid unused factory RTTI
+        # this host harness. The SDL fixture supplies a guest-memory boundary.
+        # Keep ASan/UBSan, but avoid unused factory/guest-heap RTTI
         # relocations from vptr instrumentation preventing section collection.
-        extra = ["-fno-sanitize=vptr"] if path.name == "input_system.cpp" else []
+        extra = ["-fno-sanitize=vptr"] if path.name in ("input_system.cpp","sdl_audio_driver.cpp") else []
         subprocess.run(["g++", *flags, *extra, "-MMD", "-MF", str(dep), "-c", str(path), "-o", str(output)], check=True)
     return str(output)
 
@@ -59,7 +61,8 @@ mods = ["tools/test_data_mods.cpp", "tools/android_host_test_support.cpp", *comm
       "filesystem/devices/host_path_entry.cpp", "filesystem/devices/host_path_file.cpp",
       "core/filesystem.cpp", "core/filesystem_posix.cpp", "core/mapped_memory_posix.cpp",
       "core/mutex.cpp", "core/utf8.cpp", "core/string_buffer.cpp", "core/filesystem_wildcard.cpp")]]
-for name, files in (("android-profile-lifetime", profile), ("android-data-mods", mods),
+for name, files in (("android-audio", ["tools/test_android_audio.cpp","tools/android_host_test_support.cpp",*common,"glue/rexglue-sdk-main/src/audio/audio_driver.cpp","glue/rexglue-sdk-main/src/audio/sdl/sdl_audio_driver.cpp"]),
+                    ("android-profile-lifetime", profile), ("android-data-mods", mods),
                     ("android-refinements", native), ("android-touch", touch),
                     ("android-context-draw", context_draw),
                     ("android-vertex-locations", ["tools/test_vertex_location_remap.cpp"]),
@@ -73,3 +76,5 @@ for name, files in (("android-profile-lifetime", profile), ("android-data-mods",
     data = "production-shaders" if name == "android-shader-compat" else "mobile-cache" if name=="android-mobile" else "touch-home"
     subprocess.run([str(executable), str(OUT / data)], check=True,
                    env={**os.environ, "ASAN_OPTIONS": "detect_leaks=" + os.environ.get("XHYN_HOST_DETECT_LEAKS", "1" if name in ("android-profile-lifetime", "android-data-mods") else "0")})
+
+subprocess.run([sys.executable, str(ROOT / "tools/test_native_capture_png.py")], check=True)

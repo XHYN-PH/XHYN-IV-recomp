@@ -88,8 +88,9 @@ final class DebugLogArchive {
         try(RandomAccessFile input=new RandomAccessFile(file,"r")) {
             long length=input.length();
             zip.putNextEntry(new ZipEntry(name));
-            boolean structured=name.endsWith(".csv")||name.endsWith(".json");
-            if(structured&&length>64L*1024*1024)throw new IOException("Profile file exceeds export limit.");
+            boolean structured=name.endsWith(".csv")||name.endsWith(".json")||name.endsWith(".png")||name.endsWith(".ppm")||name.endsWith(".pgm")||name.endsWith(".bin.zst");
+            // A 64 MiB image needs extra bytes for PNG framing / zstd headers.
+            if(structured&&length>96L*1024*1024)throw new IOException("Profile file exceeds export limit.");
             if(length>LIMIT&&!structured) {
                 copy(zip,input,STARTUP);
                 zip.write("\n\n--- Middle of large log omitted; startup and latest entries retained. ---\n\n".getBytes(StandardCharsets.UTF_8));

@@ -92,6 +92,18 @@ inline bool OwnMetadata(const std::string& path) {
   const auto digits = path.substr(prefix.size(), path.size() - prefix.size() - suffix.size());
   return digits.find_first_not_of("0123456789") == std::string::npos;
 }
+inline std::string LayoutProblem(std::string_view name,std::string_view path) {
+  const auto lower=PathKey(std::string(path)),mod=PathKey(std::string(name));
+  const auto slash=lower.find('/');const auto top=lower.substr(0,slash);
+  const auto dot=lower.rfind('.');const auto ext=dot==std::string::npos?std::string{}:lower.substr(dot);
+  if(ext==".asi"||ext==".dll"||ext==".exe"||ext==".cs"||ext==".lua")
+    return "PC plugin or script is unsupported: "+std::string(path)+". Moving it into game/ does not make it compatible.";
+  if(mod.find("fusionfix")!=std::string::npos||top=="pc"||top=="plugins")
+    return "This appears to be a PC package: "+std::string(path)+". This loader supports loose Xbox 360 data overrides, not PC FusionFix/ASI plugins.";
+  if(mod=="tlad"||mod=="tbogt")
+    return "Episode data needs the launcher’s Reinstall or add episodes installer. Only compatible loose-data overrides belong under this mod’s game/ or update/ folder.";
+  return "Unexpected path: "+std::string(path)+". Expected mods/"+std::string(name)+"/game/common/data/handling.dat (or update/). Keep the original Xbox 360 game-relative paths.";
+}
 inline void Validate(Mod& mod) {
   const auto status = std::filesystem::symlink_status(mod.folder);
   if (!std::filesystem::is_directory(status)) { mod.error = "Mod must be a regular folder."; return; }
@@ -107,14 +119,17 @@ inline void Validate(Mod& mod) {
     if (depth == 1 && OwnMetadata(path) && std::filesystem::is_regular_file(item_status)) continue;
     const auto top = Utf8(*relative.begin());
     if (depth > kMaxDepth || (top != "game" && top != "update")) {
-      mod.error = depth>kMaxDepth?"Mod folder nesting is too deep: "+path:"Unexpected path: "+path+". Put compatible Xbox 360 data under this mod’s game/ or update/ folder; PC plugins are unsupported."; break;
+      mod.error = depth>kMaxDepth?"Mod folder nesting is too deep: "+path:LayoutProblem(Utf8(mod.folder.filename()),path); break;
     }
     if (std::filesystem::is_directory(item_status)) continue;
     const auto ext = PathKey(Utf8(item.path().extension()));
+    if(ext==".asi"||ext==".dll"||ext==".exe"||ext==".cs"||ext==".lua"){
+      mod.error=LayoutProblem(Utf8(mod.folder.filename()),path);break;
+    }
     if (!std::filesystem::is_regular_file(item_status) ||
         (ext != ".dat" && ext != ".xml" && ext != ".ide" && ext != ".ipl" &&
          ext != ".txt" && ext != ".meta" && ext != ".gxt")) {
-      mod.error = "Unsupported overlay file: " + path; break;
+      mod.error = "Unsupported overlay file: " + path+". This loader accepts loose Xbox 360 data; packed RPF/model/texture archives are unsupported."; break;
     }
     if (!seen.insert(PathKey(path)).second) { mod.error = "Duplicate path ignoring case: " + path; break; }
     const auto size = item.file_size();

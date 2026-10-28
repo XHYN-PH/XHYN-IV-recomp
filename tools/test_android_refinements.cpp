@@ -1,3 +1,5 @@
+#include "graphics/gta4_native/native_frame_scheduling.h"
+#include "graphics/gta4_native/native_pipeline_lookahead.h"
 // Deterministic checks of the production queue, state and conversion helpers.
 #include <array>
 #include <cassert>
@@ -177,5 +179,15 @@ void ConversionTests() {
   std::cout<<"Production texture serial/parallel comparisons: "<<cases<<"\n";
 }
 
-int main(){QueueTests();StateTests();PowerTests();WorkerTests();ConversionTests();
+int main(){
+  assert(!ShouldRetireUnusedNativeUploadBlocks(0,true,1000));
+  assert(!ShouldRetireUnusedNativeUploadBlocks(1,false,120));
+  assert(!ShouldRetireUnusedNativeUploadBlocks(1,true,119));
+  assert(ShouldRetireUnusedNativeUploadBlocks(1,true,120));
+  for(size_t count : {size_t(1),size_t(7),size_t(256),size_t(4000)}) {
+    assert(NativePipelineLookaheadIndex(0,count)==0);
+    assert(NativePipelineLookaheadIndex(1,count)==count/2);
+    for(size_t visit=0;visit<256;++visit)assert(NativePipelineLookaheadIndex(visit,count)<count);
+  }
+QueueTests();StateTests();PowerTests();WorkerTests();ConversionTests();
   std::cout<<"Android native refinement regression checks passed\n";}

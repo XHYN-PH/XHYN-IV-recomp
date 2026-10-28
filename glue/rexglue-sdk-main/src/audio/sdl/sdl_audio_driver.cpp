@@ -199,6 +199,10 @@ void SDLAudioDriver::SubmitFrame(uint32_t frame_ptr) {
 
   {
     std::unique_lock<std::mutex> guard(frames_mutex_);
+    const auto now=std::chrono::steady_clock::now();
+    if(last_submit_.time_since_epoch().count()&&now>=last_submit_)
+      max_submit_gap_us_=std::max<uint64_t>(max_submit_gap_us_,std::chrono::duration_cast<std::chrono::microseconds>(now-last_submit_).count());
+    last_submit_=now;
     frames_queued_.push(output_frame);
     PROFILE_BUFFER_QUEUE_DEPTH(static_cast<int64_t>(frames_queued_.size()));
   }
@@ -239,7 +243,10 @@ void SDLAudioDriver::Flush() {
 
 void SDLAudioDriver::FlushQueuedFrames() {
   std::unique_lock<std::mutex> guard(frames_mutex_);
-  rebuffering_=true;
+  rebuffer_policy_.Reset();last_submit_={};max_submit_gap_us_=0;
+  silent_fills_=filled_blocks_=empty_fills_=refill_fills_=0;
+  starvation_window_start_=std::chrono::steady_clock::now();
+  next_starvation_report_=starvation_window_start_+std::chrono::seconds(10);
   while (!frames_queued_.empty()) {
     frames_unused_.push(frames_queued_.front());
     frames_queued_.pop();
@@ -287,27 +294,36 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
     REXAPU_ERROR("SDLAudioDriver::SDLCallback failed to allocate {} samples", sample_count);
     return;
   }
-  // Gaps (no guest frame ready, silence played) counted and logged every
-  // 10 s with the queue depth, so stutter reports can tell a starved guest
-  // producer from an output-side problem.
+  // Keep empty-queue starvation distinct from intentional refill silence.
+  // Logging happens outside the queue mutex so it cannot block the producer
+  // while holding the callback's queue ownership.
+  const bool adaptive=REXCVAR_GET(audio_adaptive_buffer);
+  const bool muted=REXCVAR_GET(audio_mute);
 
   while (additional_amount > 0) {
     std::unique_lock<std::mutex> guard(driver->frames_mutex_);
     if (const auto now = std::chrono::steady_clock::now(); now >= driver->next_starvation_report_) {
-      if (driver->silent_fills_) {
-        REXAPU_WARN("audio: {} of {} blocks were silence (no guest frame ready), {} queued low_latency={} window_ms={}",
-                    driver->silent_fills_, driver->silent_fills_ + driver->filled_blocks_, driver->frames_queued_.size(),driver->low_latency_,std::chrono::duration_cast<std::chrono::milliseconds>(now-driver->starvation_window_start_).count());
+      const auto silent=driver->silent_fills_,total=silent+driver->filled_blocks_;
+      const auto empty=driver->empty_fills_,refill=driver->refill_fills_;
+      const auto queued=driver->frames_queued_.size();
+      const auto gap_us=driver->max_submit_gap_us_;
+      const auto target=driver->rebuffer_policy_.target_blocks();
+      const auto window_ms=std::chrono::duration_cast<std::chrono::milliseconds>(now-driver->starvation_window_start_).count();
+      driver->silent_fills_=driver->filled_blocks_=driver->empty_fills_=driver->refill_fills_=0;
+      driver->max_submit_gap_us_=0;
+      driver->starvation_window_start_=now;driver->next_starvation_report_=now+std::chrono::seconds(10);
+      if(silent){
+        guard.unlock();
+        REXAPU_WARN("audio: {} of {} blocks were silence empty_queue={} refill_wait={} queued={} adaptive={} recovery_blocks={} max_producer_gap_ms={:.2f} low_latency={} window_ms={} (empty queue and recovery silence are separate)",
+            silent,total,empty,refill,queued,adaptive,target,gap_us/1000.0,driver->low_latency_,window_ms);
+        guard.lock();
       }
-      driver->silent_fills_ = driver->filled_blocks_ = 0;
-      driver->starvation_window_start_=now;driver->next_starvation_report_ = now + std::chrono::seconds(10);
     }
-    if(driver->frames_queued_.empty())driver->rebuffering_=true;
-    if (driver->frames_queued_.empty() || (REXCVAR_GET(audio_adaptive_buffer)&&driver->rebuffering_&&driver->frames_queued_.size()<2)) {
+    const auto decision=driver->rebuffer_policy_.Next(driver->frames_queued_.size(),adaptive);
+    if (decision!=AudioQueueDecision::kPlay) {
       ++driver->silent_fills_;
-      if (driver->callback_log_count_ < 10) {
-        REXAPU_DEBUG("SDLCallback: no frames queued (silence)");
-        driver->callback_log_count_++;
-      }
+      if(decision==AudioQueueDecision::kEmpty)++driver->empty_fills_;
+      else ++driver->refill_fills_;
       guard.unlock();
       std::memset(data, 0, len);
       if (!SDL_PutAudioStreamData(stream, data, len)) {
@@ -316,12 +332,11 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
       }
       additional_amount -= len;
     } else {
-      driver->rebuffering_=false;
       ++driver->filled_blocks_;
       auto buffer = driver->frames_queued_.front();
       driver->frames_queued_.pop();
       guard.unlock();  // Conversion/driver calls must never block the guest audio producer.
-      if (REXCVAR_GET(audio_mute)) {
+      if (muted) {
         std::memset(data, 0, len);
       } else {
         switch (driver->sdl_device_channels_) {
@@ -339,6 +354,9 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
       if (!SDL_PutAudioStreamData(stream, data, len)) {
         REXAPU_ERROR("SDL_PutAudioStreamData() failed: {}", SDL_GetError());
         {std::lock_guard lock(driver->frames_mutex_);driver->frames_unused_.push(buffer);}
+        // The copied guest frame has been consumed even if device submission
+        // fails. Losing its credit permanently can starve the guest mixer.
+        const bool released=driver->semaphore_->Release(1,nullptr);assert_true(released);
         break;
       }
       {std::lock_guard lock(driver->frames_mutex_);driver->frames_unused_.push(buffer);}

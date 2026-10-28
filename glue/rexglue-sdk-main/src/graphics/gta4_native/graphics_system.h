@@ -15,6 +15,9 @@
 #include <rex/graphics/gta4_native/converted_texture_disk_cache.h>
 #include <fstream>
 #include <rex/graphics/gta4_native/mobile_frame_stats.h>
+#include <rex/graphics/gta4_native/mobile_hitch_trace.h>
+#include <rex/graphics/gta4_native/mobile_idle_texture_budget.h>
+#include "native_pipeline_lookahead.h"
 #include <rex/graphics/gta4_native/immutable_snapshot.h>
 #include <array>
 #include <chrono>
@@ -1031,6 +1034,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
     VkDeviceSize allocation_size = 0;
     uint32_t memory_type = UINT32_MAX;
     uint32_t memory_heap = UINT32_MAX;
+    mutable uint64_t idle_retention_bytes = 0;
     bool memory_accounted = false;
     bool allocation_pool_compatible = false;
     NativeImageAllocationKey allocation_key{};
@@ -2156,6 +2160,11 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   void SignalGuestFrameComplete(uint32_t device, uint32_t frame);
   void UpdateDynamicDrawDistance();
   MobileFrameStats mobile_frame_stats_;
+  MobilePresentClock mobile_present_clock_;
+  MobileHitchHistory mobile_hitch_history_;
+  uint64_t pipeline_wait_total_ticks_=0,pipeline_compile_total_ticks_=0;
+  uint64_t hitch_previous_wait_=0,hitch_previous_compile_=0;
+  uint64_t hitch_previous_evictions_=0,hitch_previous_reuploads_=0;
   uint64_t session_stats_start_ns_=0, session_stats_last_ns_=0, session_stats_frames_=0;
   BenchmarkFrameStats benchmark_frame_stats_;
   uint32_t benchmark_trigger_=0;
@@ -2172,6 +2181,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   double dynamic_draw_distance_published_ = 1.0;
   double dynamic_draw_distance_interval_ms_ = 33.3;
   uint64_t dynamic_draw_distance_last_tick_ = 0;
+  uint32_t dynamic_draw_pause_revision_=0;
   uint32_t dynamic_draw_distance_cap_=UINT32_MAX,dynamic_draw_distance_valid_windows_=0;
   // One-second windows of presented frames; the controller steps once per window.
   uint32_t dynamic_draw_distance_window_frames_ = 0;
@@ -2361,6 +2371,25 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
     uint32_t mip = 0, samples = 1;
     uint32_t crop_x = 0, crop_y = 0, original_width = 0, original_height = 0;
   };
+  struct ShadowReadback {
+    VkBuffer buffer=VK_NULL_HANDLE;
+    VkDeviceMemory memory=VK_NULL_HANDLE;
+    uint8_t* mapping=nullptr;
+    uint32_t memory_type=UINT32_MAX,width=0,height=0,frame=0;
+    VkFormat format=VK_FORMAT_UNDEFINED;
+    VkImageAspectFlagBits aspect=VK_IMAGE_ASPECT_COLOR_BIT;
+    uint64_t bytes=0,submission=0,request=0;
+    std::filesystem::path directory;
+    std::string role;
+  };
+  std::array<std::vector<ShadowReadback>,2> shadow_readbacks_;
+  uint32_t shadow_capture_request_=0,shadow_capture_remaining_=0,shadow_capture_last_frame_=0;
+  uint64_t shadow_capture_budget_=0;
+  void RecordShadowCapture(VkCommandBuffer,uint32_t,VkImage,VkImageLayout,uint32_t,uint32_t,
+                           const EnvironmentalDataV2*);
+  void PublishShadowCaptures(uint32_t,uint64_t);
+  void DiscardUnsubmittedShadowCaptures(uint32_t);
+  void DestroyShadowCaptures();
   struct FireQueryRow {
     uint32_t frame = 0, command = 0;
     uint64_t sequence = 0, occurrence = 0, event = 0;
@@ -2802,6 +2831,8 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   FrameGenerationMap<uint64_t, NativeTextureImage*> prepared_texture_images_;
   struct TexturePreparationScratch;
   std::unique_ptr<TexturePreparationScratch> texture_preparation_scratch_;
+  MobileIdleTextureBudget<VK_MAX_MEMORY_HEAPS> idle_texture_budget_;
+  NativePreparedShaderPairs prepared_shader_pairs_;
   uint64_t texture_retention_preserved_=0;
   std::unordered_map<NativeSamplerCacheKey, size_t, NativeSamplerCacheKeyHash>
       native_sampler_indices_;

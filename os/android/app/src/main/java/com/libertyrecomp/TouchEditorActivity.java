@@ -34,6 +34,7 @@ public final class TouchEditorActivity extends Activity {
     private final Map<String,Bitmap> icons=new HashMap<>();
 
     private final ControllerNavigation menuNavigation=new ControllerNavigation();
+    @Override public boolean dispatchKeyEvent(KeyEvent e){return menuNavigation.key(getWindow(),e,this::onBackPressed)||super.dispatchKeyEvent(e);}
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e){return menuNavigation.motion(getWindow(),e)||super.dispatchGenericMotionEvent(e);}
     @Override public void finish(){super.finish();overridePendingTransition(0,ModernUi.motion(this)?R.anim.session_panel_out:0);}
     @Override public void onCreate(Bundle state){
@@ -92,22 +93,22 @@ public final class TouchEditorActivity extends Activity {
         panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setBackground(ModernUi.surface(this,0xf2141414,18));
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(8),0,dp(6),0);header.setBackgroundColor(0xff252525);
         TextView title=ModernUi.text(this,xbox?"Xbox layout editor":"Mobile layout editor",15,ModernUi.TEXT);
-        title.setTypeface(Typeface.MONOSPACE);title.setSingleLine(true);title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));title.setSingleLine(true);title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         title.setContentDescription("Drag this header to move the editor panel");header.addView(title,new LinearLayout.LayoutParams(0,dp(40),1));
         title.setGravity(Gravity.CENTER_VERTICAL);enablePanelDrag(title);
         collapse=ModernUi.button(this,collapsed?"+":"−",false);collapse.setMinWidth(0);collapse.setPadding(dp(8),0,dp(8),0);
         collapse.setContentDescription("Collapse or expand editor tools");header.addView(collapse,new LinearLayout.LayoutParams(dp(40),dp(36)));
         Button back=ModernUi.iconButton(this,"back","Back");header.addView(back,new LinearLayout.LayoutParams(dp(36),dp(36)));
-        back.setOnClickListener(v->onBackPressed());panel.addView(header);
+        Button headerSave=ModernUi.iconButton(this,"save","Save layout");header.addView(headerSave,new LinearLayout.LayoutParams(dp(40),dp(40)));headerSave.setOnClickListener(v->saveAndClose());back.setOnClickListener(v->onBackPressed());panel.addView(header);
         toolsScroll=new ScrollView(this){
             @Override protected void onMeasure(int w,int h){
                 int available=page.getHeight()>0?page.getHeight():getResources().getDisplayMetrics().heightPixels;
-                int limit=Math.max(dp(64),available-dp(72));
+                android.view.WindowInsets insets=page.getRootWindowInsets();int bottom=insets==null?0:insets.getMandatorySystemGestureInsets().bottom;int limit=Math.max(dp(48),available-dp(92)-bottom);
                 if(MeasureSpec.getMode(h)!=MeasureSpec.UNSPECIFIED)limit=Math.min(limit,MeasureSpec.getSize(h));
                 super.onMeasure(w,MeasureSpec.makeMeasureSpec(limit,MeasureSpec.AT_MOST));
             }
         };
-        toolsScroll.setFillViewport(false);LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(8),dp(6),dp(8),dp(8));
+        toolsScroll.setFillViewport(false);toolsScroll.setClipToPadding(false);toolsScroll.setPadding(0,0,0,dp(12));LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(8),dp(6),dp(8),dp(8));
         picker=ModernUi.button(this,contextName()+(xbox?"":" ▾"),false);picker.setEnabled(!xbox);body.addView(picker,new LinearLayout.LayoutParams(-1,dp(36)));
         picker.setOnClickListener(v->{
             String[] labels=new String[contexts.length()];for(int i=0;i<labels.length;i++)labels[i]=contexts.optJSONObject(i).optString("name");
@@ -117,6 +118,7 @@ public final class TouchEditorActivity extends Activity {
         chooseControl.setOnClickListener(v->{JSONArray controls=contexts.optJSONObject(context).optJSONArray("controls");String[] labels=new String[controls.length()];for(int i=0;i<labels.length;i++)labels[i]=controls.optJSONObject(i).optString("label",controls.optJSONObject(i).optString("id"));ModernUi.choose(this,"Select control",labels,-1,i->{selectedKey=contexts.optJSONObject(context).optString("id")+"/"+controls.optJSONObject(i).optString("id");updateSelection();canvas.invalidate();});});
         TextView help=ModernUi.text(this,"Drag controls to move. Tap one to inspect. Drag the header to move this panel.",11,ModernUi.MUTED);
         help.setPadding(0,dp(6),0,dp(4));body.addView(help);
+        LinearLayout tabs=new LinearLayout(this);body.addView(tabs);LinearLayout controlSection=new LinearLayout(this),arrangeSection=new LinearLayout(this),layoutSection=new LinearLayout(this);for(LinearLayout section:new LinearLayout[]{controlSection,arrangeSection,layoutSection}){section.setOrientation(LinearLayout.VERTICAL);body.addView(section);}LinearLayout[] sections={controlSection,arrangeSection,layoutSection};String[] labels={"Control","Arrange","Layout"};Button[] tabButtons=new Button[3];for(int i=0;i<3;i++){final int tab=i;Button b=ModernUi.button(this,labels[i],false);tabButtons[i]=b;b.setTag("ui-tab");tabs.addView(b,new LinearLayout.LayoutParams(0,dp(36),1));b.setOnClickListener(v->{for(int j=0;j<3;j++){sections[j].setVisibility(j==tab?View.VISIBLE:View.GONE);ModernUi.selected(tabButtons[j],j==tab);}toolsScroll.scrollTo(0,0);});}arrangeSection.setVisibility(View.GONE);layoutSection.setVisibility(View.GONE);ModernUi.selected(tabButtons[0],true);
         selectionTools=new LinearLayout(this);selectionTools.setOrientation(LinearLayout.VERTICAL);
         selected=ModernUi.text(this,"",13,ModernUi.TEXT);selected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);selectionTools.addView(selected);
         LinearLayout nudge=new LinearLayout(this);selectionTools.addView(nudge);
@@ -124,7 +126,7 @@ public final class TouchEditorActivity extends Activity {
         LinearLayout sizeRow=new LinearLayout(this);sizeRow.setGravity(Gravity.CENTER_VERTICAL);
         amount=ModernUi.text(this,"",12,ModernUi.ACCENT);sizeRow.addView(amount,new LinearLayout.LayoutParams(dp(54),-2));
         size=new SeekBar(this);size.setMax(365);ModernUi.tint(size);sizeRow.addView(size,new LinearLayout.LayoutParams(0,-2,1));selectionTools.addView(sizeRow);
-        hidden=new CheckBox(this);hidden.setText("Hidden in play");hidden.setTextColor(ModernUi.TEXT);selectionTools.addView(hidden);body.addView(selectionTools);
+        hidden=new CheckBox(this);hidden.setText("Hidden in play");hidden.setTextColor(ModernUi.TEXT);selectionTools.addView(hidden);controlSection.addView(selectionTools);
         size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             public void onProgressChanged(SeekBar b,int value,boolean user){
                 if(user&&selectedKey!=null){document.get(selectedKey).scale=.35f+value*.01f;dirty=true;amount.setText(sizeLabel(document.get(selectedKey).scale));canvas.invalidate();}
@@ -134,21 +136,21 @@ public final class TouchEditorActivity extends Activity {
         hidden.setOnCheckedChangeListener((button,on)->{if(selectedKey!=null&&document.get(selectedKey).hidden!=on){checkpoint();document.get(selectedKey).hidden=on;dirty=true;canvas.invalidate();}});
         LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER_VERTICAL);
         Button save=ModernUi.icon(this,"Save","save",true),reset=ModernUi.tool(this,"reset","Reset this context");
-        actions.addView(save,new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(0,dp(44),1);rp.leftMargin=dp(8);actions.addView(reset,rp);body.addView(actions);
+        actions.addView(save,new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(0,dp(44),1);rp.leftMargin=dp(8);actions.addView(reset,rp);layoutSection.addView(actions);
         save.setOnClickListener(v->saveAndClose());
         reset.setOnClickListener(v->{checkpoint();String prefix=contexts.optJSONObject(context).optString("id")+"/";document.entries.keySet().removeIf(k->k.startsWith(prefix));dirty=true;selectedKey=null;canvas.cancelDrag();updateSelection();canvas.invalidate();});
-        LinearLayout aids=new LinearLayout(this);CheckBox gridToggle=new CheckBox(this),snapToggle=new CheckBox(this);gridToggle.setText("Grid");snapToggle.setText("Snap");gridToggle.setTextColor(ModernUi.TEXT);snapToggle.setTextColor(ModernUi.TEXT);gridToggle.setChecked(grid);snapToggle.setChecked(snap);aids.addView(gridToggle);aids.addView(snapToggle);body.addView(aids);gridToggle.setOnCheckedChangeListener((b,on)->{grid=on;canvas.invalidate();});snapToggle.setOnCheckedChangeListener((b,on)->snap=on);Button spacing=ModernUi.button(this,"Grid: "+gridSize,false);aids.addView(spacing);spacing.setOnClickListener(v->{gridSize=gridSize==5?10:gridSize==10?20:gridSize==20?40:5;spacing.setText("Grid: "+gridSize);canvas.invalidate();});
+        LinearLayout aids=new LinearLayout(this);CheckBox gridToggle=new CheckBox(this),snapToggle=new CheckBox(this);gridToggle.setText("Grid");snapToggle.setText("Snap");gridToggle.setTextColor(ModernUi.TEXT);snapToggle.setTextColor(ModernUi.TEXT);gridToggle.setChecked(grid);snapToggle.setChecked(snap);aids.addView(gridToggle);aids.addView(snapToggle);arrangeSection.addView(aids);gridToggle.setOnCheckedChangeListener((b,on)->{grid=on;canvas.invalidate();});snapToggle.setOnCheckedChangeListener((b,on)->snap=on);Button spacing=ModernUi.button(this,"Grid: "+gridSize,false);aids.addView(spacing);spacing.setOnClickListener(v->{gridSize=gridSize==5?10:gridSize==10?20:gridSize==20?40:5;spacing.setText("Grid: "+gridSize);canvas.invalidate();});
         LinearLayout alignment=new LinearLayout(this);alignment.setGravity(Gravity.CENTER_VERTICAL);
         CheckBox guideToggle=new CheckBox(this);guideToggle.setText("Guides");guideToggle.setTextColor(ModernUi.TEXT);guideToggle.setChecked(guides);alignment.addView(guideToggle);
         guideToggle.setOnCheckedChangeListener((b,on)->{guides=on;canvas.invalidate();});
-        Button strength=ModernUi.button(this,"Snap: "+Math.round(snapStrength*100)+"%",false);alignment.addView(strength,new LinearLayout.LayoutParams(0,dp(36),1));body.addView(alignment);
+        Button strength=ModernUi.button(this,"Snap: "+Math.round(snapStrength*100)+"%",false);alignment.addView(strength,new LinearLayout.LayoutParams(0,dp(36),1));arrangeSection.addView(alignment);
         strength.setContentDescription("Snap strength. Tap to cycle 25, 50, 75 and 100 percent.");
         strength.setOnClickListener(v->{snapStrength=snapStrength>=1?.25f:snapStrength+.25f;strength.setText("Snap: "+Math.round(snapStrength*100)+"%");});
-        CheckBox touchBounds=new CheckBox(this);touchBounds.setText("Touch areas & overlaps");touchBounds.setTextColor(ModernUi.TEXT);touchBounds.setChecked(hitAreas);body.addView(touchBounds);
+        CheckBox touchBounds=new CheckBox(this);touchBounds.setText("Touch areas & overlaps");touchBounds.setTextColor(ModernUi.TEXT);touchBounds.setChecked(hitAreas);arrangeSection.addView(touchBounds);
         touchBounds.setOnCheckedChangeListener((b,on)->{hitAreas=on;updateSelection();canvas.invalidate();});
         LinearLayout history=new LinearLayout(this);Button backStep=ModernUi.tool(this,"undo","Undo"),forwardStep=ModernUi.tool(this,"redo","Redo"),export=ModernUi.tool(this,"export","Export layout"),imported=ModernUi.tool(this,"import","Import layout");
         undoAction=backStep;redoAction=forwardStep;updateHistory();
-        for(Button action:new Button[]{backStep,forwardStep,export,imported}){action.setTextSize(11);action.setMinWidth(0);action.setPadding(dp(3),0,dp(3),0);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(36),1);lp.setMargins(dp(2),0,dp(2),0);history.addView(action,lp);}body.addView(history);backStep.setOnClickListener(v->history(false));forwardStep.setOnClickListener(v->history(true));
+        for(Button action:new Button[]{backStep,forwardStep,export,imported}){action.setTextSize(11);action.setMinWidth(0);action.setPadding(dp(3),0,dp(3),0);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(36),1);lp.setMargins(dp(2),0,dp(2),0);history.addView(action,lp);}layoutSection.addView(history);backStep.setOnClickListener(v->history(false));forwardStep.setOnClickListener(v->history(true));
         Button numeric=ModernUi.icon(this,"Position & appearance","position",false);selectionTools.addView(numeric,new LinearLayout.LayoutParams(-1,dp(36)));numeric.setOnClickListener(v->numeric());
         export.setOnClickListener(v->pickLayout(true));imported.setOnClickListener(v->pickLayout(false));
         toolsScroll.addView(body);toolsScroll.setVisibility(collapsed?View.GONE:View.VISIBLE);panel.addView(toolsScroll);

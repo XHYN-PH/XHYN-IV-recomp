@@ -37,10 +37,10 @@ namespace review { template<class T> struct Setting {
  T value; template<class A,class B> Setting& range(A,B){return *this;}
  Setting& allowed(std::initializer_list<const char*>){return *this;}
 }; }
-#define REXCVAR_DEFINE_STRING(n,v,...) auto n=review::Setting<std::string>{v}
-#define REXCVAR_DEFINE_BOOL(n,v,...) auto n=review::Setting<bool>{v}
-#define REXCVAR_DEFINE_DOUBLE(n,v,...) auto n=review::Setting<double>{v}
-#define REXCVAR_DEFINE_INT32(n,v,...) auto n=review::Setting<int32_t>{v}
+#define REXCVAR_DEFINE_STRING(n,v,...) review::Setting<std::string> n=review::Setting<std::string>{v}
+#define REXCVAR_DEFINE_BOOL(n,v,...) review::Setting<bool> n=review::Setting<bool>{v}
+#define REXCVAR_DEFINE_DOUBLE(n,v,...) review::Setting<double> n=review::Setting<double>{v}
+#define REXCVAR_DEFINE_INT32(n,v,...) review::Setting<int32_t> n=review::Setting<int32_t>{v}
 #define REXCVAR_GET(n) (n.value)
 #define REXCVAR_SET(n,v) (n.value=(v))
 #define REXCVAR_DECLARE(t,n) extern review::Setting<t> n
@@ -91,8 +91,8 @@ subprocess.run([sys.executable, str(sdk/'tests/regression/controls/touch_samples
                 '--output', str(out/'touch_samples.h')], check=True)
 subprocess.run([sys.executable, str(sdk/'tests/regression/controls/touch_icon_samples.py'),
                 '--output', str(out/'touch_icon_samples.h')], check=True)
-subprocess.run([sys.executable, str(sdk.parent.parent/'tools/tests/generate_touch_activity_samples.py'),
-                '--output', str(out/'touch_activity_samples.h')], check=True)
+shutil.copyfile(sdk/'tests/regression/controls/touch_activity_samples.h',
+                out/'touch_activity_samples.h')
 results = {}
 for name in ['touch_runtime', 'coordinator_runtime', 'touch_context_runtime', 'touch_layout_runtime', 'touch_pointer_runtime', 'touch_editor_mouse_runtime', 'touch_icon_runtime', 'motion_runtime', 'touch_activity_runtime', 'touch_activity_draw_runtime', 'touch_transport_runtime']:
     if args.case and name not in args.case:
@@ -101,6 +101,7 @@ for name in ['touch_runtime', 'coordinator_runtime', 'touch_context_runtime', 't
     command = [args.compiler, '-std=c++23', '-g', '-O1', '-UNDEBUG',
                '-I'+str(stubs), '-I'+str(source), '-I'+str(sdk/'include'), '-I'+str(out), str(cpp)]
     if name in ['touch_runtime', 'coordinator_runtime']:
+        command += ['-I'+str(sdk/'thirdparty/imgui')]
         command += [str(source/'input/context_touch_layout.cpp'), str(source/'input/context_touch_settings.cpp'), str(sdk/'src/input/mnk/controller_compatibility.cpp'), str(sdk/'src/input/mnk/pointer_motion.cpp')]
     if name in ['touch_runtime', 'coordinator_runtime', 'touch_layout_runtime']:
         command += [str(source/'input/context_touch_activity.cpp'), str(source/'input/context_touch_activity_layout.cpp')]

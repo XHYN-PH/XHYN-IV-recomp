@@ -36,6 +36,8 @@ REXCVAR_DEFINE_DOUBLE(gamepad_left_sensitivity,1.0,"Input/Controller","Left stic
 REXCVAR_DEFINE_DOUBLE(gamepad_right_sensitivity,1.0,"Input/Controller","Right stick sensitivity").range(.25,2);
 REXCVAR_DEFINE_DOUBLE(gamepad_response_curve,1.0,"Input/Controller","Stick response exponent").range(.5,2);
 REXCVAR_DEFINE_DOUBLE(gamepad_trigger_threshold,0.0,"Input/Controller","Trigger deadzone").range(0,.4);
+REXCVAR_DEFINE_BOOL(gamepad_invert_left_x,false,"Input/Controller","Invert left stick horizontally");
+REXCVAR_DEFINE_BOOL(gamepad_invert_left_y,false,"Input/Controller","Invert left stick vertically");
 REXCVAR_DEFINE_BOOL(gamepad_invert_right_x,false,"Input/Controller","Invert right stick horizontally");
 REXCVAR_DEFINE_BOOL(gamepad_invert_right_y,false,"Input/Controller","Invert right stick vertically");
 REXCVAR_DEFINE_DOUBLE(gamepad_rumble_strength,1.0,"Input/Controller","Physical controller rumble multiplier").range(0,1);
@@ -457,7 +459,7 @@ X_RESULT SDLInputDriver::GetState(uint32_t user_index, X_INPUT_STATE* out_state)
   if(is_active){
     auto& pad=out_state->gamepad;
     int16_t lx=pad.thumb_lx,ly=pad.thumb_ly,rx=pad.thumb_rx,ry=pad.thumb_ry;
-    TuneThumbs(lx,ly,REXCVAR_GET(gamepad_left_deadzone),REXCVAR_GET(gamepad_left_sensitivity),REXCVAR_GET(gamepad_response_curve),false,false);
+    TuneThumbs(lx,ly,REXCVAR_GET(gamepad_left_deadzone),REXCVAR_GET(gamepad_left_sensitivity),REXCVAR_GET(gamepad_response_curve),REXCVAR_GET(gamepad_invert_left_x),REXCVAR_GET(gamepad_invert_left_y));
     TuneThumbs(rx,ry,REXCVAR_GET(gamepad_right_deadzone),REXCVAR_GET(gamepad_right_sensitivity),REXCVAR_GET(gamepad_response_curve),REXCVAR_GET(gamepad_invert_right_x),REXCVAR_GET(gamepad_invert_right_y));
     pad.thumb_lx=lx;pad.thumb_ly=ly;pad.thumb_rx=rx;pad.thumb_ry=ry;
     pad.left_trigger=TuneTrigger(pad.left_trigger,REXCVAR_GET(gamepad_trigger_threshold));pad.right_trigger=TuneTrigger(pad.right_trigger,REXCVAR_GET(gamepad_trigger_threshold));

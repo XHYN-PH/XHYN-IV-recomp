@@ -16,7 +16,13 @@ public final class ModOverlayPolicyTest {
             put(mods,"A/game/common/Handling.dat","a");put(mods,"B/game/common/handling.dat","b");
             put(mods,"Bad/game/plugin.asi","bad");put(mods,"Off/game/test.dat","off");put(mods,"Off/xhyn-mod.cfg","enabled=false\n");
             put(mods,"Config/game/test.dat","bad");put(mods,"Config/xhyn-mod.cfg","priority=oops\n");
+            assert ModOverlayPolicy.layoutProblem("GTAIV.EFLC.FusionFix","IV").contains("PC package");
+            for(String name:new String[]{"TLAD","TBoGT"})assert ModOverlayPolicy.layoutProblem(name,"common").contains("Reinstall or add episodes");
+            assert ModOverlayPolicy.layoutProblem("common","data").contains("game/common/data/handling.dat");
+            assert ModOverlayPolicy.layoutProblem("update","plugins").contains("PC package");
+            assert ModOverlayPolicy.layoutProblem("plugins","root.asi").contains("PC plugin");
             List<ModOverlayPolicy.Mod> scan=ModOverlayPolicy.scan(mods);
+            assert find(scan,"Bad").problem.contains("PC"):"Explain unsupported PC plugins";
             assert scan.stream().filter(x->x.enabled&&x.admitted()).count()==2:"A bad folder must not hide valid mods";
             ModOverlayPolicy.Mod a=find(scan,"A"),b=find(scan,"B");
             assert a.conflictCount==1&&b.conflictCount==1&&a.conflicts.get(0).contains("Overridden by B");

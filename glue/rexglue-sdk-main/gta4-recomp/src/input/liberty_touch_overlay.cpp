@@ -3,6 +3,7 @@
 // look, sent to the title as an Xbox 360 pad. Every control can be moved:
 // hold Pause for 1.5 s to edit, drag, then use Save layout.
 #include "input/liberty_touch_overlay.h"
+#include "input/touch_context_transition.h"
 #include "input/gamepad_touch_overlay.h"
 #include "input/touch_theme.h"
 #include "input/aim_hold_policy.h"
@@ -58,7 +59,7 @@ REXCVAR_DEFINE_BOOL(gta4_touch_button_hints, true, "GTA IV/Input/Touch",
 REXCVAR_DEFINE_STRING(gta4_touch_move_mode, "fixed", "GTA IV/Input/Touch",
                       "Movement joystick: fixed, floating, or invisible")
     .allowed({"fixed", "floating", "invisible"});
-REXCVAR_DEFINE_INT32(gta4_touch_context_delay_ms,0,"GTA IV/Input/Touch","Vehicle layout transition hold; zero uses earliest reliable context").range(0,1000);
+REXCVAR_DEFINE_INT32(gta4_touch_context_delay_ms,0,"GTA IV/Input/Touch","Mobile gameplay/phone layout transition hold; zero uses earliest observed context").range(0,1000);
 REXCVAR_DEFINE_DOUBLE(gta4_touch_move_smoothing, 0.035, "GTA IV/Input/Touch",
                       "Movement smoothing time constant in seconds; zero disables smoothing")
     .range(0.0, 0.1);
@@ -1122,12 +1123,12 @@ bool UpdateAndDrawLibertyTouchOverlay(ImDrawList* draw, ImFont* font, float font
                             ? (s.editing?editor_screens[s.editor_screen]:CurrentScreen(s.forced_menu, s.pause_flag_verified, &s.logged_context))
                             : Screen::kHidden;
   // Delay only gameplay-to-gameplay transitions. Menus/loading always take effect immediately.
-  static Screen pending_screen=Screen::kHidden;
-  static auto pending_since=std::chrono::steady_clock::now();
+  static TouchContextTransition<Screen> transition;
   const auto transition_now=std::chrono::steady_clock::now();
-  if(screen!=pending_screen){pending_screen=screen;pending_since=transition_now;}
-  const auto gameplay_screen=[](Screen value){return value==Screen::kOnFoot||value==Screen::kDriving||value==Screen::kBike||value==Screen::kHelicopter||value==Screen::kPassenger;};
-  if(!s.editing&&gameplay_screen(screen)&&gameplay_screen(s.screen)&&screen!=s.screen&&transition_now-pending_since<std::chrono::milliseconds(REXCVAR_GET(gta4_touch_context_delay_ms)))screen=s.screen;
+  const auto gameplay_screen=[](Screen value){return value==Screen::kOnFoot||value==Screen::kDriving||value==Screen::kBike||value==Screen::kHelicopter||value==Screen::kPassenger||value==Screen::kPhone;};
+  screen=transition.Update(screen,s.screen,
+      std::chrono::duration_cast<std::chrono::milliseconds>(transition_now.time_since_epoch()).count(),
+      REXCVAR_GET(gta4_touch_context_delay_ms),!s.editing&&gameplay_screen(screen)&&gameplay_screen(s.screen));
   // The host menu may reveal the game's pause screen behind it. Keep the
   // gameplay layout that was active when the player opened our menu.
   if(screen!=Screen::kHidden&&(s.editing||!TouchHostMenuOpen()))s.last_editor_context=int(screen)-1;

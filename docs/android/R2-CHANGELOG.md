@@ -1,12 +1,52 @@
-# XHYN IV r2 — through Test8
+# XHYN IV r2 — through Test10
 
-**Android testing release · r2 Test8**
+**Android testing release · r2 Test10**
 
-[**Download the Android APK**](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test8/XHYN-IV-0.5.9.3-xhyn-r2-test8.apk)
+[**Download the Android APK**](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test10/XHYN-IV-0.5.9.3-xhyn-r2-test10.apk)
 
 Install it over your existing XHYN IV app. Back up saves first; uninstalling removes app data. This release includes all r2 changes since r1.
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
+
+## Test10 — session stability and diagnostics
+
+This release includes the previously unreleased Test9 refinements below, plus all earlier r2 changes.
+
+- Exclude host-menu pause transitions from frame statistics and adaptive draw-distance/FPS-guard windows. Logged sessions now keep up to 16 rolling hitch traces with recent presents, publish/outside-publish time, pipeline waits and texture activity. A long gap is evidence to investigate, not proof of a GPU stall.
+- Prioritize unseen shader pairs during bounded recorder lookahead, while keeping exact-pipeline preparation and normal draw fallback. Compiler-worker counts are unchanged.
+- Distinguish empty audio queues from intentional recovery silence. Repeated underruns can rebuild a bounded 2–6-block queue (about 11–32 ms), returning to two blocks after stable playback. Failed SDL device submission now returns the consumed frame’s producer credit.
+- Show sampled thermal severity, Guard Off/monitoring/active, requested GPU Turbo/backoff and draw scale in session details, Performance settings and exported context. The optional Heat overlay includes the guard state. Requested Turbo is not an achieved clock reading.
+- Give extended texture reuse its own bounded idle-image allowance, shared across memory heaps. Active textures no longer consume that extra-retention allowance. Reuse and retirement return reservations; OS/Vulkan pressure and allocation recovery bypass the extension. The existing opt-in setting is retained.
+- Give rejected mods specific PC-plugin, loose-data layout or episode-installer guidance, including the expected Xbox 360 path. Compatible data files still require the existing validation checks.
+- Classify intentional startup `cache:`/`cache0:`/`cache1:` probes as optional diagnostics while preserving missing-device behavior. Other missing paths and broken aliases retain their error path.
+
+Interact’s bitmap loaded on the first attempt in the supplied Test9 report. The camera-linked shadow band did not reproduce in that session and remains unconfirmed; no new shadow-rendering fix is claimed. Phone performance, audio endurance and thermal behavior still require device validation.
+
+## Previously unreleased Test9 — included in Test10
+
+Test9 was shared for device testing and was not published separately on GitHub. These changes ship together in Test10.
+
+- Compacted achievement rows, dialogs and the session panel. Bounded scrolling keeps Logs and editor controls reachable.
+- Made the overlay editor use the full window, including zero-gap edge placement. Added optional app CPU, readable GPU counters and actual render/output dimensions; unavailable GPU counters are labelled explicitly.
+- Split touch editor tools into Control, Arrange and Layout sections, with Save pinned in the header.
+- Unified controller navigation for launcher, menus and editors: D-pad/stick movement, A activation, B back, shoulder tab switching and visible focus. Added left-stick inversion and controller presets.
+- Extended the layout-switch hold to gameplay and phone layouts, including contextual parachute/minigame modes. Zero uses the earliest observation; menus/loading remain immediate.
+- Removed bundled V38 Patched and migrated its saved selection to Automatic. Other bundles retain their pinned hashes.
+- Kept CPU profiling from changing command batching unless heavy transport capture is explicitly selected. Added a separate graphics-detail capture with a larger query budget.
+- Removed periodic full draw scans for upload staging in the sparse path, retaining checked on-demand growth and fence-safe overflow retirement. Spread bounded pipeline lookahead across the frame and avoided unused texture-array preparation for textureless indexed draws.
+- Passed the installed touch-icon directory explicitly to native code and included the resolved path in failure logs. Added clearer mod-folder and unsupported PC-plugin guidance.
+- Added bounded shadow image captures: presenter input, available directional depth/color surfaces, camera matrices, frame IDs and submission IDs. PNGs and lossless raw copies are included intact in exported reports.
+- Marked unsupported sustained-performance requests in Settings and exposed actual internal/output dimensions during play.
+
+The camera-linked straight-line shadow band remains under investigation. No visual shadow fix or phone performance improvement is claimed from host checks. Vehicle/pedestrian shadows retain their rendering path. Audio dropout protection remains enabled by default; game-side starvation still needs a device recording with low-latency audio off.
+
+## Test10 validation and known issues
+
+- Passed 19 Android UI tests, 11 Java regression groups, 11 native host groups with ASan/UBSan, and 83 contextual-input runtime checks. Android resources and 76 Java sources compiled; changed native sources and the full ARM64 build passed.
+- Verified the existing release signing identity, APK version 38, all 11 ARM64 libraries, 16 KiB alignment, all 44 touch icons, six driver archives and 24 driver member hashes.
+- **The camera-linked straight-line shadow band remains unresolved.** It did not reproduce in the supplied Test9 session. The new capture tools collect evidence; they do not establish a rendering fix.
+- Sustained FPS, audio dropouts, thermal behavior and physical-controller use still need phone testing. Host checks do not establish a performance gain.
+- SHA-256 (`XHYN-IV-0.5.9.3-xhyn-r2-test10.apk`): `37b2d1f9823033aae0953c4c4ab4b10aede1a95c7b8ea836c5a82ec03d01fa2b`.
 
 ## Test8 — easier menus, controls and performance tuning
 
@@ -121,7 +161,7 @@ This is a testing release. Sustained performance, graphics changes and controlle
 ## Drivers
 
 - Added the **ESMERINGHOY 27.0.0-devel (A7XX/A8XX)** experimental driver for compatible Adreno devices.
-- Included seven driver choices, with separate original V38 and Vauzi packages, additional Adreno options and experimental RADV for compatible Xclipse devices.
+- Included six bundled driver choices: Turnip R6, Vauzi v4.3, ESMERINGHOY, PanVK and RADV Xclipse 1.6/1.8. The original V38 Patched bundle was removed in Test9; its saved selection resolves to Automatic.
 - Added compatible-first ordering, clearer driver labels, per-driver options, advanced Turnip rendering/cache controls.
 - Show the actual loaded driver, including system-driver fallback.
 - Added imported-driver deletion with confirmation and blocked driver imports/removal while playing.

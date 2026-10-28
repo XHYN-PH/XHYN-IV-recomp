@@ -15,7 +15,7 @@ final class DebugLaunchOptions {
             args.removeIf(a -> a.startsWith("--diagnostics"));
             set(args,"diagnostics","false");set(args,"diagnostics_categories","");
             set(args,"log_level","off");set(args,"log_file","/dev/null");
-            for(String key:new String[]{"log_verbose","log_noisy","input_trace","gta4_native_input_trace","gta4_native_resource_trace","gta4_native_frame_stats","gta4_profile_native_autostart","present_timing_stats","android_thermal_log","gta4_profile_native_detailed_cpu","gta4_profile_native_detailed_gpu","gta4_native_detailed_counters","gta4_native_frame_timeline","gta4_pipeline_stats","gta4_gpu_counters"})set(args,key,"false");
+            for(String key:new String[]{"log_verbose","log_noisy","input_trace","gta4_native_input_trace","gta4_native_resource_trace","gta4_native_frame_stats","gta4_profile_native_autostart","present_timing_stats","android_thermal_log","gta4_profile_native_transport","gta4_profile_native_detailed_cpu","gta4_profile_native_detailed_gpu","gta4_native_detailed_counters","gta4_native_frame_timeline","gta4_pipeline_stats","gta4_gpu_counters"})set(args,key,"false");
             for(String key:new String[]{"gta4_native_benchmark_trigger","gta4_profile_native_capture_trigger","gta4_trace_shadow_targets","gta4_shadow_capture_trigger"})set(args,key,"0");
             return;
         }
@@ -36,6 +36,7 @@ final class DebugLaunchOptions {
         set(args,"gta4_profile_native_autostart","false");
         set(args,"gta4_profile_native_capture_trigger","0");
         set(args,"gta4_profile_native_samples","120");
+        set(args,"gta4_profile_native_transport","false");
         set(args,"gta4_profile_native_detailed_cpu","false");
         set(args,"gta4_profile_native_detailed_gpu","false");
         set(args,"gta4_profile_native_gpu_query_budget","64");

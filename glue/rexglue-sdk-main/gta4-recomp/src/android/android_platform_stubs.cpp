@@ -53,8 +53,12 @@ REXCVAR_DEFINE_DOUBLE(gta4_overlay_y,0.1,"GTA IV/Interface","Custom overlay vert
 REXCVAR_DEFINE_BOOL(gta4_overlay_ram,true,"GTA IV/Interface","Show overlay RAM");
 REXCVAR_DEFINE_BOOL(gta4_overlay_thermal,true,"GTA IV/Interface","Show overlay thermal status");
 REXCVAR_DEFINE_INT32(gta4_overlay_edge_gap,2,"GTA IV/Interface","Overlay safe-edge gap in dp").range(0,40);
+REXCVAR_DEFINE_BOOL(gta4_overlay_cpu,false,"GTA IV/Interface","Show optional app CPU usage");
+REXCVAR_DEFINE_BOOL(gta4_overlay_gpu,false,"GTA IV/Interface","Show GPU utilization when permitted by Android");
+REXCVAR_DEFINE_BOOL(gta4_overlay_resolution,false,"GTA IV/Interface","Show actual render and output extent");
 REXCVAR_DEFINE_BOOL(gta4_overlay_compact,false,"GTA IV/Interface","One-line overlay metrics");
 REXCVAR_DEFINE_BOOL(gta4_session_paused,false,"GTA IV/Status","Host menu owns gameplay pause");
+REXCVAR_DEFINE_UINT32(gta4_session_pause_revision,0,"GTA IV/Status","Host pause transition revision");
 extern "C" JNIEXPORT void JNICALL
 Java_com_libertyrecomp_LibertyActivity_nativeGyroSample(JNIEnv*,jclass,jfloat x,jfloat y){
  const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -69,10 +73,10 @@ Java_com_libertyrecomp_LibertyActivity_nativeSetTouchLayout(JNIEnv*, jclass, jbo
 }
 namespace {
 const std::set<std::string_view> mobile_settings={
-  "gamepad_left_deadzone","gamepad_right_deadzone","gamepad_left_sensitivity","gamepad_right_sensitivity","gamepad_response_curve","gamepad_trigger_threshold","gamepad_invert_right_x","gamepad_invert_right_y","gamepad_rumble_strength","gta4_touch_context_delay_ms","gta4_profile_native_detailed_cpu","gta4_profile_native_detailed_gpu",
+  "gamepad_left_deadzone","gamepad_right_deadzone","gamepad_left_sensitivity","gamepad_right_sensitivity","gamepad_response_curve","gamepad_trigger_threshold","gamepad_invert_left_x","gamepad_invert_left_y","gamepad_invert_right_x","gamepad_invert_right_y","gamepad_rumble_strength","gta4_touch_context_delay_ms","gta4_profile_native_transport","gta4_profile_native_gpu_query_budget","gta4_profile_native_detailed_cpu","gta4_profile_native_detailed_gpu",
   "gta4_native_preparation_cancel","gta4_native_texture_reuse_extended","gta4_native_depth_clip_fallback",
   "mnk_mode","mnk_sensitivity","mnk_invert_y","gta4_native_output_dither","gta4_disable_tlad_film_grain",
-  "gta4_overlay_text_size","gta4_overlay_opacity","gta4_overlay_x","gta4_overlay_y","gta4_overlay_ram","gta4_overlay_thermal","gta4_overlay_compact","gta4_overlay_edge_gap","gta4_touch_icon_outline",
+  "gta4_overlay_cpu","gta4_overlay_gpu","gta4_overlay_resolution","gta4_overlay_text_size","gta4_overlay_opacity","gta4_overlay_x","gta4_overlay_y","gta4_overlay_ram","gta4_overlay_thermal","gta4_overlay_compact","gta4_overlay_edge_gap","gta4_touch_icon_outline",
   "gta4_native_anti_aliasing","gta4_present_mode","gta4_frame_limit","gta4_draw_distance_scale",
   "gta4_native_water_reflection_interval","gta4_native_environment_reflection_interval","gta4_motion_blur",
   "gta4_native_benchmark_trigger","gta4_profile_native_capture_trigger","gta4_shadow_capture_trigger","gta4_trace_shadow_targets",
@@ -203,7 +207,13 @@ Java_com_libertyrecomp_LibertyActivity_nativeApplySettings(JNIEnv* env,jclass,jo
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_libertyrecomp_LibertyActivity_nativeHostMenu(JNIEnv*,jclass,jboolean open) {
+  const bool changed=rex::cvar::Query<bool>("gta4_session_paused")!=(open==JNI_TRUE);
   rex::cvar::SetFlagByName("gta4_session_paused",open==JNI_TRUE?"true":"false");
+  if(changed){
+    const auto revision=rex::cvar::Query<uint32_t>("gta4_session_pause_revision")+1;
+    rex::cvar::SetFlagByName("gta4_session_pause_revision",std::to_string(revision));
+    REXLOG_INFO("host-pause: paused={} revision={} (intentional UI transition)",open==JNI_TRUE,revision);
+  }
   gta4::input::phone_gyro.Reset();
   if(open==JNI_TRUE)gta4::input::ResetLibertyTouchOverlay();
   gta4::input::SetTouchHostMenu(open==JNI_TRUE);

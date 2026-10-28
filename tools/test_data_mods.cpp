@@ -20,6 +20,12 @@ static fs::path Host(HostPathDevice& device, const std::string& name) {
   return entry ? static_cast<HostPathEntry*>(entry)->host_path() : fs::path{};
 }
 int main(int argc, char** argv) {
+  assert(policy::LayoutProblem("GTAIV.EFLC.FusionFix","IV").find("PC package")!=std::string::npos);
+  assert(policy::LayoutProblem("TBoGT","common").find("Reinstall or add episodes")!=std::string::npos);
+  assert(policy::LayoutProblem("TLAD","common").find("Reinstall or add episodes")!=std::string::npos);
+  assert(policy::LayoutProblem("common","data").find("game/common/data/handling.dat")!=std::string::npos);
+  assert(policy::LayoutProblem("update","plugins").find("PC package")!=std::string::npos);
+  assert(policy::LayoutProblem("plugins","root.asi").find("PC plugin")!=std::string::npos);
   assert(argc > 1);
   const fs::path root = argv[1];
   fs::remove_all(root); fs::create_directories(root);

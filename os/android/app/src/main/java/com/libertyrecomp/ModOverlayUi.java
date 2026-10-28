@@ -30,7 +30,7 @@ final class ModOverlayUi {
         File installation=Installer.installRoot(data),root=new File(installation,"mods");
         LinearLayout body=new LinearLayout(a);body.setOrientation(LinearLayout.VERTICAL);
         body.addView(ModernUi.text(a,"Enable compatible Xbox 360 data mods, then save and start the game. Higher priority wins when files overlap.",14,ModernUi.TEXT));
-        ModernUi.action(a,body,"How to add a mod",()->ModernUi.dialog(a,"Add a data mod",ModernUi.text(a,"Create one folder per mod:\nmods/MyMod/game/common/data/handling.dat\n\nKeep the original Xbox 360 file paths inside game/ or update/. PC plugins, scripts and texture/model archives do not work here.\n\nMods folder: "+root,13,ModernUi.TEXT)).show());
+        ModernUi.action(a,body,"How to add a mod",()->ModernUi.dialog(a,"Add a data mod",ModernUi.text(a,"Create one folder per mod:\nmods/MyMod/game/common/data/handling.dat\n\nIf a download contains common/data/, move that tree under game/. If it already contains game/ or update/, keep that folder directly inside MyMod (avoid MyMod/MyMod/).\n\nKeep the original Xbox 360 file paths inside game/ or update/. PC FusionFix/ASI plugins, scripts and texture/model archives do not work here. Complete TLAD/TBoGT episode data belongs in the launcher’s Reinstall or add episodes installer, rather than the mods folder.\n\nMods folder: "+root,13,ModernUi.TEXT)).show());
         CheckBox global=new CheckBox(a);global.setText("Enable data-file mods");global.setTextColor(ModernUi.TEXT);
         try{global.setChecked("true".equals(MobileConfig.read(MobileConfig.file(data)).get("data_file_mods")));}catch(IOException ignored){}
         body.addView(global);
@@ -39,7 +39,7 @@ final class ModOverlayUi {
         Button save=ModernUi.button(a,"Save for next launch",true);save.setEnabled(false);body.addView(save);
         boolean[] dirty={false},saving={false};AlertDialog[] active={null};
         AlertDialog dialog=ModernUi.navigable(a,()->{if(saving[0])return false;if(!dirty[0])return true;ModernUi.builder(a).setTitle("Unsaved mod changes").setMessage("Save changes before leaving?").setPositiveButton("Save",(d,w)->save.performClick()).setNegativeButton("Discard",(d,w)->active[0].dismiss()).setNeutralButton("Keep editing",null).show();return false;});active[0]=dialog;
-        ScrollView scroll=new ScrollView(a);scroll.addView(body);LinearLayout page=ModernUi.panel(a);page.addView(ModernUi.text(a,"DATA-FILE MODS",18,ModernUi.TEXT));Button back=ModernUi.iconButton(a,"back","Back");page.addView(back,new LinearLayout.LayoutParams(-1,ModernUi.dp(a,40)));back.setOnClickListener(v->dialog.onBackPressed());page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));dialog.setView(page);dialog.setCanceledOnTouchOutside(false);dialog.setOnShowListener(v->{android.view.Window w=dialog.getWindow();if(w!=null){ModernUi.immersive(w);w.setBackgroundDrawableResource(android.R.color.transparent);w.setLayout(Math.min(ModernUi.dp(a,700),(int)(a.getResources().getDisplayMetrics().widthPixels*.94)),(int)(a.getResources().getDisplayMetrics().heightPixels*.9));ModernUi.focusFirst(page);}});dialog.show();global.setOnCheckedChangeListener((v,on)->dirty[0]=true);
+        ScrollView scroll=new ScrollView(a);scroll.setClipToPadding(false);scroll.setPadding(0,0,0,ModernUi.dp(a,12));scroll.addView(body);LinearLayout page=ModernUi.panel(a);page.addView(ModernUi.text(a,"DATA-FILE MODS",18,ModernUi.TEXT));Button back=ModernUi.iconButton(a,"back","Back");page.addView(back,new LinearLayout.LayoutParams(-1,ModernUi.dp(a,40)));back.setOnClickListener(v->dialog.onBackPressed());page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));dialog.setView(page,0,0,0,0);dialog.setCanceledOnTouchOutside(false);dialog.setOnShowListener(v->{android.view.Window w=dialog.getWindow();if(w!=null){ModernUi.immersive(w);w.setBackgroundDrawableResource(android.R.color.transparent);w.setLayout(Math.min(ModernUi.dp(a,700),(int)(a.getResources().getDisplayMetrics().widthPixels*.94)),(int)(a.getResources().getDisplayMetrics().heightPixels*.9));ModernUi.focusFirst(page);}});dialog.show();global.setOnCheckedChangeListener((v,on)->dirty[0]=true);
         Thread scan=new Thread(()->{
             List<ModOverlayPolicy.Mod> mods=new ArrayList<>();Map<String,String> actual=new HashMap<>();String problem="";
             try{
@@ -58,11 +58,11 @@ final class ModOverlayUi {
                     ModOverlayPolicy.conflicts(result);
                     views.sort((x,y)->ModOverlayPolicy.ORDER.compare(x.mod,y.mod));rows.removeAllViews();
                     for(Row row:views){
-                        String status=row.mod.admitted()?"Ready · "+row.mod.files.size()+" files":"Needs attention: "+row.mod.problem;
+                        String status=row.mod.admitted()?"Ready · "+row.mod.files.size()+" files":"Needs attention: "+ModOverlayPolicy.problemSummary(row.mod);
                         if(!row.mod.enabled)status="Disabled · "+status;
                         if(row.mod.conflictCount>0)status+="\nConflicts: "+row.mod.conflictCount+" (later mount wins)";
                         String last=loaded.get(ModOverlayPolicy.identity(row.mod.folder.getName()));
-                        if(last!=null)status+="\nLast launch: "+last;
+                        if(last!=null)status+="\nLast launch: "+(last.startsWith("rejected:")?"Rejected (open setup help)":last);
                         row.state.setText(status);row.priority.setText("Priority: "+row.mod.priority);ModernUi.optionSpacing(a,row.panel);LinearLayout.LayoutParams rowSpace=new LinearLayout.LayoutParams(-1,-2);rowSpace.topMargin=ModernUi.dp(a,8);rows.addView(row.panel,rowSpace);
                     }
                 };
@@ -78,7 +78,7 @@ final class ModOverlayUi {
                             catch(IOException e){input.setError(e.getMessage());}
                         });edit[0].show();
                     });
-                    ModernUi.action(a,row.panel,"Files and conflicts",()->{
+                    ModernUi.action(a,row.panel,row.mod.admitted()?"Files and conflicts":"Setup help",()->{
                         StringBuilder text=new StringBuilder();
                         if(!row.mod.problem.isEmpty())text.append(row.mod.problem).append("\n");
                         for(int i=0;i<Math.min(100,row.mod.files.size());i++)text.append(row.mod.files.get(i)).append("\n");

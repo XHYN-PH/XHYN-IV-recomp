@@ -17,6 +17,7 @@
 #include <stack>
 
 #include <rex/audio/audio_driver.h>
+#include <rex/audio/audio_rebuffer_policy.h>
 #include <rex/thread.h>
 
 #include <SDL3/SDL.h>
@@ -46,20 +47,22 @@ class SDLAudioDriver : public AudioDriver {
   bool sdl_initialized_ = false;
   bool silent_fallback_ = false;
   bool low_latency_ = false;
-  bool rebuffering_ = true;
+  AudioRebufferPolicy rebuffer_policy_;
   std::chrono::steady_clock::time_point starvation_window_start_=std::chrono::steady_clock::now();
   uint8_t sdl_device_channels_ = 0;
 
-  static const uint32_t frame_frequency_ = 48000;
-  static const uint32_t frame_channels_ = 6;
-  static const uint32_t channel_samples_ = 256;
-  static const uint32_t frame_samples_ = frame_channels_ * channel_samples_;
-  static const uint32_t frame_size_ = sizeof(float) * frame_samples_;
-  static const uint32_t silent_frame_duration_microseconds_ = 5333;
+  static constexpr uint32_t frame_frequency_ = 48000;
+  static constexpr uint32_t frame_channels_ = 6;
+  static constexpr uint32_t channel_samples_ = 256;
+  static constexpr uint32_t frame_samples_ = frame_channels_ * channel_samples_;
+  static constexpr uint32_t frame_size_ = sizeof(float) * frame_samples_;
+  static constexpr uint32_t silent_frame_duration_microseconds_ = 5333;
   std::queue<float*> frames_queued_ = {};
   std::stack<float*> frames_unused_ = {};
   std::mutex frames_mutex_ = {};
-  uint32_t silent_fills_=0,filled_blocks_=0,callback_log_count_=0;
+  uint32_t silent_fills_=0,filled_blocks_=0,empty_fills_=0,refill_fills_=0;
+  uint64_t max_submit_gap_us_=0;
+  std::chrono::steady_clock::time_point last_submit_{};
   std::chrono::steady_clock::time_point next_starvation_report_=std::chrono::steady_clock::now()+std::chrono::seconds(10);
 };
 

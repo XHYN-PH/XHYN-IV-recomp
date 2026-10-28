@@ -17,7 +17,7 @@ final class DriverState {
             if(name.isEmpty()||name.contains("/")||name.contains("\\")||name.contains(".."))return "auto";
             return "custom:"+name;
         }
-        return mode.toLowerCase(Locale.ROOT);
+        String normalized=mode.toLowerCase(Locale.ROOT);return normalized.equals("turnip_v38")?"auto":normalized;
     }
     static String readChoice(File data){
         File file=new File(data,"driver.txt");

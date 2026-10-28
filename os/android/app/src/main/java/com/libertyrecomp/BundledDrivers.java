@@ -42,12 +42,6 @@ final class BundledDrivers {
         }
         {
             Map<String,String> files=new LinkedHashMap<>();
-            files.put("meta.json","b27f1d1c401025704ee271a8ff768b8f68465c374c467c7238164fa79a546c8d");
-            files.put("libvulkan_freedreno.so","7b0b16fb0c8fb7854868e77eb8b284a1e95789e32c1fd8b545ed91165bf78189");
-            bundles.put("turnip_v38",new Bundle("turnip_v38","Turnip_Gen8_V38_Patched.zip","Turnip Mesa 27.0.0-devel · V38 Patched",29,"libvulkan_freedreno.so","2bbb279a3da7680503a54a51a3051c7a4302c8fb2a089f8b183b4b5d6ba9ac17",files));
-        }
-        {
-            Map<String,String> files=new LinkedHashMap<>();
             files.put("meta.json","e4bef43957b5754a1e0d1a0032134db0465508e4bc75e423f4b175bcc34eddc1");
             files.put("libvulkan_freedreno.so","919a19b3d49880292d88dd35ff92b516ca7c929a3321d62452e1361c3ceeefc5");
             bundles.put("turnip_v43",new Bundle("turnip_v43","Turnip-710-720-722-v4.3.zip","Turnip Mesa 27.0.0-devel · Vauzi v4.3",29,"libvulkan_freedreno.so","45ac070f30086cb67bd6f24600199293192c3fa4810c402b25ac185967a3b5e6",files));

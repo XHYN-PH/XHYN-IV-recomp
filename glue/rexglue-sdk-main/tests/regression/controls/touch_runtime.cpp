@@ -9,6 +9,7 @@ void __imp__sub_822B7958(PPCContext&, uint8_t*);
 #include "touch_samples.h"
 
 review::Setting<bool> gta4_touch_trace{false};
+review::Setting<int32_t> gta4_touch_context_delay_ms{0};
 namespace {
 gta4::input::TouchContextSnapshot facts;
 gta4::input::TouchVisiblePromptSnapshot prompts;
@@ -42,6 +43,11 @@ bool GetTouchPresentationState(TouchPresentationState* output) noexcept { *outpu
 void SetTouchGamepadProvider(TouchGamepadProvider value) noexcept { provider = value; }
 }
 namespace gta4::input {
+// These fixtures exercise the contextual layout; the fixed gamepad backend is
+// covered by tools/test_android_touch.cpp with real ImGui and synthetic fingers.
+bool GamepadTouchLayoutSelected() noexcept { return false; }
+bool GamepadTouchOverlayVisible() noexcept { return false; }
+bool ReadGamepadTouchOverlay(uint32_t, rex::input::X_INPUT_GAMEPAD*) noexcept { return false; }
 bool activity_query_admitted = true;
 bool TouchActivityQueryMatches(uint8_t*, const TouchActivitySnapshot&) noexcept { return activity_query_admitted; }
 TouchContextSnapshot GetTouchContextSnapshot() noexcept { return facts; }
@@ -899,6 +905,23 @@ void BetweenPollSuspension() {
 
 #include "touch_activity_integration.inc"
 
+void LayoutTransitionHold() {
+  using namespace gta4::input;
+  Reset(ContextTouchMode::kOnFoot);
+  gta4_touch_context_delay_ms.value=1000;
+  facts.base_mode=ContextTouchMode::kPhone;
+  Poll();assert(g_runtime.layout.mode==ContextTouchMode::kOnFoot);
+  gta4_touch_context_delay_ms.value=0;
+  Poll();assert(g_runtime.layout.mode==ContextTouchMode::kPhone);
+  gta4_touch_context_delay_ms.value=1000;
+  facts.base_mode=ContextTouchMode::kMinigame;
+  Poll();assert(g_runtime.layout.mode==ContextTouchMode::kPhone);
+  facts.loading=true;
+  Poll();assert(g_runtime.layout.mode==ContextTouchMode::kDisabled);
+  gta4_touch_context_delay_ms.value=0;
+  std::cout<<"PASS gameplay/phone/minigame layout hold, zero-delay switch and immediate loading suspension\n";
+}
+
 int main() {
   guest = static_cast<uint8_t*>(mmap(nullptr, touch_samples::kGuestBytes, PROT_READ | PROT_WRITE,
       MAP_PRIVATE | MAP_ANON, -1, 0));
@@ -912,6 +935,7 @@ int main() {
   ExplicitFrontendEditor();
   ActivityTransactions();
   NativeWeaponSelectorGestures();
+  LayoutTransitionHold();
   ShutdownContextTouchControls();
   munmap(guest, touch_samples::kGuestBytes);
 }

@@ -10,6 +10,8 @@
 #include "input/context_touch_controls.cpp"
 #include "touch_samples.h"
 
+review::Setting<int32_t> gta4_touch_context_delay_ms{0};
+
 namespace review {
 std::deque<rex::input::AbsolutePointerEvent> events;
 rex::input::TouchPresentationState presentation;
@@ -48,6 +50,11 @@ bool ReadTouchGamepad(uint32_t user, X_INPUT_GAMEPAD* state) noexcept {
 }
 }
 namespace gta4::input {
+bool GamepadTouchLayoutSelected() noexcept { return false; }
+bool GamepadTouchOverlayVisible() noexcept { return false; }
+bool ReadGamepadTouchOverlay(uint32_t, rex::input::X_INPUT_GAMEPAD*) noexcept { return false; }
+void PublishLibertyPauseMenu(uint32_t, uint32_t) noexcept {}
+void RememberTouchRadarLocalBounds(gta4::aspect::Rect, gta4::aspect::Rect) noexcept {}
 void CaptureTouchContext(PPCContext&, uint8_t*, uint64_t epoch, bool frontend, bool map) noexcept {
   review::facts.presentation_revision = ContextTouchPresentationRevision();
   if (review::suspend_during_capture) {
@@ -150,7 +157,9 @@ constexpr std::array<std::array<uint32_t, 2>, 8> kRadarVertices = {{
     {0x80030, 0x00000000}, {0x80034, 0x3F800000},
 }};
 constexpr gta4::input::TouchRadarPass kGameplayRadar = {
-    .bounds = {0.0625, 0.75, 0.25, 0.9375}, .gameplay = true};
+    .bounds = {0.0625, 0.75, 0.25, 0.9375},
+    .authored = {0.0625, 0.75, 0.25, 0.9375},
+    .viewport = {0.0625, 0.75, 0.25, 0.9375}, .gameplay = true};
 constexpr gta4::input::ContextTouchControl kRadarCenter = {
     .center_x = 200.0f, .center_y = 607.5f};
 constexpr gta4::input::ContextTouchControl kOutsideRadar = {

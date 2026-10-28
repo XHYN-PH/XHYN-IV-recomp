@@ -29,6 +29,13 @@ inline constexpr uint32_t kNativeBufferCacheLimitMiB = 256;
 inline constexpr size_t kNativeMaximumVertexConversionsPerBuffer = 2;
 inline constexpr uint32_t kNativeUploadShrinkObservationFrames = 120;
 
+// A completed slot can release its overflow blocks only after every block has
+// gone unused for a sustained window. The fixed primary arena is retained.
+constexpr bool ShouldRetireUnusedNativeUploadBlocks(size_t overflow_blocks, bool all_unused,
+                                                     uint32_t observations) {
+  return overflow_blocks && all_unused && observations >= kNativeUploadShrinkObservationFrames;
+}
+
 // Internal lock flushes submit GPU work but are not title presents. Keep the
 // resource-maintenance clock on the most recent title frame. A real present
 // with frame zero (startup, reset, or wrap) remains a real clock observation.

@@ -143,6 +143,7 @@ REXCVAR_DEFINE_DOUBLE(gta4_native_auto_hdr_shoulder_power, 2.5,
                       "Auto HDR highlight shoulder exponent")
     .range(1.0, 10.0);
 
+REXCVAR_DEFINE_STRING(gta4_touch_icon_directory,"","GTA IV/Input/Touch","Optional exact directory prepared by the Android icon installer").lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_UINT32(gta4_shadow_map_base_size, REX_PLATFORM_ANDROID ? 256 : 512,
                       "GTA IV/Graphics/Shadows",
                       "Base shadow-map size (512 creates a 4096x4096 point-shadow cache)")
@@ -1334,7 +1335,7 @@ void GTA4App::OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) {
   gta4::game_center::Initialize();
   context_touch_overlay_ =
       std::make_unique<gta4::input::ContextTouchOverlay>(
-          drawer, immediate_drawer(), native_config_path_.parent_path() / "touch-icons", window());
+          drawer, immediate_drawer(), REXCVAR_GET(gta4_touch_icon_directory).empty()?native_config_path_.parent_path() / "touch-icons":std::filesystem::path(REXCVAR_GET(gta4_touch_icon_directory)), window());
   text_chat_dialog_ = std::make_unique<gta4::input::TextChatDialog>(
       drawer, [this](bool captured) {
         SetTitleInputCaptured(captured);

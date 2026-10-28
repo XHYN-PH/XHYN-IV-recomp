@@ -83,7 +83,7 @@ public class MenuRegressionTest {
     }
     @Test public void turnipResetRefreshesAndDiscardPreservesSavedValues()throws Exception{
         try(ActivityController<Activity> c=Robolectric.buildActivity(Activity.class).setup()){
-            Activity a=c.get();File data=data(a);DriverState.choose(data,"turnip_v38");DriverState.saveOptions(data,"turnip_v38",Map.of("rendering","gmem","disk_cache","false","cache_size","1G"));
+            Activity a=c.get();File data=data(a);DriverState.choose(data,"turnip_v43");DriverState.saveOptions(data,"turnip_v43",Map.of("rendering","gmem","disk_cache","false","cache_size","1G"));
             TurnipSettingsUi.show(a,data,false);AlertDialog options=latest();assertNotNull(find(options.getWindow().getDecorView(),"Rendering policy: Tile memory"));
             click(options.getWindow().getDecorView(),"Reset driver options");press(latest(),AlertDialog.BUTTON_POSITIVE);
             assertNotNull(find(options.getWindow().getDecorView(),"Rendering policy: Launcher default"));assertNotNull(find(options.getWindow().getDecorView(),"Driver disk shader cache: On"));
@@ -92,7 +92,7 @@ public class MenuRegressionTest {
             capture(a,options.getWindow().getDecorView(),"turnip-test8");options.onBackPressed();Shadows.shadowOf(Looper.getMainLooper()).idle();
             assertEquals("Unsaved driver options",Shadows.shadowOf(latest()).getTitle().toString());press(latest(),AlertDialog.BUTTON_NEUTRAL);assertTrue(options.isShowing());
             click(options.getWindow().getDecorView(),"Back");press(latest(),AlertDialog.BUTTON_NEGATIVE);
-            assertEquals("gmem",DriverState.options(data,"turnip_v38").get("rendering"));
+            assertEquals("gmem",DriverState.options(data,"turnip_v43").get("rendering"));
         }
     }
     @Test public void mobileEditorUsesFullWindowAndBackCanDiscard()throws Exception{
@@ -116,7 +116,7 @@ public class MenuRegressionTest {
         try(ActivityController<Activity> c=Robolectric.buildActivity(Activity.class).setup()){
             Activity a=c.get();MobileSettingsUi.Runtime runtime=new MobileSettingsUi.Runtime(){public String get(String key){return key.equals("gta4_session_stats")?"{}":"";}public boolean apply(String[] k,String[] v){return true;}};
             Map<String,Runnable> actions=new LinkedHashMap<>();for(String action:new String[]{"Achievements","Cheats","Settings","Edit mobile controls","Control settings","Edit Xbox controls","Start performance test","Recorded results","Input test (30 seconds)","Capture renderer timings","Capture shadow issue"})actions.put(action,()->{});
-            AlertDialog menu=SessionMenuUi.show(a,runtime,"turnip_v38",new SessionMenuUi.State(),actions,()->{});
+            AlertDialog menu=SessionMenuUi.show(a,runtime,"turnip_v43",new SessionMenuUi.State(),actions,()->{});
             View resume=find(menu.getWindow().getDecorView(),"Resume"),waiting=find(menu.getWindow().getDecorView(),"Waiting for gameplay sample");assertNotNull(resume);assertNotNull(waiting);assertNull(find(menu.getWindow().getDecorView(),"Back"));
             capture(a,menu.getWindow().getDecorView(),"session-menu-test8");
             int[] headerPosition=new int[2],resumePosition=new int[2];waiting.getLocationInWindow(headerPosition);resume.getLocationInWindow(resumePosition);

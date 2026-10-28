@@ -6,14 +6,14 @@ The original projects provide the game recompilation, Android platform support, 
 
 ## What changes in XHYN IV?
 
-This comparison describes **XHYN IV r2 Test8**. Both projects continue to change.
+This comparison describes **XHYN IV r2 Test10**. Both projects continue to change.
 
 | Area | Original Android port | XHYN IV |
 | --- | --- | --- |
 | Menus and settings | Launcher, driver controls, and game menus; advanced options also use configuration files. | Redesigned launcher and pause menu, categorized settings, search, explanations, inline On/Off choices, and Save/Discard prompts. More adjustments can be made inside the app. |
-| Touch controls | On-screen Xbox controls and a context-sensitive layout. | Separate customizable mobile and Xbox layouts, a fullscreen editor, Undo/Redo, import/export, placement guides, gyro camera options, and a walking/vehicle switch delay. |
+| Touch controls | On-screen Xbox controls and a context-sensitive layout. | Separate customizable mobile and Xbox layouts, a fullscreen editor, Undo/Redo, import/export, placement guides, gyro camera options, and a gameplay-layout switch delay, including phone and minigame contexts. |
 | Physical controllers | Gamepad input through Android and SDL. | Menu navigation and focus, deadzones, stick sensitivity, response curve, inversion, trigger threshold, vibration strength, and an input preview. |
-| Drivers | Bundled Turnip, imported drivers, and System fallback. | Seven bundled choices, including ESMERINGHOY for compatible Adreno devices, compatibility labels, per-driver options, and more cache controls. Extra choices are options to try, not a guarantee of support. |
+| Drivers | Bundled Turnip, imported drivers, and System fallback. | Six bundled choices, including ESMERINGHOY for compatible Adreno devices, compatibility labels, per-driver options, and more cache controls. Extra choices are options to try, not a guarantee of support. |
 | Graphics and performance | Android Vulkan rendering, graphics settings, and existing Android performance work. | More settings in phone menus, half/quarter reflection sizes, one to five graphics preparation workers, a Balanced shortcut, and further cache, preparation, and audio changes. |
 | Saves and game tools | Persistent game saves and the underlying game systems. | Full save/achievement backups, individual save-slot management, available save-progress information, and phone menus for local achievements and single-player cheats. |
 | Data-file mods | No dedicated data-file mod manager in the Android launcher. | Enable/disable compatible loose Xbox data files, set their priority, inspect conflicts, and read rejection or last-launch messages. |

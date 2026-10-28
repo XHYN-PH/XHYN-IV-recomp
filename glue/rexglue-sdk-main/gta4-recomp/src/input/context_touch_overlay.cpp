@@ -65,7 +65,7 @@ bool ContextTouchOverlay::ResolveIcon(void* context, std::string_view id, Contex
       }
     }
     if(!texture)self.icon_retries_[key]=std::chrono::steady_clock::now()+std::chrono::seconds(2);
-    REXLOG_INFO("touch-icon: name={} bitmap_loaded={} vector_fallback={} reason={} attempt={}",key,bool(texture),!texture,texture?"ready":reason,self.icon_attempts_[key]);
+    REXLOG_INFO("touch-icon: name={} bitmap_loaded={} vector_fallback={} reason={} attempt={} file={}",key,bool(texture),!texture,texture?"ready":reason,self.icon_attempts_[key],(self.icon_directory_/(key+".png")).string());
     found = self.icons_.emplace(key, std::move(texture)).first;
   }
   if (!found->second) return false;

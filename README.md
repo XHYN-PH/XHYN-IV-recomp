@@ -7,13 +7,13 @@
 <p align="center">Grand Theft Auto IV for Android.</p>
 
 <p align="center">
-  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test8/XHYN-IV-0.5.9.3-xhyn-r2-test8.apk"><strong>Download APK</strong></a> ·
-  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test8">What's new</a> ·
+  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test10/XHYN-IV-0.5.9.3-xhyn-r2-test10.apk"><strong>Download APK</strong></a> ·
+  <a href="https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test10">What's new</a> ·
   <a href="https://t.me/xhynports">Telegram</a> ·
   <a href="https://youtube.com/@xhyn_ph">YouTube</a>
 </p>
 
-**Current version: Test8 — 0.5.9.3-xhyn-r2-test8.** This is a testing release. Performance still needs work, and improvements will continue through future updates.
+**Current version: Test10 — 0.5.9.3-xhyn-r2-test10.** This is a testing release. Performance still needs work, and improvements will continue through future updates.
 
 **Bring your own Xbox 360 GTA IV USA disc image and Title Update 8 (0.0.8.5).** Game files and the update are not included.
 
@@ -35,7 +35,7 @@ This fork focuses on making more of the experience adjustable from your phone:
 
 ## Get started
 
-1. [Download the APK](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test8/XHYN-IV-0.5.9.3-xhyn-r2-test8.apk) and install it on your phone.
+1. [Download the APK](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test10/XHYN-IV-0.5.9.3-xhyn-r2-test10.apk) and install it on your phone.
 2. Open **Game files**, choose your GTA IV disc image and Title Update 8, then press **Install**.
 3. Wait for installation to finish, return to the main menu, and press **Play**.
 
@@ -66,7 +66,7 @@ Performance depends on your phone, temperature, graphics settings, and driver.
 - Save backups, individual save-slot management, and compatible [data-file mods](docs/MOD_SUPPORT.md).
 - Built-in driver choices, including **ESMERINGHOY** for compatible Adreno 7xx/8xx devices, plus driver import.
 
-See the [release notes](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test8) for the full list of changes.
+See the [release notes](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.5.9.3-xhyn-r2-test10) for the full list of changes.
 
 ## Find your settings
 
@@ -103,10 +103,10 @@ Include your phone model, Android version, selected driver, and what happened. S
 
 - [vaduur/LibertyRecompAndroid](https://github.com/vaduur/LibertyRecompAndroid) for the Android base.
 - [OZORDI/LibertyRecomp](https://github.com/OZORDI/LibertyRecomp) and [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) for the underlying project and runtime.
-- [prollynotzjay/LibertyRecompAndroidMaliVer](https://github.com/prollynotzjay/LibertyRecompAndroidMaliVer) for the adapted mobile touch layout and icons. See [touch artwork credits](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test8/os/android/app/src/main/assets/TOUCH-NOTICE.txt).
-- SDL, Mesa, libadrenotools, and other upstream contributors. See [driver sources and licenses](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test8/os/android/native/DRIVERS.md).
+- [prollynotzjay/LibertyRecompAndroidMaliVer](https://github.com/prollynotzjay/LibertyRecompAndroidMaliVer) for the adapted mobile touch layout and icons. See [touch artwork credits](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test10/os/android/app/src/main/assets/TOUCH-NOTICE.txt).
+- SDL, Mesa, libadrenotools, and other upstream contributors. See [driver sources and licenses](https://github.com/XHYN-PH/XHYN-IV-recomp/blob/xhyn/r2-test10/os/android/native/DRIVERS.md).
 - **XHYN-PH** for this fork's Android refinements, interface, and releases.
 
-[Source code](https://github.com/XHYN-PH/XHYN-IV-recomp/tree/xhyn/r2-test8) · [Original project README](README_UPSTREAM.md) · [Artwork notices](docs/android/ARTWORK.md)
+[Source code](https://github.com/XHYN-PH/XHYN-IV-recomp/tree/xhyn/r2-test10) · [Original project README](README_UPSTREAM.md) · [Artwork notices](docs/android/ARTWORK.md)
 
 Source is distributed under [GNU GPL v3](COPYING). Third-party components keep their own licenses and credits. Artwork and trademarks belong to their respective owners. This unofficial project is not affiliated with Rockstar Games or Take-Two Interactive.

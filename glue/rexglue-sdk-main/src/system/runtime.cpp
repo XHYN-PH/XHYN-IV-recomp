@@ -429,6 +429,7 @@ bool Runtime::SetupVfs() {
   // NOTE: Do NOT register a device for cache: paths
   // Games handle "device not found" gracefully but don't handle actual device
   // errors (like NAME_COLLISION) well. Let cache: fail cleanly.
+  REXSYS_INFO("vfs-optional-cache: cache:/cache0:/cache1: intentionally unmounted; title cache probes use their existing fallback");
 
   return true;
 }

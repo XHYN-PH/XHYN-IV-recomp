@@ -13,6 +13,7 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 #include <rex/filesystem/device.h>
+#include <rex/filesystem/expected_missing_device.h>
 #include <rex/kernel/xboxkrnl/private.h>
 #include <rex/logging.h>
 #include <rex/memory.h>
@@ -290,7 +291,10 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
 
   *handle_out = handle;
   if (XFAILED(result)) {
-    REXKRNL_IMPORT_FAIL("NtCreateFile", "path='{}' -> {:#x}", target_path, result);
+    if(filesystem::IsOptionalXboxCachePath(target_path)&&
+        (result==X_STATUS_NO_SUCH_FILE||result==X_STATUS_OBJECT_NAME_NOT_FOUND)){
+      REXKRNL_DEBUG("NtCreateFile: optional cache probe '{}' -> {:#x}",target_path,result);
+    }else REXKRNL_IMPORT_FAIL("NtCreateFile", "path='{}' -> {:#x}", target_path, result);
   } else {
     REXKRNL_IMPORT_RESULT("NtCreateFile", "{:#x} handle={:#x}", result, handle);
   }

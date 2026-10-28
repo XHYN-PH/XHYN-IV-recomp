@@ -28,9 +28,11 @@
 #include "input/context_touch_activity.h"
 #include "input/context_touch_fade.h"
 #include "input/context_touch_settings.h"
+#include "input/touch_context_transition.h"
 #include "input/gamepad_touch_overlay.h"
 
 REXCVAR_DECLARE(bool, gta4_touch_trace);
+REXCVAR_DECLARE(int32_t, gta4_touch_context_delay_ms);
 
 namespace gta4::input {
 bool ContextTouchHudLayoutActive() noexcept {
@@ -132,6 +134,7 @@ struct NativePulse {
 struct RuntimeState {
   std::mutex mutex;
   ContextTouchLayout layout{};
+  TouchContextTransition<ContextTouchMode> layout_transition;
   TouchContextSnapshot context{};
   ContextTouchPreferences preferences{};
   uint64_t epoch = 0;
@@ -525,6 +528,7 @@ void RefreshLayoutLocked(uint64_t epoch, bool frontend, bool map) {
   const bool context_changed = context.generation != g_runtime.context.generation ||
                                context.player_identity != g_runtime.context.player_identity ||
                                context.input_user != g_runtime.context.input_user;
+  const bool same_player = context.player_identity == g_runtime.context.player_identity;
   const bool native_ui_changed = frontend != g_runtime.context.frontend ||
                                  map != g_runtime.context.map;
   const bool geometry_changed = !ContextTouchLayoutEquivalent(
@@ -585,6 +589,15 @@ void RefreshLayoutLocked(uint64_t epoch, bool frontend, bool map) {
       }
     }
   }
+  const auto active_mode=[](ContextTouchMode value){
+    return value>=ContextTouchMode::kOnFoot&&value<=ContextTouchMode::kMinigame;
+  };
+  mode=g_runtime.layout_transition.Update(mode,g_runtime.layout.mode,
+      MonotonicNanoseconds()/1000000,REXCVAR_GET(gta4_touch_context_delay_ms),
+      !g_runtime.editor_session&&context.valid&&context.native_input_allowed&&
+      !context.loading&&!context.cutscene&&!frontend&&!map&&
+      active_mode(mode)&&active_mode(g_runtime.layout.mode)&&
+      same_player);
   const bool scoped = !g_runtime.editor_session && context.gameplay_allowed && mode == ContextTouchMode::kOnFoot &&
       g_runtime.scoped_generation == context.generation &&
       EpochWithin(epoch, g_runtime.scoped_seen_epoch, kScopedObservationExpiryEpochs);

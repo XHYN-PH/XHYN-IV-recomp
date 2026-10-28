@@ -61,6 +61,33 @@ public class AndroidLogFilesTest {
             }
         }
         assert retained&&names.contains("README.txt")&&names.size()==3;
+        File capture=new File(logs,chosen+".runtime.log.shadow/request-1-frame-12");assert capture.mkdirs();
+        Files.writeString(new File(capture.getParentFile(),"capture-complete.txt").toPath(),"Completed images only");
+        byte[] image=new byte[3*1024*1024+53];new Random(13).nextBytes(image);
+        Files.write(new File(capture,"visible-frame.png").toPath(),image);
+        Files.write(new File(capture,"atlas.bin.zst").toPath(),image);
+        Files.write(new File(capture,"incomplete.png.partial").toPath(),image);
+        output.reset();DebugLogArchive.write(output,root,fallback,chosen);int completeImages=0;
+        try(ZipInputStream zip=new ZipInputStream(new ByteArrayInputStream(output.toByteArray()))){
+            ZipEntry entry;while((entry=zip.getNextEntry())!=null){
+                assert !entry.getName().endsWith(".partial");
+                if(entry.getName().endsWith(".png")||entry.getName().endsWith(".bin.zst")){assert Arrays.equals(image,zip.readAllBytes()):"Binary captures must not be truncated as text";completeImages++;}
+            }
+        }
+        assert completeImages==2;
+        File hitches=new File(logs,chosen+".runtime.log.hitches");assert hitches.mkdirs();
+        Files.writeString(new File(hitches,"capture-complete.txt").toPath(),"Rolling last 16 traces");
+        String hitchCsv="frame,end_monotonic_ns,interval_ms\n123,456000000,120.5\n";
+        Files.writeString(new File(hitches,"recent-0.csv").toPath(),hitchCsv);
+        Files.writeString(new File(hitches,"recent-1.csv.partial").toPath(),"unfinished");
+        output.reset();DebugLogArchive.write(output,root,fallback,chosen);boolean hitchFound=false;
+        try(ZipInputStream zip=new ZipInputStream(new ByteArrayInputStream(output.toByteArray()))){
+            ZipEntry entry;while((entry=zip.getNextEntry())!=null){
+                assert !entry.getName().endsWith(".partial");
+                if(entry.getName().endsWith(".hitches/recent-0.csv")){assert new String(zip.readAllBytes(),StandardCharsets.UTF_8).equals(hitchCsv);hitchFound=true;}
+            }
+        }
+        assert hitchFound:"Hitch diagnostics must be included in the selected session export";
         failure=false;try {DebugLogArchive.write(new OutputStream(){public void write(int value)throws IOException{throw new IOException("full");}},root,fallback);}
         catch(IOException expected){failure=true;}assert failure;
         File profile=new File(logs,chosen+".runtime.log.profile/frames");assert profile.mkdirs();

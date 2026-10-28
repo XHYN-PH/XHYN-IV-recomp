@@ -764,6 +764,7 @@ CMakeUserPresets.json
 !/.github/workflows/build-macos.yml
 
 # Reproducible touch regression runner and arithmetic fixtures.
+!/tools/test_native_capture_png.py
 !/glue/rexglue-sdk-main/tools/verify_controls_regressions.py
 !/glue/rexglue-sdk-main/tests/regression/controls/touch_samples.py
 !/glue/rexglue-sdk-main/tests/regression/controls/touch_icon_samples.py
@@ -805,3 +806,6 @@ CMakeUserPresets.json
 # R2 Test 3 verification and layout preview
 !/tools/preview_r2_test3_ui.py
 !/tools/verify_r2_test3_apk.py
+
+!/tools/test_android_audio.cpp
+!/tools/verify_android_candidate.py

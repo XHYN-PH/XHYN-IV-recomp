@@ -222,7 +222,7 @@ public class LauncherActivity extends Activity {
     private View mDriverPanel,mFilesPanel;
     private TextView mLaunchSummary,mAchievementSummary;
     private String launchSummary(){
-        try{java.util.Map<String,String> c=MobileConfig.read(MobileConfig.file(mDataRoot));c.putAll(PendingSettings.read(mDataRoot));String mode=readFirstLine(new File(mDataRoot,"driver.txt"));if(mode==null)mode="Automatic";String driver=BundledDrivers.ALL.containsKey(mode)?BundledDrivers.ALL.get(mode).label:mode.replace("custom:","");String summary=c.getOrDefault("resolution","720p")+" · Cap "+c.getOrDefault("gta4_frame_limit","30")+" FPS · "+c.getOrDefault("gta4_native_anti_aliasing","fxaa").toUpperCase(Locale.ROOT)+" / "+c.getOrDefault("gta4_native_upscaler","native")+"\n"+driver+" · Android "+Build.VERSION.RELEASE+" · "+GpuInfo.renderer();
+        try{java.util.Map<String,String> c=MobileConfig.read(MobileConfig.file(mDataRoot));c.putAll(PendingSettings.read(mDataRoot));String mode=DriverState.readChoice(mDataRoot);String driver=mode.equals("auto")?"Automatic":mode.equals("system")?"System":BundledDrivers.ALL.containsKey(mode)?BundledDrivers.ALL.get(mode).label:mode.replace("custom:","");String summary=c.getOrDefault("resolution","720p")+" · Cap "+c.getOrDefault("gta4_frame_limit","30")+" FPS · "+c.getOrDefault("gta4_native_anti_aliasing","fxaa").toUpperCase(Locale.ROOT)+" / "+c.getOrDefault("gta4_native_upscaler","native")+"\n"+driver+" · Android "+Build.VERSION.RELEASE+" · "+GpuInfo.renderer();
             if(PendingSettings.pending(mDataRoot))summary+=" · Restart pending";
             return summary;
         }catch(Exception e){return "Configured graphics and driver apply when you play.";}
@@ -944,8 +944,7 @@ public class LauncherActivity extends Activity {
     }
 
     private String currentDriverMode() {
-        String line = readFirstLine(new File(mDataRoot, "driver.txt"));
-        if (line == null) return DriverBridge.AUTO;
+        String line = DriverState.readChoice(mDataRoot);
         String lower = line.toLowerCase(Locale.ROOT);
         if (lower.equals(DriverBridge.AUTO) || BundledDrivers.ALL.containsKey(lower)) return lower;
         if (lower.equals(DriverBridge.SYSTEM)) return DriverBridge.SYSTEM;
@@ -1290,37 +1289,13 @@ public class LauncherActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_UP) {
-            switch (event.getKeyCode()) {
-                case KeyEvent.KEYCODE_BUTTON_START:
-                    play(false);
-                    return true;
-                case KeyEvent.KEYCODE_BUTTON_A: {
-                    View focused = getCurrentFocus();
-                    if (focused != null) focused.performClick();
-                    return true;
-                }
-                case KeyEvent.KEYCODE_BUTTON_B:
-                    if (Installer.running()) {
-                        toast("The game is being installed.");
-                    } else {
-                        finish();
-                    }
-                    return true;
-                default:
-                    break;
-            }
-        } else if (event.getAction() == KeyEvent.ACTION_DOWN) {
-            switch (event.getKeyCode()) {
-                case KeyEvent.KEYCODE_BUTTON_START:
-                case KeyEvent.KEYCODE_BUTTON_A:
-                case KeyEvent.KEYCODE_BUTTON_B:
-                    return true;
-                default:
-                    break;
-            }
+        if(event.getKeyCode()==KeyEvent.KEYCODE_BUTTON_START){
+            if(event.getAction()==KeyEvent.ACTION_UP&&!event.isCanceled())play(false);
+            return true;
         }
-        return super.dispatchKeyEvent(event);
+        return menuNavigation.key(getWindow(),event,()->{
+            if(Installer.running())toast("The game is being installed.");else finish();
+        })||super.dispatchKeyEvent(event);
     }
 
     // ---------------------------------------------------------------- helpers

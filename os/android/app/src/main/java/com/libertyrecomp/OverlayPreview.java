@@ -21,8 +21,8 @@ final class OverlayPreview extends View {
         if(e.getActionMasked()==MotionEvent.ACTION_MOVE){
             int w=activity.getResources().getDisplayMetrics().widthPixels,h=activity.getResources().getDisplayMetrics().heightPixels;
             WindowInsets in=getRootWindowInsets();DisplayCutout c=in==null?null:in.getDisplayCutout();
-            int left=c==null?0:c.getSafeInsetLeft(),right=c==null?0:c.getSafeInsetRight(),top=Math.max(ModernUi.dp(activity,52),c==null?0:c.getSafeInsetTop()),bottom=c==null?0:c.getSafeInsetBottom();
-            if(in!=null)bottom=Math.max(bottom,in.getMandatorySystemGestureInsets().bottom);
+            int left=c==null?0:c.getSafeInsetLeft(),right=c==null?0:c.getSafeInsetRight(),top=(c==null?0:c.getSafeInsetTop()),bottom=c==null?0:c.getSafeInsetBottom();
+
             int gap=ModernUi.dp(activity,number("gta4_overlay_edge_gap",2));
             float[] min=OverlayPlacement.place("custom",0,0,w,h,(int)box.width(),(int)box.height(),left,top,right,bottom,gap),max=OverlayPlacement.place("custom",1,1,w,h,(int)box.width(),(int)box.height(),left,top,right,bottom,gap);
             draft.put("gta4_overlay_position","custom");draft.put("gta4_overlay_x",Float.toString(Math.max(0,Math.min(1,(x-offsetX-min[0])/Math.max(1,max[0]-min[0])))));draft.put("gta4_overlay_y",Float.toString(Math.max(0,Math.min(1,(y-offsetY-min[1])/Math.max(1,max[1]-min[1])))));changed.run();invalidate();return true;
@@ -39,7 +39,7 @@ final class OverlayPreview extends View {
     @Override protected void onDraw(Canvas canvas){
         super.onDraw(canvas);
         int screenWidth=activity.getResources().getDisplayMetrics().widthPixels,screenHeight=activity.getResources().getDisplayMetrics().heightPixels;
-        float scale=Math.min((getWidth()-8f)/screenWidth,(getHeight()-8f)/screenHeight);if(scale<=0)return;previewScale=scale;originX=(getWidth()-screenWidth*scale)/2;originY=(getHeight()-screenHeight*scale)/2;
+        float scale=Math.min((float)getWidth()/screenWidth,(float)getHeight()/screenHeight);if(scale<=0)return;previewScale=scale;originX=(getWidth()-screenWidth*scale)/2;originY=(getHeight()-screenHeight*scale)/2;
         canvas.save();canvas.translate((getWidth()-screenWidth*scale)/2,(getHeight()-screenHeight*scale)/2);canvas.scale(scale,scale);
         paint.setColor(0xff30363b);canvas.drawRoundRect(0,0,screenWidth,screenHeight,18,18,paint);
         paint.setTextSize(ModernUi.dp(activity,11));paint.setColor(ModernUi.MUTED);canvas.drawText("Sample preview",ModernUi.dp(activity,12),ModernUi.dp(activity,30),paint);
@@ -49,6 +49,7 @@ final class OverlayPreview extends View {
             if("detailed".equals(draft.get("gta4_performance_overlay"))){
                 if("true".equals(draft.get("gta4_overlay_ram")))sample.add("RAM 2048 MB");
                 if("true".equals(draft.get("gta4_overlay_thermal")))sample.add("Normal");
+                if("true".equals(draft.get("gta4_overlay_cpu")))sample.add("CPU app 38% · 3.0 cores");if("true".equals(draft.get("gta4_overlay_gpu")))sample.add("GPU 65% / unavailable");if("true".equals(draft.get("gta4_overlay_resolution")))sample.add("1280×576 → 1280×576");
                 sample.add(draft.getOrDefault("gta4_native_anti_aliasing","fxaa").toUpperCase(java.util.Locale.ROOT)+" · VSync");
             }
             String[] lines=sample.toArray(new String[0]);
@@ -57,8 +58,8 @@ final class OverlayPreview extends View {
             for(String line:lines)boxWidth=Math.max(boxWidth,(int)Math.ceil(paint.measureText(line))+padding*2);
             boxWidth=Math.min(screenWidth,boxWidth);int boxHeight=lineHeight*lines.length+ModernUi.dp(activity,8);
             WindowInsets insets=activity.getWindow().getDecorView().getRootWindowInsets();DisplayCutout cutout=insets==null?null:insets.getDisplayCutout();
-            int left=cutout==null?0:cutout.getSafeInsetLeft(),right=cutout==null?0:cutout.getSafeInsetRight(),top=Math.max(ModernUi.dp(activity,52),cutout==null?0:cutout.getSafeInsetTop()),bottom=cutout==null?0:cutout.getSafeInsetBottom();
-            if(insets!=null)bottom=Math.max(bottom,insets.getMandatorySystemGestureInsets().bottom);
+            int left=cutout==null?0:cutout.getSafeInsetLeft(),right=cutout==null?0:cutout.getSafeInsetRight(),top=(cutout==null?0:cutout.getSafeInsetTop()),bottom=cutout==null?0:cutout.getSafeInsetBottom();
+
             float[] point=OverlayPlacement.place(draft.getOrDefault("gta4_overlay_position","top_right"),number("gta4_overlay_x",.5f),number("gta4_overlay_y",.1f),screenWidth,screenHeight,boxWidth,boxHeight,left,top,right,bottom,ModernUi.dp(activity,number("gta4_overlay_edge_gap",2)));
             box.set(point[0],point[1],point[0]+boxWidth,point[1]+boxHeight);
             canvas.save();canvas.clipRect(point[0],point[1],point[0]+boxWidth,point[1]+boxHeight);

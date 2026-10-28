@@ -63,6 +63,7 @@ REXCVAR_DEFINE_DOUBLE(android_thermal_guard_cool_c, 68.0, "GTA IV/Performance",
 
 REXCVAR_DECLARE(double, gta4_draw_distance_scale);
 REXCVAR_DECLARE(uint32_t, gta4_frame_limit);
+REXCVAR_DEFINE_STRING(gta4_thermal_status,"{\"sampled\":false}","GTA IV/Status","Current sampled thermal guard and requested Turbo state");
 
 namespace {
 
@@ -244,6 +245,14 @@ void PowerLoop() {
         rex::cvar::SetFlagByName("gta4_draw_distance_scale", std::to_string(*scale));
         REXLOG_INFO("thermal-guard: draw distance {:.2f} -> {:.2f}", current_scale,*scale);
       }
+      const bool turbo=rex::cvar::Query<bool>("android_gpu_turbo");
+      const bool backoff=turbo&&gta4::android_power::thermal_pressure.load(std::memory_order_relaxed);
+      rex::cvar::SetFlagByName("gta4_thermal_status",fmt::format(
+          "{{\"sampled\":true,\"sample_ns\":{},\"severity\":{},\"guard_enabled\":{},\"guard_active\":{},\"turbo_requested\":{},\"turbo_backoff\":{},\"draw_scale\":{:.3f}}}",
+          std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count(),
+          thermal&&api.thermal_status?api.thermal_status(thermal):-1,guard,
+          guard&&(thermal_distance.lowered()||gta4::android_power::thermal_pressure.load(std::memory_order_relaxed)),
+          turbo,backoff,REXCVAR_GET(gta4_draw_distance_scale)));
     }
 
     if (session) {

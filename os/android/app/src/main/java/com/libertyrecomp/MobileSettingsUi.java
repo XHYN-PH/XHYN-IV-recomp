@@ -59,10 +59,12 @@ final class MobileSettingsUi {
         new Choice("gamepad_right_sensitivity","Right stick sensitivity","1",false,.25,2,.05),
         new Choice("gamepad_response_curve","Stick response curve","1",false,.5,2,.05),
         new Choice("gamepad_trigger_threshold","Trigger threshold","0",false,0,.4,.01),
+        new Choice("gamepad_invert_left_x","Invert left stick horizontally","false",false,"false","true"),
+        new Choice("gamepad_invert_left_y","Invert left stick vertically","false",false,"false","true"),
         new Choice("gamepad_invert_right_x","Invert right stick horizontally","false",false,"false","true"),
         new Choice("gamepad_invert_right_y","Invert right stick vertically","false",false,"false","true"),
         new Choice("gamepad_rumble_strength","Controller vibration","1",false,0,1,.05),
-        new Choice("gta4_touch_context_delay_ms","Vehicle control switch delay","0",false,0,1000,50),
+        new Choice("gta4_touch_context_delay_ms","Mobile layout switch delay","0",false,0,1000,10),
         new Choice("mnk_mode","Keyboard and mouse","true",false,"true","false"),
         new Choice("mnk_sensitivity","Mouse sensitivity","1.0",false,.01,10,.05),
         new Choice("mnk_invert_y","Invert mouse vertically","false",false,"false","true"),
@@ -98,6 +100,9 @@ final class MobileSettingsUi {
         new Choice("gta4_overlay_x","Custom horizontal position","0.5",false,0,1,.01),
         new Choice("gta4_overlay_y","Custom vertical position","0.1",false,0,1,.01),
         new Choice("gta4_overlay_ram","Overlay memory metric","true",false,"true","false"),
+        new Choice("gta4_overlay_cpu","Overlay CPU usage","false",false,"true","false"),
+        new Choice("gta4_overlay_gpu","Overlay GPU usage","false",false,"true","false"),
+        new Choice("gta4_overlay_resolution","Overlay actual resolution","false",false,"true","false"),
         new Choice("gta4_overlay_thermal","Overlay thermal metric","true",false,"true","false"),
         new Choice("gta4_overlay_compact","Compact overlay","false",false,"true","false"),
         new Choice("ui_battery_refresh","Lower display refresh","false",false,"false","true"),
@@ -118,6 +123,7 @@ final class MobileSettingsUi {
     static AlertDialog graphics(Activity a,File data,Runtime runtime,Runnable logs){return show(a,data,runtime,false,null,logs);}
     static AlertDialog touch(Activity a,File data,Runtime runtime){return touch(a,data,runtime,xbox->a.startActivity(new Intent(a,TouchEditorActivity.class).putExtra("xbox",xbox)));}
     static AlertDialog touch(Activity a,File data,Runtime runtime,java.util.function.Consumer<Boolean> edit){return show(a,data,runtime,true,edit);}
+    private static boolean sustainedSupported(Activity a){android.os.PowerManager power=(android.os.PowerManager)a.getSystemService(Activity.POWER_SERVICE);return power!=null&&power.isSustainedPerformanceModeSupported();}
     private static String uiKey(String key){return key.equals("ui_reduce_motion")?"reduce_motion":key.equals("ui_battery_refresh")?"battery_refresh":"sustained";}
     private static boolean restart(Choice c,Map<String,String> before){return c.restart||(c.key.equals("gta4_native_anti_aliasing")&&!Arrays.asList("off","fxaa","smaa").contains(before.get(c.key)));}
     private static String category(Choice c){
@@ -180,18 +186,20 @@ final class MobileSettingsUi {
         java.util.function.Consumer<Choice> explain=c->{helpTitle.setText(c.label.toUpperCase(Locale.ROOT));helpText.setText(guide(c.key)+"\n\nDefault: "+(c.values==null?numericLabel(c,Double.parseDouble(c.initial)):pretty(c.key,c.initial))+"\n\n"+(c.restart?"Saved for the next launch. You can quit after saving to apply it.":"Applies when you save.")+(c.key.equals("gta4_present_mode")&&runtime!=null?"\n\nActive presentation: "+runtime.get("gta4_session_present_mode"):"")+(c.key.equals("gta4_native_anti_aliasing")&&runtime!=null?"\n\n"+activeAa(runtime):""));};
         final java.util.function.Consumer<Boolean> editor=edit!=null?edit:runtime==null?xbox->a.startActivity(new Intent(a,TouchEditorActivity.class).putExtra("xbox",xbox)):null;
         ArrayList<Button> tabButtons=new ArrayList<>();
-        for(String category:categories){Button b=ModernUi.button(a,category,false);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,ModernUi.dp(a,34));lp.rightMargin=ModernUi.dp(a,4);tabs.addView(b,lp);tabButtons.add(b);b.setOnClickListener(v->{state.scroll.put(selected[0],scroll.getScrollY());selected[0]=category;state.category=category;search.setText("");render[0].run();});}
+        for(String category:categories){Button b=ModernUi.button(a,category,false);b.setTag("ui-tab");LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,ModernUi.dp(a,34));lp.rightMargin=ModernUi.dp(a,4);tabs.addView(b,lp);tabButtons.add(b);b.setOnClickListener(v->{state.scroll.put(selected[0],scroll.getScrollY());selected[0]=category;state.category=category;search.setText("");render[0].run();});}
         render[0]=()->{
             state.category=selected[0];rows.removeAllViews();for(int i=0;i<categories.length;i++)ModernUi.selected(tabButtons.get(i),selected[0].equals(categories[i]));
             String query=search.getText().toString().trim().toLowerCase(Locale.ROOT);int count=0;
+            if(selected[0].equals("Video")&&query.isEmpty()&&runtime!=null)rows.addView(ModernUi.text(a,"Active rendering: "+runtime.get("gta4_effective_upscaling"),12,ModernUi.MUTED));
             if(selected[0].equals("Overlay")&&query.isEmpty()){ModernUi.gridAction(a,rows,"Edit overlay",()->OverlayEditorUi.show(a,draft,()->{updatePending.run();render[0].run();rows.post(()->{View launch=rows.findViewWithTag("overlay-editor-launch");if(launch!=null)launch.requestFocus();});})).setTag("overlay-editor-launch");}
-            if(selected[0].equals("Performance")&&query.isEmpty())ModernUi.gridAction(a,rows,"Balanced settings",()->{draft.put("android_gpu_turbo","false");draft.put("android_thermal_guard","true");draft.put("ui_battery_refresh","true");draft.put("ui_sustained","true");draft.put("audio_low_latency","false");updatePending.run();render[0].run();});
-            if(selected[0].equals("Controller")&&query.isEmpty())ModernUi.gridAction(a,rows,"Test controller",()->ControllerTestUi.show(a));
+            if(selected[0].equals("Performance")&&query.isEmpty()&&runtime!=null)rows.addView(ModernUi.text(a,ThermalStatus.summary(runtime.get("gta4_thermal_status"),System.nanoTime(),false),12,ModernUi.ACCENT));
+            if(selected[0].equals("Performance")&&query.isEmpty())ModernUi.gridAction(a,rows,"Balanced settings",()->{draft.put("android_gpu_turbo","false");draft.put("android_thermal_guard","true");draft.put("ui_battery_refresh","true");if(sustainedSupported(a))draft.put("ui_sustained","true");draft.put("audio_low_latency","false");updatePending.run();render[0].run();});
+            if(selected[0].equals("Controller")&&query.isEmpty()){ModernUi.gridAction(a,rows,"Test controller",()->ControllerTestUi.show(a));ModernUi.gridAction(a,rows,"Controller presets",()->ModernUi.choose(a,"Controller preset",new String[]{"Linear response","Reduce stick drift","Restore controller defaults"},-1,n->{if(n==0)draft.put("gamepad_response_curve","1");else if(n==1){draft.put("gamepad_left_deadzone","0.12");draft.put("gamepad_right_deadzone","0.12");}else for(Choice c:TOUCH)if(c.key.startsWith("gamepad_"))draft.put(c.key,c.initial);updatePending.run();render[0].run();}));}
             if(selected[0].equals("Touch controls")&&query.isEmpty()&&editor!=null){ModernUi.gridAction(a,rows,"Edit mobile controls",()->{if(commit.getAsBoolean()){state.scroll.put(selected[0],scroll.getScrollY());if(runtime!=null){current[0].setOnDismissListener(null);current[0].dismiss();}editor.accept(false);}});}
             for(Choice c:choices){if(c.key.startsWith("gta4_overlay_"))continue;if(query.isEmpty()?!category(c).equals(selected[0]):!(c.label+" "+guide(c.key)).toLowerCase(Locale.ROOT).contains(query))continue;count++;
-                boolean restart=restart(c,before);boolean enabled=(!c.key.startsWith("gta4_phone_gyro")||phoneGyroAvailable(a))&&(!c.key.equals("gta4_native_smaa_quality")||"smaa".equals(draft.get("gta4_native_anti_aliasing")))&&(!c.key.startsWith("gta4_fsr1_")||"fsr1".equals(draft.get("gta4_native_upscaler")));
+                boolean restart=restart(c,before);boolean enabled=(!c.key.equals("ui_sustained")||sustainedSupported(a))&&(!c.key.startsWith("gta4_phone_gyro")||phoneGyroAvailable(a))&&(!c.key.equals("gta4_native_smaa_quality")||"smaa".equals(draft.get("gta4_native_anti_aliasing")))&&(!c.key.startsWith("gta4_fsr1_")||"fsr1".equals(draft.get("gta4_native_upscaler")));
                 LinearLayout row=new LinearLayout(a);row.setGravity(Gravity.CENTER_VERTICAL);row.setBaselineAligned(false);row.setMinimumHeight(ModernUi.dp(a,42));row.setPadding(ModernUi.dp(a,9),ModernUi.dp(a,3),ModernUi.dp(a,9),ModernUi.dp(a,3));row.setBackground(ModernUi.surface(a,0xff202123,10));
-                TextView label=ModernUi.text(a,c.label+(c.key.equals("gta4_present_mode")&&runtime!=null?" · Active: "+runtime.get("gta4_session_present_mode"):"")+(restart?" · restart":""),14,enabled?ModernUi.TEXT:ModernUi.MUTED);label.setFocusable(true);row.addView(label,new LinearLayout.LayoutParams(0,-2,1.1f));label.setOnClickListener(v->explain.accept(c));label.setOnFocusChangeListener((v,on)->{if(on)explain.accept(c);});
+                TextView label=ModernUi.text(a,c.label+(c.key.equals("ui_sustained")&&!sustainedSupported(a)?" · unsupported":"")+(c.key.equals("gta4_present_mode")&&runtime!=null?" · Active: "+runtime.get("gta4_session_present_mode"):"")+(restart?" · restart":""),14,enabled?ModernUi.TEXT:ModernUi.MUTED);label.setFocusable(true);ModernUi.focusableCard(a,label,0xff202123);row.addView(label,new LinearLayout.LayoutParams(0,-2,1.1f));label.setOnClickListener(v->explain.accept(c));label.setOnFocusChangeListener((v,on)->{if(on)explain.accept(c);});
                 if(c.values!=null&&c.values.length==2&&((Arrays.asList(c.values).contains("true")&&Arrays.asList(c.values).contains("false"))||c.key.equals("gta4_present_mode")||c.key.equals("gta4_native_shadow_interval"))){
                     String onValue=c.key.equals("gta4_disable_tlad_film_grain")?"false":c.key.equals("gta4_present_mode")?"vsync":c.key.equals("gta4_native_shadow_interval")?"1":"true",offValue=c.key.equals("gta4_disable_tlad_film_grain")?"true":c.key.equals("gta4_present_mode")?"immediate":c.key.equals("gta4_native_shadow_interval")?"0":"false";
                     LinearLayout toggle=new LinearLayout(a);row.addView(toggle,new LinearLayout.LayoutParams(0,-2,1));
@@ -234,7 +242,7 @@ final class MobileSettingsUi {
             case "gta4_native_output_dither":return "Adds subtle noise to reduce color banding at presentation. Off can reveal gradients; it is not a texture-quality setting.";
             case "ui_battery_refresh":return "Requests the lowest display refresh rate that matches the frame cap evenly, where Android supports it. Can reduce display power use. Off prefers the highest matching rate. The phone may decline a request.";
             case "ui_reduce_motion":return "Disables menu entrance, press and artwork movement. Android system animation settings are respected too.";
-            case "ui_sustained":return "Asks Android for steadier sustained performance where supported. Applies when a new game process starts.";
+            case "ui_sustained":return "Asks Android for steadier sustained performance where supported. Disabled on phones that report no support. Applies when a new game process starts.";
             case "gta4_safe_mode":return "Turns off registered optional speed shortcuts for troubleshooting after restart. This can lower performance.";
             case "gta4_phone_gyro_mode":return "Use the phone gyroscope for camera movement. Aim only activates while aiming; Gameplay stays active during play. Stops in menus, loading screens and the background. Requires a phone gyroscope.";
             case "gta4_phone_gyro_sensitivity":return "Higher values turn the camera farther for the same phone rotation. Start low for small aiming adjustments.";
@@ -242,9 +250,9 @@ final class MobileSettingsUi {
             case "gta4_phone_gyro_invert_x":return "Reverses horizontal camera movement from the phone gyroscope.";
             case "gta4_phone_gyro_invert_y":return "Reverses vertical camera movement from the phone gyroscope.";
             case "gta4_touch_icon_outline":return "Adds an outline around each circular touch button. Icons stay clean; positions and hit areas are unchanged.";
-            case "gta4_overlay_edge_gap":return "Gap from the usable screen edge. Cutout and gesture safety areas are retained.";
-            case "gta4_performance_overlay":return "Shows publisher FPS and average frame interval while playing. Detailed also shows app RAM, thermal status and effective graphics. These are game publications, not a physical display FPS measurement.";
-            case "gta4_overlay_position":return "Places the performance overlay in a screen corner, inside the safe area. Top positions stay below the menu controls.";
+            case "gta4_overlay_edge_gap":return "Gap from the screen edge. Display cutouts are retained; zero reaches the usable top and bottom.";
+            case "gta4_performance_overlay":return "Shows publisher FPS and average frame interval while playing. Detailed can also show app CPU, available GPU usage, RAM, heat severity and actual internal/output resolution. These are game publications, not a physical display FPS measurement.";
+            case "gta4_overlay_position":return "Places the performance overlay in a screen corner, inside the safe area. The editor and live overlay share the same bounds; zero edge gap reaches the usable edges.";
             case "gta4_touch_aim_hold_lock":return "Quick taps aim only while pressed. Hold Aim to keep aiming after release, then tap again to unlock. Leaving gameplay clears the lock.";
             case "gta4_touch_aim_hold_seconds":return "How long to hold the mobile Aim button before it locks. Increase this if ordinary presses lock aim accidentally.";
             case "android_perf_hint":return "Lets Android schedule work against the selected frame target. Device support varies. This is a hint, not a guarantee of faster clocks.";
@@ -268,7 +276,7 @@ final class MobileSettingsUi {
             case "gta4_native_startup_prepare_seconds":return "Maximum startup time spent preparing graphics learned on previous runs. A longer limit can reduce later stutters but delays starting. Zero skips this step. New effects can still need preparation during play.";
             case "gta4_native_max_queued_frames":return "Maximum frames allowed ahead of display. Lower values can improve input response; higher values can absorb brief uneven work. This is not an FPS multiplier.";
             case "gta4_native_texture_reuse_extended":return "Keeps reusable textures longer while memory has room. Can reduce repeated loading; memory pressure still releases them. Uses more RAM while active.";
-            case "gta4_touch_context_delay_ms":return "Delay before changing between walking and vehicle button layouts. Zero switches at the earliest reliable game signal; 100 ms filters brief changes. Larger values keep the old controls longer. Menus and loading respond immediately.";
+            case "gta4_touch_context_delay_ms":return "Delay before any gameplay or phone layout change. Zero uses the earliest observed context; negative time cannot predict a future game signal. Menus, cutscenes and hidden controls always switch immediately. Larger values keep the old controls longer. Menus and loading respond immediately.";
             case "gamepad_left_deadzone":case "gamepad_right_deadzone":return "Ignores small stick movement near the center to reduce drift. Zero preserves the controller input. Start around 0.05 if your stick drifts. Applies only to physical controllers.";
             case "gamepad_left_sensitivity":case "gamepad_right_sensitivity":return "Scales physical stick movement. One preserves normal response. Higher values reach maximum movement sooner; lower values allow finer control.";
             case "gamepad_response_curve":return "One is linear. Above one gives finer control near the center; below one responds more strongly to small movements. Applies to physical sticks.";
@@ -277,6 +285,9 @@ final class MobileSettingsUi {
             case "gamepad_invert_right_y":return "Reverses vertical movement of the physical controller's right stick.";
             case "gamepad_rumble_strength":return "Physical controller vibration strength. Zero turns it off. Phone vibration has a separate setting. Hardware support varies.";
             case "gta4_native_depth_clip_fallback":return "For devices without depthClamp only. Ordinary clipping can remove near/far-plane geometry and shadows. This is a visual compromise, not equivalent depth clamping. Off rejects affected pipelines.";
+            case "gta4_overlay_cpu":return "App CPU use as a share of the available CPU cores, sampled once per second. This is not whole-phone CPU use.";
+            case "gta4_overlay_gpu":return "GPU utilization when the driver exposes a readable counter. Unavailable means Android blocks it; no estimated value is substituted.";
+            case "gta4_overlay_resolution":return "Shows the actual internal rendering dimensions and output dimensions, including scaling. Preset names alone do not describe both.";
             case "resolution":return "Sets output sharpness. Lower values reduce GPU work and memory use; higher values look clearer.";
             case "gta4_native_upscaler":return "Native renders at the output size. FSR 1 renders fewer pixels and upscales them; it mainly helps when the GPU is the limit.";
             case "gta4_fsr1_quality":return "Used only with FSR. Quality keeps more detail; Performance uses fewer pixels. Very small render sizes are adjusted to the game's minimum.";

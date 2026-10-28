@@ -5318,6 +5318,7 @@ REXCVAR_DEFINE_UINT32(gta4_trace_shadow_targets, 0, "GTA IV/Diagnostics",
     .range(0, 8);
 
 REXCVAR_DEFINE_UINT32(gta4_shadow_capture_trigger,0,"GTA IV/Diagnostics","Increment to capture six frames of shadow target state");
+REXCVAR_DEFINE_STRING(gta4_shadow_capture_targets,"","GTA IV/Diagnostics","Exact directional shadow depth/color surface handles for image capture");
 
 namespace {
 // Globals written by sub_82270A08 with each created render target (8Bx8B
@@ -5360,6 +5361,9 @@ bool ShadowTraceActive(uint8_t* base) {
   if(g_shadow_trace_value.load(std::memory_order_relaxed)!=frames||g_shadow_capture_trigger.load(std::memory_order_relaxed)!=trigger){
     g_shadow_trace_start.store(frame,std::memory_order_release);g_shadow_capture_trigger.store(trigger,std::memory_order_release);g_shadow_trace_value.store(frames,std::memory_order_release);
     SHADOW_TRACE("shadow-trace: begin trigger={} frames={} effective_upscaling={} shadow_base={} shadow_distance={}",trigger,frames,rex::cvar::GetFlagByName("gta4_effective_upscaling"),rex::cvar::GetFlagByName("gta4_shadow_map_base_size"),rex::cvar::GetFlagByName("gta4_shadow_distance_scale"));
+    const uint32_t depth_wrapper=LoadU32(base,kShadowTargetGlobals[2]);
+    const uint32_t color_wrapper=LoadU32(base,kShadowTargetGlobals[3]);
+    rex::cvar::SetFlagByName("gta4_shadow_capture_targets",fmt::format("{},{}",depth_wrapper?LoadU32(base,depth_wrapper+64):0,color_wrapper?LoadU32(base,color_wrapper+64):0));
     for (size_t i = 0; i < kShadowTargetGlobals.size(); ++i) {
       const uint32_t wrapper = LoadU32(base, kShadowTargetGlobals[i]);
       const uint32_t surface = wrapper ? LoadU32(base, wrapper + 64) : 0;

@@ -65,6 +65,19 @@ final class ModOverlayPolicy {
     private static boolean ownMetadata(String name){
         return name.equals(CONFIG)||name.matches("mod-settings-[0-9]+\\.tmp");
     }
+    static String layoutProblem(String name,String path){
+        String lower=key(path.replace('\\','/')),mod=key(name),top=lower.split("/",2)[0];
+        if(lower.matches(".*\\.(asi|dll|exe|cs|lua)$"))return "PC plugin or script is unsupported: "+path+". Moving it into game/ does not make it compatible.";
+        if(mod.contains("fusionfix")||top.equals("pc")||top.equals("plugins"))return "This appears to be a PC package: "+path+". This loader supports loose Xbox 360 data overrides, not PC FusionFix/ASI plugins.";
+        if(mod.equals("tlad")||mod.equals("tbogt"))return "Episode data needs the launcher’s Reinstall or add episodes installer. Only compatible loose-data overrides belong under this mod’s game/ or update/ folder.";
+        return "Unexpected path: "+path+". Expected mods/"+name+"/game/common/data/handling.dat (or update/). Keep the original Xbox 360 game-relative paths.";
+    }
+    static String problemSummary(Mod mod){
+        if(mod.problem.startsWith("PC plugin")||mod.problem.startsWith("This appears to be a PC"))return "Unsupported PC package or plugin";
+        if(mod.problem.startsWith("Episode data"))return "Use the episode installer";
+        if(mod.problem.startsWith("Unexpected path"))return "Folder layout needs attention";
+        return mod.problem;
+    }
     private static void validate(Mod mod)throws IOException{
         Path root=mod.folder.toPath();
         if(Files.isSymbolicLink(root)||!Files.isDirectory(root,LinkOption.NOFOLLOW_LINKS))throw new IOException("Mod must be a regular folder.");
@@ -77,7 +90,7 @@ final class ModOverlayPolicy {
                 if(relative.toString().isEmpty())return;
                 if(relative.getNameCount()>MAX_DEPTH)throw new IOException("Mod folders are too deep.");
                 String top=relative.getName(0).toString();
-                if(!top.equals("game")&&!top.equals("update"))throw new IOException("Unexpected folder or file: "+relative+". Put compatible Xbox 360 files inside this mod’s game/ or update/ folder. PC plugin packs cannot be loaded.");
+                if(!top.equals("game")&&!top.equals("update"))throw new IOException(layoutProblem(mod.folder.getName(),relative.toString()));
             }
             @Override public FileVisitResult preVisitDirectory(Path path,BasicFileAttributes attrs)throws IOException{
                 check(path);return FileVisitResult.CONTINUE;
@@ -87,7 +100,8 @@ final class ModOverlayPolicy {
                 Path relative=root.relativize(path);String value=relative.toString().replace(File.separatorChar,'/');
                 if(relative.getNameCount()==1&&ownMetadata(value)&&attrs.isRegularFile())return FileVisitResult.CONTINUE;
                 check(path);
-                if(!attrs.isRegularFile()||!value.matches("(?i).+\\.(dat|xml|ide|ipl|txt|meta|gxt)"))throw new IOException("Unsupported overlay file: "+value);
+                if(value.matches("(?i).+\\.(asi|dll|exe|cs|lua)"))throw new IOException("PC plugin or script is unsupported: "+value+". This loader accepts loose Xbox 360 data files only; moving a PC plugin will not make it compatible.");
+                if(!attrs.isRegularFile()||!value.matches("(?i).+\\.(dat|xml|ide|ipl|txt|meta|gxt)"))throw new IOException("Unsupported overlay file: "+value+". Extract compatible loose Xbox 360 data files; RPF/model/texture archives are not supported here.");
                 if(!seen.add(key(value)))throw new IOException("Duplicate path ignoring case: "+value);
                 if(mod.files.size()>=MAX_FILES||attrs.size()>MAX_BYTES-bytes[0])throw new IOException("Mod exceeds 8192 files or 256 MiB.");
                 bytes[0]+=attrs.size();mod.files.add(value);return FileVisitResult.CONTINUE;

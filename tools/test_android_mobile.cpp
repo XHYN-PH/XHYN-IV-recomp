@@ -6,17 +6,94 @@
 #include <iostream>
 #include <thread>
 #include <rex/graphics/gta4_native/mobile_frame_stats.h>
+#include <rex/graphics/gta4_native/mobile_hitch_trace.h>
+#include <rex/graphics/gta4_native/mobile_idle_texture_budget.h>
+#include <rex/audio/audio_rebuffer_policy.h>
+#include <rex/filesystem/expected_missing_device.h>
+#include "graphics/gta4_native/native_pipeline_lookahead.h"
 #include <rex/graphics/gta4_native/upscaling_policy.h>
 #include <rex/graphics/gta4_native/mobile_memory.h>
 #include <rex/graphics/gta4_native/mobile_render_policy.h>
 #include "gta4_aspect_policy.h"
 #include "gta4_cheat_policy.h"
 #include "input/phone_gyro_policy.h"
+#include "input/touch_context_transition.h"
 #include "android/android_power_policy.h"
 #include <rex/graphics/gta4_native/immutable_snapshot.h>
 #include <rex/graphics/gta4_native/converted_texture_disk_cache.h>
 using namespace rex::graphics::gta4_native;
 int main(int argc,char** argv) {
+  {
+    MobilePresentClock clock;
+    assert(!clock.Observe(10,20,true,false,0).interval_ns);
+    auto gap=clock.Observe(40,60,true,false,0);assert(gap.interval_ns==40&&gap.outside_publish_ns==20);
+    gap=clock.Observe(600,620,true,false,2);assert(gap.boundary&&!gap.interval_ns); // open + close between presents
+    assert(clock.Observe(640,660,true,false,2).interval_ns==40);
+    assert(clock.Observe(700,720,true,true,3).boundary);
+    assert(clock.Observe(740,760,true,false,4).boundary);
+    assert(!clock.Observe(1,2,true,false,4).interval_ns); // clock reset
+    MobileHitchHistory h;
+    for(unsigned i=1;i<=80;++i)h.Record({i*1'000'000'000ull,1});
+    assert(h.Snapshot().size()==64&&h.Snapshot().front().end_ns==17'000'000'000ull);
+    assert(h.Record({81'000'000'000ull,120'000'000}));
+    assert(!h.Record({82'000'000'000ull,120'000'000}));
+    assert(h.Record({83'000'000'000ull,120'000'000}));
+    h.Reset();assert(h.Snapshot().empty());
+    // Rolling captures keep working beyond the bounded 16 output slots.
+    for(unsigned i=0;i<20;++i)assert(h.Record({(85ull+i*2)*1'000'000'000ull,120'000'000}));
+    assert(h.sequence()==22);
+  }
+  {
+    MobileIdleTextureBudget<2> b;uint64_t a=0,c=0,d=0;
+    assert(b.Reserve(0,80,100,150,a));assert(!b.Reserve(0,30,100,150,c));
+    assert(b.Reserve(1,70,100,150,c));assert(b.bytes()==150);
+    assert(!b.Reserve(1,1,100,150,d));
+    assert(b.Reserve(0,80,100,150,a)&&b.bytes()==150);
+    b.Release(0,a);b.Release(0,a);assert(b.bytes()==70&&!a); // use and retirement are idempotent
+    assert(!b.Reserve(1,70,50,150,c)&&!c&&b.bytes()==0); // shrinking/pressure allowance
+    assert(!b.Reserve(0,UINT64_MAX,UINT64_MAX,1,d));
+    assert(!b.Reserve(2,1,1,1,d));
+  }
+  {
+    using namespace rex::audio;AudioRebufferPolicy p;
+    assert(p.Next(0,true)==AudioQueueDecision::kEmpty);
+    assert(p.Next(1,true)==AudioQueueDecision::kRefill);
+    assert(p.Next(2,true)==AudioQueueDecision::kPlay);
+    for(unsigned target=3;target<=6;++target){
+      assert(p.Next(0,true)==AudioQueueDecision::kEmpty);assert(p.target_blocks()==target);
+      for(int i=0;i<10;++i)assert(p.Next(0,true)==AudioQueueDecision::kEmpty);
+      assert(p.target_blocks()==target);
+      assert(p.Next(target-1,true)==AudioQueueDecision::kRefill);
+      assert(p.Next(target,true)==AudioQueueDecision::kPlay);
+    }
+    assert(p.Next(0,true)==AudioQueueDecision::kEmpty&&p.target_blocks()==6);
+    for(unsigned i=0;i<375;++i)assert(p.Next(6,true)==AudioQueueDecision::kPlay);
+    assert(p.target_blocks()==2);p.Reset();assert(p.Next(1,false)==AudioQueueDecision::kPlay);
+  }
+  {
+    using rex::filesystem::IsOptionalXboxCachePath;
+    for(auto path:{"cache:\\a","CACHE1:\\","Cache0:file"})assert(IsOptionalXboxCachePath(path));
+    for(auto path:{"game:cache/a","cache2:a","cache1x:a","cache/a","update:file"})assert(!IsOptionalXboxCachePath(path));
+    NativePreparedShaderPairs pairs;assert(!pairs.Contains(1,2));pairs.Publish(1,2);assert(pairs.Contains(1,2)&&!pairs.Contains(1,3));
+    pairs.Publish(1025,2);assert(!pairs.Contains(1,2)&&pairs.Contains(1025,2)); // collision cannot claim a different pair ready
+  }
+  {
+    enum class Mode { foot, vehicle, phone, minigame, hidden };
+    gta4::input::TouchContextTransition<Mode> transition;
+    assert(transition.Update(Mode::vehicle,Mode::foot,10,20,true)==Mode::foot);
+    assert(transition.Update(Mode::vehicle,Mode::foot,29,20,true)==Mode::foot);
+    assert(transition.Update(Mode::vehicle,Mode::foot,30,20,true)==Mode::vehicle);
+    assert(transition.Update(Mode::phone,Mode::vehicle,31,20,true)==Mode::vehicle);
+    assert(transition.Update(Mode::phone,Mode::vehicle,51,20,true)==Mode::phone);
+    assert(transition.Update(Mode::minigame,Mode::phone,52,20,true)==Mode::phone);
+    assert(transition.Update(Mode::hidden,Mode::phone,53,1000,false)==Mode::hidden);
+    assert(transition.Update(Mode::foot,Mode::vehicle,54,0,true)==Mode::foot);
+    assert(transition.Update(Mode::vehicle,Mode::foot,55,-20,true)==Mode::vehicle);
+    // A changed candidate restarts the hold; a clock reset cannot underflow.
+    assert(transition.Update(Mode::phone,Mode::foot,60,20,true)==Mode::foot);
+    assert(transition.Update(Mode::vehicle,Mode::foot,61,20,true)==Mode::foot);
+    assert(transition.Update(Mode::vehicle,Mode::foot,1,20,true)==Mode::foot);
+  }
   {
     gta4::input::PhoneGyroBuffer gyro;
     gyro.Publish(1,2,100);gyro.Publish(3,-1,110);auto d=gyro.Consume(120,true);assert(d.active&&d.x==4&&d.y==1);assert(!gyro.Consume(121,true).active);

@@ -16,7 +16,7 @@ public class DriverPolicyTest {
   assert !DriverPolicy.supports("turnip","Adreno 7500",35);
   assert DriverPolicy.supports("radv18","Samsung Xclipse 960",34);
   assert !DriverPolicy.supports("radv18","Samsung Xclipse 960",33);
-  assert DriverPolicy.supports("turnip_v38","Adreno 710",29);
+  assert !DriverPolicy.supports("turnip_v38","Adreno 710",29);
   assert !DriverPolicy.supports("turnip_v38","Adreno 540",35);
   for(int model:new int[]{613,618,630,650,660,680,690,710,720,722,725,730,735,740,750,810,825,829,830,840})
    assert DriverPolicy.supports("turnip_v43","Adreno (TM) "+model,35):model;

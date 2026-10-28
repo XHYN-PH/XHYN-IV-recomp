@@ -1,20 +1,5 @@
 [
   {
-    "mode": "turnip_v38",
-    "url": "https://github.com/StevenMXZ/Adreno-Tools-Drivers/releases/download/v27.0.0-R1/Turnip_Gen8_V38_Patched.zip",
-    "sha256": "2bbb279a3da7680503a54a51a3051c7a4302c8fb2a089f8b183b4b5d6ba9ac17",
-    "library": "libvulkan_freedreno.so",
-    "minApi": 28,
-    "files": {
-      "meta.json": "b27f1d1c401025704ee271a8ff768b8f68465c374c467c7238164fa79a546c8d",
-      "libvulkan_freedreno.so": "7b0b16fb0c8fb7854868e77eb8b284a1e95789e32c1fd8b545ed91165bf78189"
-    },
-    "launcherMinApi": 29,
-    "mesa": "27.0.0-devel",
-    "observedMesaCommit": "f28352d117",
-    "exactSourceReproductionValidated": false
-  },
-  {
     "mode": "radv18",
     "url": "https://github.com/JimVulkan/radv-xclipse/releases/download/v1.8.0/radv-xclipse-27.0.0-devel-269238e.zip",
     "sha256": "0545b1b24817cc0ed4a9e4fc440a7080cbaf69a9ce5d1e4bb22b0e697129c223",

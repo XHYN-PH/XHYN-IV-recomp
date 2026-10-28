@@ -100,9 +100,12 @@ inline constexpr auto kRegistry = std::to_array<Entry>({
     // --- Renderer shortcuts with no effect on the result ---
     {"gta4_native_recorder_prefetch", Kind::kShortcut, "", "prefetch of upcoming commands"},
     {"gta4_native_fast_capacity", Kind::kShortcut, "", "upload capacity planned with flat sets"},
-    {"gta4_native_sparse_capacity_plan", Kind::kShortcut, "", "staging arena re-planned every 30 frames"},
+    {"gta4_native_sparse_capacity_plan", Kind::kShortcut, "", "checked staging growth on demand and retirement of unused overflow blocks"},
     {"gta4_native_batch_texture_uploads", Kind::kShortcut, "", "texture uploads batched"},
     {"gta4_native_pipeline_prewarm", Kind::kShortcut, "", "pipelines compiled ahead on the worker"},
+    {"gta4_native_pipeline_lookahead", Kind::kShortcut, "", "bounded recorder pipeline preparation across the frame"},
+    {"gta4_native_pipeline_workers", Kind::kSetting, "", "background graphics compiler worker count"},
+    {"gta4_native_startup_prepare_seconds", Kind::kSetting, "", "startup learned graphics preparation duration"},
     // --- Renderer architecture ---
     {"gta4_native_pipelined_recording", Kind::kArchitecture, "", "frames recorded on a second thread"},
     {"gta4_native_ubo_constants", Kind::kArchitecture, "", "constants through dynamic uniform buffers"},

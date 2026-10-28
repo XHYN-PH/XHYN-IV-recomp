@@ -10,6 +10,7 @@
  */
 
 #include <rex/filesystem/vfs.h>
+#include <rex/filesystem/expected_missing_device.h>
 #include <rex/logging.h>
 #include <rex/string.h>
 
@@ -128,6 +129,12 @@ Entry* VirtualFileSystem::ResolvePath(const std::string_view path) {
     return rex::string::utf8_starts_with_case(normalized_path, d->mount_path());
   });
   if (it == devices_.cend()) {
+    // These devices are intentionally absent (see Runtime::SetupVfs). A mapped
+    // alias with a broken target remains a real error and is not suppressed.
+    if(!had_symlink&&IsOptionalXboxCachePath(normalized_path)){
+      REXFS_DEBUG("VFS: expected optional cache probe '{}' -> device not mounted",path);
+      return nullptr;
+    }
     REXFS_WARN("VFS: '{}' -> [no device]", path);
     // Supress logging the error for ShaderDumpxe:\CompareBackEnds as this is
     // not an actual problem nor something we care about.

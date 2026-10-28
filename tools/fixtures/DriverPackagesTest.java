@@ -84,7 +84,7 @@ public final class DriverPackagesTest {
 
             File data = new File(root, "data");
             assert DriverState.normalize(" Custom: My Driver ").equals("custom:My Driver");
-            assert DriverState.normalize(" TURNIP_V38 ").equals("turnip_v38");
+            assert DriverState.normalize(" TURNIP_V38 ").equals("auto");
             assert DriverState.normalize("custom:../bad").equals("auto");
             DriverState.choose(data, " SYSTEM ");
             assert DriverState.readChoice(data).equals("system");
