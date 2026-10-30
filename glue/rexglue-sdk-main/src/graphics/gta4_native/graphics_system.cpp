@@ -7460,17 +7460,25 @@ void Gta4NativeGraphicsSystem::FinishPresent(NativeCommand& command,
       const auto log=rex::cvar::GetFlagByName("log_file");
       if(!log.empty()&&log!="/dev/null"){
         auto history=mobile_hitch_history_.Snapshot();const auto sequence=mobile_hitch_history_.sequence();
-        if(!EnqueueDeferredDiagnosticTask([log,history=std::move(history),sequence,ms_per_tick]{
+        const auto worst=mobile_hitch_history_.worst_capture_slot();
+        if(!EnqueueDeferredDiagnosticTask([log,history=std::move(history),sequence,worst,ms_per_tick]{
           const auto directory=std::filesystem::path(log+".hitches");std::error_code ec;
           std::filesystem::create_directories(directory,ec);if(ec)return;
-          const auto path=directory/fmt::format("recent-{}.csv",sequence%16);
-          {std::ofstream file(path.string()+".partial");file.precision(12);
-            file<<"frame,end_monotonic_ns,interval_ms,publish_ms,outside_publish_ms,pipeline_wait_ms,compile_jobs_ms,evictions,sampled_reuploads\n";
-            for(const auto& r:history)file<<r.frame<<','<<r.end_ns<<','<<r.interval_ns/1e6<<','<<r.publish_ns/1e6<<','<<r.outside_publish_ns/1e6<<','<<r.pipeline_wait_ticks*ms_per_tick<<','<<r.compile_ticks*ms_per_tick<<','<<r.evictions<<','<<r.reuploads<<'\n';
-            file.flush();if(!file)return;
-          }
-          std::filesystem::rename(path.string()+".partial",path,ec);if(ec)return;
-          std::ofstream(directory/"capture-complete.txt")<<"Rolling last 16 hitch traces, up to 64 presents each; host pauses excluded. Wall times include waits and are not GPU timings. Eviction/reupload counters are correlational.\n";
+          const auto write=[&](const std::filesystem::path& path){
+            {std::ofstream file(path.string()+".partial");file.precision(12);
+              file<<"frame,end_monotonic_ns,interval_ms,publish_ms,outside_publish_ms,pipeline_wait_ms,compile_jobs_ms,evictions,sampled_reuploads\n";
+              for(const auto& r:history)file<<r.frame<<','<<r.end_ns<<','<<r.interval_ns/1e6<<','<<r.publish_ns/1e6<<','<<r.outside_publish_ns/1e6<<','<<r.pipeline_wait_ticks*ms_per_tick<<','<<r.compile_ticks*ms_per_tick<<','<<r.evictions<<','<<r.reuploads<<'\n';
+              file.flush();if(!file)return false;
+            }
+            std::error_code rename_error;
+            std::filesystem::rename(path.string()+".partial",path,rename_error);
+            return !rename_error;
+          };
+          const bool recent_ok=write(directory/fmt::format("recent-{}.csv",sequence%MobileHitchHistory::kRecentCaptureSlots));
+          const bool worst_ok=worst?write(directory/fmt::format("worst-{}.csv",*worst)):true;
+          if(!recent_ok||!worst_ok)REXLOG_WARN("frame-hitch: incomplete diagnostic write recent={} worst={}; runtime summary retained",recent_ok,worst_ok);
+          if(!recent_ok&&(!worst||!worst_ok))return;
+          std::ofstream(directory/"capture-complete.txt")<<"Up to 12 recent and 4 worst recorded hitch traces, 64 presents each; two-second capture cooldown; host pauses excluded. Wall times include waits and are not GPU timings. Eviction/reupload counters are correlational.\n";
         }))REXLOG_WARN("frame-hitch: diagnostic writer busy; summary retained in runtime log");
       }
     }
@@ -7520,7 +7528,7 @@ void Gta4NativeGraphicsSystem::FinishPresent(NativeCommand& command,
       REXLOG_INFO("texture-reuse-stats: sampled_reupload_allocation_bytes={} age_frames_lt30={} lt120={} lt600={} lt1800={} ge1800={} (bounded content sample; allocation bytes are not transfer bytes)",texture_content_reupload_bytes_,texture_reupload_age_bins_[0],texture_reupload_age_bins_[1],texture_reupload_age_bins_[2],texture_reupload_age_bins_[3],texture_reupload_age_bins_[4]);
       REXLOG_INFO("pipeline-cache-stats: ready={} created_window={} compile_jobs_ms={:.2f} wait_ms={:.2f} (compiler jobs may overlap; wait is CPU wall time)",
           native_pipelines_.size(),pipeline_diagnostic_creates_,pipeline_diagnostic_compile_ticks_*pipeline_ms_per_tick,pipeline_diagnostic_wait_ticks_*pipeline_ms_per_tick);
-      pipeline_diagnostic_creates_=pipeline_diagnostic_slow_logs_=0;
+      pipeline_diagnostic_creates_=pipeline_diagnostic_slow_logs_=pipeline_diagnostic_wait_logs_=0;
       pipeline_diagnostic_compile_ticks_=pipeline_diagnostic_wait_ticks_=0;
       texture_evictions_last_window_=texture_image_eviction_count_;
       if(benchmark_file_) {
@@ -17690,8 +17698,11 @@ void Gta4NativeGraphicsSystem::LoadNativePipelineRecipes() {
   auto path = native_pipeline_cache_path_;
   path += ".recipes";
   const auto bytes = ReadBinaryFile(path);
-  if (!bytes || bytes->size() < sizeof(NativePipelineRecipeFileHeader) || bytes->size() > 16777216) {
-    return;
+  if(!bytes){
+    REXLOG_INFO("pipeline-recipes: no readable learned recipe file; effects will be learned on demand");return;
+  }
+  if (bytes->size() < sizeof(NativePipelineRecipeFileHeader) || bytes->size() > 16777216) {
+    REXLOG_WARN("pipeline-recipes: rejected file size={}; effects will be relearned",bytes->size());return;
   }
   NativePipelineRecipeFileHeader header{};
   std::memcpy(&header, bytes->data(), sizeof(header));
@@ -17701,8 +17712,10 @@ void Gta4NativeGraphicsSystem::LoadNativePipelineRecipes() {
       header.count > NativePipelineCompilerState::kMaximumRecipes ||
       payload_size != header.count * sizeof(NativePipelineCompilerState::Record) ||
       header.checksum != XXH3_64bits(bytes->data() + sizeof(header), payload_size)) {
+    REXLOG_WARN("pipeline-recipes: incompatible or corrupt learned recipe file; effects will be relearned");
     return;
   }
+  size_t accepted=0,rejected=0;
   for (size_t offset = sizeof(header); offset < bytes->size();
        offset += sizeof(NativePipelineCompilerState::Record)) {
     NativePipelineCompilerState::Record record{};
@@ -17716,9 +17729,11 @@ void Gta4NativeGraphicsSystem::LoadNativePipelineRecipes() {
       std::lock_guard lock(native_pipeline_compiler_->records_mutex);
       if (native_pipeline_compiler_->records.emplace(record.key, record.recipe).second) {
         native_pipeline_compiler_->replay.push_back(record);
+        ++accepted;
       }
-    }
+    }else ++rejected;
   }
+  REXLOG_INFO("pipeline-recipes: loaded={} rejected={} (exact learned variants; shader compatibility is checked during replay)",accepted,rejected);
 }
 
 void Gta4NativeGraphicsSystem::ReplayNativePipelineRecipes() {
@@ -17863,7 +17878,6 @@ VkPipeline Gta4NativeGraphicsSystem::PublishNativePipeline(
     profile::CpuCall(profile::CpuOp::kDriverDestruction, [&] { return device->functions().vkDestroyPipeline(device->device(), pipeline, nullptr); });
     return it->second.pipeline;
   }
-  prepared_shader_pairs_.Publish(key.vertex_shader_hash,key.pixel_shader_hash);
   size_t queued_preparation=0,active_preparation=0,awaiting_preparation=0;
   if(native_pipeline_compiler_&&native_pipeline_compiler_->compiler){
     const auto preparation=native_pipeline_compiler_->compiler->GetProgress();
@@ -17892,6 +17906,19 @@ VkPipeline Gta4NativeGraphicsSystem::PublishNativePipeline(
   REXLOG_DEBUG("gta4-native-pipeline: exact recipe published vs={:016X} ps={:016X} compile-ticks={}",
                key.vertex_shader_hash, key.pixel_shader_hash, compile_ticks);
   return pipeline;
+}
+
+void Gta4NativeGraphicsSystem::RecordNativePipelineWait(
+    const NativePipelineKey& key,const NativePipelineState& state,uint64_t ticks,bool already_queued) {
+  RecordNativePipelineTiming(0,ticks);
+  if(!REXCVAR_GET(gta4_native_frame_stats))return;
+  const double ms=double(ticks)*1000.0/rex::chrono::Clock::QueryHostTickFrequency();
+  if(ms<20||pipeline_diagnostic_wait_logs_++>=8)return;
+  REXLOG_INFO("pipeline-demand-wait: frame={} wait_ms={:.2f} already_queued={} key={:016X} vs={:016X} ps={:016X} vertex_file={} pixel_file={} (exact pipeline required by this draw; CPU wall wait, not GPU time)",
+      diagnostic_submitted_frame_,ms,already_queued,uint64_t(NativePipelineKeyHash{}(key)),
+      key.vertex_shader_hash,key.pixel_shader_hash,
+      state.vertex_shader_resource?state.vertex_shader_resource->filename:"<none>",
+      state.pixel_shader_resource?state.pixel_shader_resource->filename:"<none>");
 }
 
 void Gta4NativeGraphicsSystem::RecordNativePipelineTiming(uint64_t compile_ticks,
@@ -22040,11 +22067,81 @@ bool Gta4NativeGraphicsSystem::TransitionRenderingTarget(VkCommandBuffer command
   return true;
 }
 
-void Gta4NativeGraphicsSystem::TryPrewarmDrawPipeline(const NativeCommand& command) {
+bool Gta4NativeGraphicsSystem::DecodePipelineDrawParameters(
+    const NativeCommand& command,NativePipelineDrawParameters& parameters) const {
+  switch (command.type) {
+    case CommandType::kDrawPrimitive: {
+      if (command.bytes.size() < sizeof(DrawPrimitiveCommand)) return false;
+      DrawPrimitiveCommand draw{};
+      std::memcpy(&draw, command.bytes.data(), sizeof(draw));
+      parameters.primitive = draw.primitive_type;
+      break;
+    }
+    case CommandType::kDrawPrimitiveUp: {
+      if (command.bytes.size() < sizeof(DrawPrimitiveUpCommand)) return false;
+      DrawPrimitiveUpCommand draw{};
+      std::memcpy(&draw, command.bytes.data(), sizeof(draw));
+      parameters.primitive = draw.primitive_type;
+      parameters.user_stride = draw.stride;
+      break;
+    }
+    case CommandType::kDrawIndexedPrimitive: {
+      if (command.bytes.size() < sizeof(DrawIndexedPrimitiveCommand)) return false;
+      DrawIndexedPrimitiveCommand draw{};
+      std::memcpy(&draw, command.bytes.data(), sizeof(draw));
+      parameters.primitive = draw.primitive_type;
+      if (!command.index_buffer) {
+        return false;
+      }
+      const bool index32 = (command.index_buffer->flags & kIndex32Flag) != 0;
+      const VkPrimitiveTopology topology = ConvertPrimitiveTopology(draw.primitive_type);
+      const bool strip = topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP ||
+                         topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
+                         topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+      parameters.restart = draw.primitive_restart_enabled && strip &&
+                                 (index32 || draw.primitive_restart_index <= UINT16_MAX);
+      break;
+    }
+    default:
+      return false;
+  }
+
+  return true;
+}
+
+uint64_t Gta4NativeGraphicsSystem::PipelinePreparationSignature(
+    const NativeCommand& command,uint64_t policy) const {
+  if(!command.pipeline_state||!command.pipeline_state->vertex_shader_resource||
+      !command.pipeline_state->vertex_declaration_resource)return 0;
+  NativePipelineDrawParameters draw{};
+  if(!DecodePipelineDrawParameters(command,draw))return 0;
+  const auto& state=*command.pipeline_state;
+  NativePipelinePreparationInputs<kRenderTargetCount,kVertexStreamCount> inputs{};
+  inputs.vertex_shader=state.vertex_shader_resource->hash;
+  inputs.pixel_shader=state.pixel_shader_resource?state.pixel_shader_resource->hash:0;
+  inputs.vertex_identity=reinterpret_cast<uintptr_t>(state.vertex_shader_resource);
+  inputs.pixel_identity=reinterpret_cast<uintptr_t>(state.pixel_shader_resource);
+  inputs.declaration=state.vertex_declaration_resource->content_hash;
+  inputs.fixed_state=command.pipeline_memo_signature?command.pipeline_memo_signature:
+      HashNativeFixedFunctionState(NativePipelineMemoState(command.fixed_function_state));
+  inputs.lifetime=native_pipeline_lookup_lifetime_.epoch();inputs.policy=policy;
+  inputs.primitive=draw.primitive;inputs.user_stride=draw.user_stride;inputs.primitive_restart=draw.restart;
+  for(size_t stream=0;stream<kVertexStreamCount;++stream)inputs.strides[stream]=state.vertex_streams[stream].stride;
+  bool explicit_target=false;
+  const auto target=[&](size_t slot,const SurfaceDescriptor& source){
+    explicit_target|=source.handle!=0;
+    inputs.targets[slot]={source.flags,source.format,source.width,source.height,source.sample_type,source.packed_dimensions};
+  };
+  for(size_t slot=0;slot<kRenderTargetCount;++slot)target(slot,state.render_targets[slot]);
+  target(kRenderTargetCount,state.depth_stencil);
+  return explicit_target?inputs.Signature():0;
+}
+
+bool Gta4NativeGraphicsSystem::TryPrewarmDrawPipeline(const NativeCommand& command) {
   if (!REXCVAR_GET(gta4_native_pipeline_prewarm) || !pipeline_layout_ || !command.pipeline_state ||
       !command.pipeline_state->vertex_shader_resource ||
       !command.pipeline_state->vertex_declaration_resource) {
-    return;
+    return false;
   }
 
   const bool has_explicit_target =
@@ -22055,60 +22152,23 @@ void Gta4NativeGraphicsSystem::TryPrewarmDrawPipeline(const NativeCommand& comma
   if (!has_explicit_target) {
     // Presenter-only pipelines need the acquired swapchain format and extent;
     // their synchronous fallback remains in the recording path.
-    return;
+    return false;
   }
 
-  uint32_t primitive_type = 0;
-  uint32_t user_pointer_stride = 0;
-  bool primitive_restart_enable = false;
-  switch (command.type) {
-    case CommandType::kDrawPrimitive: {
-      if (command.bytes.size() < sizeof(DrawPrimitiveCommand)) return;
-      DrawPrimitiveCommand draw{};
-      std::memcpy(&draw, command.bytes.data(), sizeof(draw));
-      primitive_type = draw.primitive_type;
-      break;
-    }
-    case CommandType::kDrawPrimitiveUp: {
-      if (command.bytes.size() < sizeof(DrawPrimitiveUpCommand)) return;
-      DrawPrimitiveUpCommand draw{};
-      std::memcpy(&draw, command.bytes.data(), sizeof(draw));
-      primitive_type = draw.primitive_type;
-      user_pointer_stride = draw.stride;
-      break;
-    }
-    case CommandType::kDrawIndexedPrimitive: {
-      if (command.bytes.size() < sizeof(DrawIndexedPrimitiveCommand)) return;
-      DrawIndexedPrimitiveCommand draw{};
-      std::memcpy(&draw, command.bytes.data(), sizeof(draw));
-      primitive_type = draw.primitive_type;
-      if (!command.index_buffer) {
-        return;
-      }
-      const bool index32 = (command.index_buffer->flags & kIndex32Flag) != 0;
-      const VkPrimitiveTopology topology = ConvertPrimitiveTopology(draw.primitive_type);
-      const bool strip = topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP ||
-                         topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
-                         topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
-      primitive_restart_enable = draw.primitive_restart_enabled && strip &&
-                                 (index32 || draw.primitive_restart_index <= UINT16_MAX);
-      break;
-    }
-    default:
-      return;
-  }
-
+  NativePipelineDrawParameters draw{};
+  if(!DecodePipelineDrawParameters(command,draw))return false;
+  const auto primitive_type=draw.primitive;
   if (ConvertPrimitiveTopology(primitive_type) == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) {
     // Recording reports the missing point-sprite translation. Do not allocate
     // title surfaces or attempt to prewarm an invalid point-list pipeline.
-    return;
+    return false;
   }
   NativeRenderingTarget target{};
   if (!ResolveRenderingTarget(command, VK_NULL_HANDLE, 0, 0, target, false)) {
-    return;
+    return false;
   }
-  GetOrCreateDrawPipeline(command, primitive_type, target, user_pointer_stride,
-                          primitive_restart_enable, true);
+  return GetOrCreateDrawPipeline(command, primitive_type, target, draw.user_stride,
+                                 draw.restart, true)!=VK_NULL_HANDLE;
 }
 
 VkPipeline Gta4NativeGraphicsSystem::GetOrCreateDrawPipeline(
@@ -22658,7 +22718,7 @@ VkPipeline Gta4NativeGraphicsSystem::GetOrCreatePipeline(
     }
     const uint64_t wait_begin = rex::chrono::Clock::QueryHostTickCount();
     const auto compiled = profile::CpuCall(profile::CpuOp::kPipelineWait, [&] { return native_pipeline_compiler_->compiler->Take(key, true); });
-    RecordNativePipelineTiming(0, rex::chrono::Clock::QueryHostTickCount() - wait_begin);
+    RecordNativePipelineWait(key,state,rex::chrono::Clock::QueryHostTickCount()-wait_begin,true);
     if (compiled && compiled->pipeline) {
       return PublishNativePipeline(key, compiled->pipeline, compiled->ticks);
     }
@@ -23104,7 +23164,7 @@ VkPipeline Gta4NativeGraphicsSystem::GetOrCreatePipeline(
       if (queued && !prewarm) {
         const uint64_t wait_begin = rex::chrono::Clock::QueryHostTickCount();
         const auto compiled = profile::CpuCall(profile::CpuOp::kPipelineWait, [&] { return native_pipeline_compiler_->compiler->Take(key, true); });
-        RecordNativePipelineTiming(0, rex::chrono::Clock::QueryHostTickCount() - wait_begin);
+        RecordNativePipelineWait(key,state,rex::chrono::Clock::QueryHostTickCount()-wait_begin,false);
         if (compiled && compiled->pipeline) {
           return PublishNativePipeline(key, compiled->pipeline, compiled->ticks);
         }
@@ -30072,20 +30132,24 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
   // immutable retained commands and the existing exact-pipeline fallback.
   if(pipelined_recording_&&REXCVAR_GET(gta4_native_pipeline_lookahead)&&REXCVAR_GET(gta4_native_pipeline_prewarm)){
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::microseconds(500);
-    // Prioritize unseen materials before spending the remainder on exact
-    // state variants. Only successfully published shader pairs are remembered.
-    std::array<NativeShaderPair,8> attempted{};size_t attempts=0;
+    // Prioritize unseen draw variants, including new fixed state and layouts
+    // for an already prepared shader pair. The exact fallback below is kept.
+    const uint64_t policy=(uint64_t(modern_shader_frame_.settings().key())<<32)|
+        (uint64_t(shader_override_mode_)<<16)|(uint64_t(native_descriptor_backend_)<<8)|
+        (REXCVAR_GET(gta4_native_early_fragment_tests)?1u:0u)|
+        (REXCVAR_GET(gta4_native_colorless_fragment)?2u:0u)|
+        (REXCVAR_GET(gta4_native_empty_fragment)?4u:0u)|
+        (REXCVAR_GET(gta4_native_depth_clip_fallback)?8u:0u);
+    std::array<uint64_t,8> attempted{};size_t attempts=0;
     const auto novel_deadline=std::chrono::steady_clock::now()+std::chrono::microseconds(250);
     for(size_t i=0;i<std::min<size_t>(4096,current_frame_.size())&&attempts<attempted.size();++i){
       if(std::chrono::steady_clock::now()>=novel_deadline||std::chrono::steady_clock::now()>=deadline)break;
       const auto& draw=current_frame_[i];
-      if(draw.type!=CommandType::kDrawPrimitive&&draw.type!=CommandType::kDrawPrimitiveUp&&draw.type!=CommandType::kDrawIndexedPrimitive)continue;
-      if(!draw.pipeline_state||!draw.pipeline_state->vertex_shader_resource)continue;
-      const NativeShaderPair pair{draw.pipeline_state->vertex_shader_resource->hash,
-          draw.pipeline_state->pixel_shader_resource?draw.pipeline_state->pixel_shader_resource->hash:0};
-      if(prepared_shader_pairs_.Contains(pair.vertex,pair.pixel)||
-          std::find(attempted.begin(),attempted.begin()+attempts,pair)!=attempted.begin()+attempts)continue;
-      attempted[attempts++]=pair;TryPrewarmDrawPipeline(draw);
+      const auto signature=PipelinePreparationSignature(draw,policy);
+      if(!signature||prepared_pipeline_inputs_.Contains(signature)||
+          std::find(attempted.begin(),attempted.begin()+attempts,signature)!=attempted.begin()+attempts)continue;
+      if(TryPrewarmDrawPipeline(draw))prepared_pipeline_inputs_.RememberReady(signature);
+      else attempted[attempts++]=signature;
     }
     std::array<bool,256> visited{};
     for(size_t visit=0;visit<256;++visit){
@@ -38619,7 +38683,7 @@ void Gta4NativeGraphicsSystem::DestroyNativeRendererObjects() {
     }
   }
   native_pipelines_.clear();
-  prepared_shader_pairs_={};
+  prepared_pipeline_inputs_={};
   for (const NativeResolveConversionPipeline& conversion_pipeline : resolve_conversion_pipelines_) {
     if (conversion_pipeline.pipeline) {
       profile::CpuCall(profile::CpuOp::kDriverDestruction, [&] { return dfn.vkDestroyPipeline(device, conversion_pipeline.pipeline, nullptr); });

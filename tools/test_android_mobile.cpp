@@ -42,6 +42,18 @@ int main(int argc,char** argv) {
     // Rolling captures keep working beyond the bounded 16 output slots.
     for(unsigned i=0;i<20;++i)assert(h.Record({(85ull+i*2)*1'000'000'000ull,120'000'000}));
     assert(h.sequence()==22);
+    MobileHitchHistory ranked;
+    auto row=MobileHitchRow{1'000'000'000ull,467'000'000};
+    assert(ranked.Record(row)&&ranked.worst_capture_slot()==0);
+    for(uint64_t interval:{399'000'000ull,268'000'000ull,264'000'000ull}){
+      row.end_ns+=3'000'000'000;row.interval_ns=interval;assert(ranked.Record(row)&&ranked.worst_capture_slot());
+    }
+    ranked.Reset(); // A menu must not clear the session's four worst captures.
+    for(unsigned i=0;i<100;++i){row.end_ns+=3'000'000'000;row.interval_ns=101'000'000;assert(ranked.Record(row));assert(!ranked.worst_capture_slot());}
+    row.end_ns+=3'000'000'000;row.interval_ns=500'000'000;
+    assert(ranked.Record(row)&&ranked.worst_capture_slot()==3);
+    assert(ranked.sequence()==105&&MobileHitchHistory::kRecentCaptureSlots+MobileHitchHistory::kWorstCaptureSlots==16);
+
   }
   {
     MobileIdleTextureBudget<2> b;uint64_t a=0,c=0,d=0;
@@ -74,8 +86,21 @@ int main(int argc,char** argv) {
     using rex::filesystem::IsOptionalXboxCachePath;
     for(auto path:{"cache:\\a","CACHE1:\\","Cache0:file"})assert(IsOptionalXboxCachePath(path));
     for(auto path:{"game:cache/a","cache2:a","cache1x:a","cache/a","update:file"})assert(!IsOptionalXboxCachePath(path));
-    NativePreparedShaderPairs pairs;assert(!pairs.Contains(1,2));pairs.Publish(1,2);assert(pairs.Contains(1,2)&&!pairs.Contains(1,3));
-    pairs.Publish(1025,2);assert(!pairs.Contains(1,2)&&pairs.Contains(1025,2)); // collision cannot claim a different pair ready
+    NativePipelinePreparationInputs<4,16> base{};
+    base.vertex_shader=1;base.pixel_shader=2;base.fixed_state=3;base.declaration=4;
+    NativePreparedPipelineInputs<> prepared;
+    const auto signature=base.Signature();assert(!prepared.Contains(signature));
+    prepared.RememberReady(signature);assert(prepared.Contains(signature));
+    const auto unseen=[&](auto change){auto variant=base;change(variant);assert(variant.Signature()!=signature);assert(!prepared.Contains(variant.Signature()));};
+    // One shader pair still needs distinct input/depth/blend/target variants.
+    unseen([](auto& v){++v.fixed_state;});unseen([](auto& v){++v.declaration;});
+    unseen([](auto& v){v.strides[3]=32;});unseen([](auto& v){v.targets[4].format=11;});
+    unseen([](auto& v){v.targets[0].samples=4;});unseen([](auto& v){v.targets[0].width=512;});
+    unseen([](auto& v){v.primitive=7;});unseen([](auto& v){v.user_stride=24;});
+    unseen([](auto& v){v.primitive_restart=true;});unseen([](auto& v){++v.policy;});
+    unseen([](auto& v){++v.lifetime;});unseen([](auto& v){++v.vertex_identity;});
+    NativePreparedPipelineInputs<4> collisions;collisions.RememberReady(1);collisions.RememberReady(5);
+    assert(!collisions.Contains(1)&&collisions.Contains(5)&&!collisions.Contains(0));
   }
   {
     enum class Mode { foot, vehicle, phone, minigame, hidden };

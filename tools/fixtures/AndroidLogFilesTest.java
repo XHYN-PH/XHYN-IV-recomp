@@ -79,15 +79,17 @@ public class AndroidLogFilesTest {
         Files.writeString(new File(hitches,"capture-complete.txt").toPath(),"Rolling last 16 traces");
         String hitchCsv="frame,end_monotonic_ns,interval_ms\n123,456000000,120.5\n";
         Files.writeString(new File(hitches,"recent-0.csv").toPath(),hitchCsv);
+        Files.writeString(new File(hitches,"worst-0.csv").toPath(),hitchCsv);
         Files.writeString(new File(hitches,"recent-1.csv.partial").toPath(),"unfinished");
-        output.reset();DebugLogArchive.write(output,root,fallback,chosen);boolean hitchFound=false;
+        output.reset();DebugLogArchive.write(output,root,fallback,chosen);boolean hitchFound=false,worstFound=false;
         try(ZipInputStream zip=new ZipInputStream(new ByteArrayInputStream(output.toByteArray()))){
             ZipEntry entry;while((entry=zip.getNextEntry())!=null){
                 assert !entry.getName().endsWith(".partial");
                 if(entry.getName().endsWith(".hitches/recent-0.csv")){assert new String(zip.readAllBytes(),StandardCharsets.UTF_8).equals(hitchCsv);hitchFound=true;}
+                if(entry.getName().endsWith(".hitches/worst-0.csv")){assert new String(zip.readAllBytes(),StandardCharsets.UTF_8).equals(hitchCsv);worstFound=true;}
             }
         }
-        assert hitchFound:"Hitch diagnostics must be included in the selected session export";
+        assert hitchFound&&worstFound:"Hitch diagnostics must be included in the selected session export";
         failure=false;try {DebugLogArchive.write(new OutputStream(){public void write(int value)throws IOException{throw new IOException("full");}},root,fallback);}
         catch(IOException expected){failure=true;}assert failure;
         File profile=new File(logs,chosen+".runtime.log.profile/frames");assert profile.mkdirs();

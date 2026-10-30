@@ -1567,6 +1567,8 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   void LoadNativePipelineRecipes();
   VkPipeline PublishNativePipeline(const NativePipelineKey& key, VkPipeline pipeline,
                                     uint64_t compile_ticks);
+  void RecordNativePipelineWait(const NativePipelineKey& key,const NativePipelineState& state,
+                                uint64_t wait_ticks,bool already_queued);
   void RecordNativePipelineTiming(uint64_t compile_ticks, uint64_t wait_ticks = 0);
   bool CreateNativeUploadBuffer(VkDeviceSize capacity, NativeUploadBuffer& upload_buffer,
                                 bool prefer_cached = false);
@@ -1895,7 +1897,13 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
                                      const NativeRenderingTarget& target,
                                      uint32_t user_pointer_stride = 0,
                                      bool primitive_restart_enable = false, bool prewarm = false);
-  void TryPrewarmDrawPipeline(const NativeCommand& command);
+  struct NativePipelineDrawParameters {
+    uint32_t primitive=0,user_stride=0;
+    bool restart=false;
+  };
+  bool DecodePipelineDrawParameters(const NativeCommand& command,NativePipelineDrawParameters& parameters) const;
+  uint64_t PipelinePreparationSignature(const NativeCommand& command,uint64_t policy) const;
+  bool TryPrewarmDrawPipeline(const NativeCommand& command);
   bool GetRequiredVertexStreams(const NativePipelineState& state,
                                 std::array<bool, kVertexStreamCount>& required_streams) const;
   bool UploadBufferResource(const std::shared_ptr<const NativeBufferResource>& resource,
@@ -2759,7 +2767,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   uint64_t native_pipeline_unreported_wait_ticks_ = 0;
   uint64_t native_pipeline_unreported_creates_ = 0;
   uint64_t pipeline_diagnostic_compile_ticks_=0,pipeline_diagnostic_wait_ticks_=0;
-  uint32_t pipeline_diagnostic_creates_=0,pipeline_diagnostic_slow_logs_=0;
+  uint32_t pipeline_diagnostic_creates_=0,pipeline_diagnostic_slow_logs_=0,pipeline_diagnostic_wait_logs_=0;
   uint32_t diagnostic_submitted_frame_ = 0;
   uint64_t diagnostic_draw_id_ = 0;
   size_t diagnostic_command_index_ = SIZE_MAX;
@@ -2832,7 +2840,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   struct TexturePreparationScratch;
   std::unique_ptr<TexturePreparationScratch> texture_preparation_scratch_;
   MobileIdleTextureBudget<VK_MAX_MEMORY_HEAPS> idle_texture_budget_;
-  NativePreparedShaderPairs prepared_shader_pairs_;
+  NativePreparedPipelineInputs<> prepared_pipeline_inputs_;
   uint64_t texture_retention_preserved_=0;
   std::unordered_map<NativeSamplerCacheKey, size_t, NativeSamplerCacheKeyHash>
       native_sampler_indices_;

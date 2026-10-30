@@ -8,6 +8,18 @@ Install it over your existing XHYN IV app. Back up saves first; uninstalling rem
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
 
+## Unreleased Test11 — shared runtime fixes
+
+This candidate is being validated. The published download above remains Test10.
+
+- Escape quotes, backslashes and control characters when saving native settings, including JSON status values and Windows paths. Both full and category-only config exports use the same serializer.
+- Report malformed configuration with its line/column in the final runtime log. Startup only reports a successful load after parsing succeeds; invalid files remain untouched.
+- Prioritize unseen pipeline input variants, including fixed state, vertex declaration/strides, topology and attachment metadata, within the existing lookahead budget. Normal draws continue to resolve their exact pipelines; compiler-worker counts are unchanged.
+- Record the exact shader files and pipeline identity for long demanded waits, and report whether learned recipe files loaded or were rejected.
+- Keep up to 12 recent and four worst recorded hitch CSVs, within the existing 16-file limit. Host-menu pauses preserve the severe-event slots.
+
+Phone performance and rendering still require validation. These changes do not establish an FPS gain or resolve the camera-linked shadow band.
+
 ## Test10 — session stability and diagnostics
 
 This release includes the previously unreleased Test9 refinements below, plus all earlier r2 changes.
