@@ -118,6 +118,17 @@ namespace rex::cvar {
 //=============================================================================
 
 std::vector<std::string> Init(int argc, char** argv);
+enum class ConfigLoadStatus { kNotFound, kLoaded, kError };
+struct ConfigLoadResult {
+  ConfigLoadStatus status = ConfigLoadStatus::kNotFound;
+  std::string error;
+  uint32_t line = 0;
+  uint32_t column = 0;
+};
+// A syntax error applies no flags and leaves the file intact. Callers may
+// defer reporting until their final logging sinks have been initialized.
+ConfigLoadResult LoadConfigWithResult(const std::filesystem::path& config_path);
+// Preserve the existing entry point for callers that do not need the result.
 void LoadConfig(const std::filesystem::path& config_path);
 void ApplyEnvironment();
 void FinalizeInit();

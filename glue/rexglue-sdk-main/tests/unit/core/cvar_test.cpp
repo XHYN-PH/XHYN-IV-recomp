@@ -699,3 +699,47 @@ TEST_CASE("Invalid explicit CLI values do not suppress a valid saved setting", "
   std::filesystem::remove(path);
   rex::cvar::testing::ResetAllForTesting();
 }
+
+TEST_CASE("cvar config strings round trip JSON paths controls and key injection", "[cvar][config]") {
+  const auto path=std::filesystem::temp_directory_path()/"cvar_escaped_roundtrip.toml";
+  const std::vector<std::string> values={R"({"active":false,"outcome":"ready"})",
+      R"(C:\Users\Player\LibertyRecomp\native.toml)","first\nsecond\tline\r\n",
+      "Unicode: café · 日本語 · 🎮", "\"\ntest_int32_flag = 999\n#"};
+  for(const auto& value:values){
+    rex::cvar::testing::ResetAllForTesting();
+    REQUIRE(rex::cvar::SetFlagByName("test_string_flag",value));
+    // Exercise both public serializers through the real TOML loader.
+    for(const auto& serialized:{rex::cvar::SerializeToTOML(),rex::cvar::SerializeToTOML("Test")}){
+      {std::ofstream file(path);file<<serialized;}
+      rex::cvar::testing::ResetAllForTesting();
+      const auto result=rex::cvar::LoadConfigWithResult(path);
+      REQUIRE(result.status==rex::cvar::ConfigLoadStatus::kLoaded);
+      CHECK(rex::cvar::GetFlagByName("test_string_flag")==value);
+      CHECK(REXCVAR_GET(test_int32_flag)==42);
+    }
+  }
+  rex::cvar::testing::ResetAllForTesting();
+  std::string controls;for(unsigned char c=0;c<32;++c)controls+=char(c);controls+=char(127);
+  REQUIRE(rex::cvar::SetFlagByName("test_string_flag",controls));
+  REQUIRE(rex::cvar::SaveConfig(path));
+  rex::cvar::testing::ResetAllForTesting();
+  REQUIRE(rex::cvar::LoadConfigWithResult(path).status==rex::cvar::ConfigLoadStatus::kLoaded);
+  CHECK(rex::cvar::GetFlagByName("test_string_flag")==controls);
+  std::filesystem::remove(path);
+  rex::cvar::testing::ResetAllForTesting();
+}
+
+TEST_CASE("cvar reports malformed missing and nonfile configs without applying partial values", "[cvar][config]") {
+  rex::cvar::testing::ResetAllForTesting();
+  const auto path=std::filesystem::temp_directory_path()/"cvar_invalid_parse.toml";
+  const std::string broken="test_int32_flag = 999\ntest_string_flag = \"{\"active\":false}\"\n";
+  {std::ofstream file(path);file<<broken;}
+  const auto result=rex::cvar::LoadConfigWithResult(path);
+  CHECK(result.status==rex::cvar::ConfigLoadStatus::kError);
+  CHECK_FALSE(result.error.empty());CHECK(result.line==2);CHECK(result.column>0);
+  CHECK(REXCVAR_GET(test_int32_flag)==42);CHECK(REXCVAR_GET(test_string_flag)=="default");
+  {std::ifstream file(path);CHECK(std::string(std::istreambuf_iterator<char>(file),{})==broken);}
+  std::filesystem::remove(path);
+  CHECK(rex::cvar::LoadConfigWithResult(path).status==rex::cvar::ConfigLoadStatus::kNotFound);
+  CHECK(rex::cvar::LoadConfigWithResult(std::filesystem::temp_directory_path()).status==rex::cvar::ConfigLoadStatus::kError);
+}
