@@ -810,3 +810,5 @@ CMakeUserPresets.json
 
 !/tools/test_android_audio.cpp
 !/tools/verify_android_candidate.py
+
+!/tools/test_runtime_config.cpp

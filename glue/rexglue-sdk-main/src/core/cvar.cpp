@@ -510,17 +510,54 @@ std::vector<std::string> ListModifiedFlags() {
   return result;
 }
 
+namespace {
+// Keep flat, double-quoted TOML for existing config editors. Escaping must also
+// cover JSON status strings, Windows paths and control characters; concatenating
+// a raw value between quotes creates an invalid file or injects another key.
+void AppendTomlValue(std::string& output, FlagType type, std::string_view value) {
+  if (type != FlagType::String) {
+    output.append(value);
+    return;
+  }
+  constexpr char hex[] = "0123456789ABCDEF";
+  output += '"';
+  for (const unsigned char c : value) {
+    switch (c) {
+      case '"': output += "\\\""; break;
+      case '\\': output += "\\\\"; break;
+      case '\b': output += "\\b"; break;
+      case '\t': output += "\\t"; break;
+      case '\n': output += "\\n"; break;
+      case '\f': output += "\\f"; break;
+      case '\r': output += "\\r"; break;
+      default:
+        if (c < 0x20 || c == 0x7F) {
+          output += "\\u00";
+          output += hex[c >> 4];
+          output += hex[c & 15];
+        } else {
+          output += char(c);
+        }
+    }
+  }
+  output += '"';
+}
+
+void AppendModifiedFlag(std::string& output, const FlagEntry& entry) {
+  const std::string value = entry.getter();
+  if (value == entry.default_value) return;
+  output += entry.name;
+  output += " = ";
+  AppendTomlValue(output, entry.type, value);
+  output += '\n';
+}
+}  // namespace
+
 std::string SerializeToTOML() {
   std::lock_guard lock(GetRegistryMutex());
   std::string result;
   for (const auto& entry : GetRegistryStorage()) {
-    if (entry.getter() != entry.default_value) {
-      if (entry.type == FlagType::String) {
-        result += entry.name + " = \"" + entry.getter() + "\"\n";
-      } else {
-        result += entry.name + " = " + entry.getter() + "\n";
-      }
-    }
+    AppendModifiedFlag(result, entry);
   }
   return result;
 }
@@ -529,13 +566,7 @@ std::string SerializeToTOML(std::string_view category) {
   std::lock_guard lock(GetRegistryMutex());
   std::string result;
   for (const auto& entry : GetRegistryStorage()) {
-    if (entry.category == category && entry.getter() != entry.default_value) {
-      if (entry.type == FlagType::String) {
-        result += entry.name + " = \"" + entry.getter() + "\"\n";
-      } else {
-        result += entry.name + " = " + entry.getter() + "\n";
-      }
-    }
+    if (entry.category == category) AppendModifiedFlag(result, entry);
   }
   return result;
 }
@@ -635,19 +666,35 @@ std::vector<std::string> Init(int argc, char** argv) {
   return positional;
 }
 
-void LoadConfig(const std::filesystem::path& config_path) {
-  if (!std::filesystem::exists(config_path)) {
+ConfigLoadResult LoadConfigWithResult(const std::filesystem::path& config_path) {
+  std::error_code error;
+  const bool exists = std::filesystem::exists(config_path, error);
+  if (error) return {ConfigLoadStatus::kError, error.message()};
+  if (!exists) {
     REXLOG_DEBUG("Config file not found: {}", config_path.string());
-    return;
+    return {};
+  }
+  if (!std::filesystem::is_regular_file(config_path, error)) {
+    return {ConfigLoadStatus::kError, error ? error.message() : "Not a regular config file"};
   }
 
   try {
     auto config = toml::parse_file(config_path.string());
     ApplyTomlTable(config, "");
     REXLOG_INFO("Loaded config from {}", config_path.string());
+    return {ConfigLoadStatus::kLoaded, {}};
   } catch (const toml::parse_error& err) {
     REXLOG_ERROR("Failed to parse config {}: {}", config_path.string(), err.what());
+    return {ConfigLoadStatus::kError, std::string(err.description()),
+            uint32_t(err.source().begin.line), uint32_t(err.source().begin.column)};
+  } catch (const std::exception& err) {
+    REXLOG_ERROR("Failed to read config {}: {}", config_path.string(), err.what());
+    return {ConfigLoadStatus::kError, err.what()};
   }
+}
+
+void LoadConfig(const std::filesystem::path& config_path) {
+  (void)LoadConfigWithResult(config_path);
 }
 
 void ApplyEnvironment() {

@@ -61,7 +61,8 @@ mods = ["tools/test_data_mods.cpp", "tools/android_host_test_support.cpp", *comm
       "filesystem/devices/host_path_entry.cpp", "filesystem/devices/host_path_file.cpp",
       "core/filesystem.cpp", "core/filesystem_posix.cpp", "core/mapped_memory_posix.cpp",
       "core/mutex.cpp", "core/utf8.cpp", "core/string_buffer.cpp", "core/filesystem_wildcard.cpp")]]
-for name, files in (("android-audio", ["tools/test_android_audio.cpp","tools/android_host_test_support.cpp",*common,"glue/rexglue-sdk-main/src/audio/audio_driver.cpp","glue/rexglue-sdk-main/src/audio/sdl/sdl_audio_driver.cpp"]),
+for name, files in (("runtime-config", ["tools/test_runtime_config.cpp","tools/android_host_test_support.cpp",*common]),
+                    ("android-audio", ["tools/test_android_audio.cpp","tools/android_host_test_support.cpp",*common,"glue/rexglue-sdk-main/src/audio/audio_driver.cpp","glue/rexglue-sdk-main/src/audio/sdl/sdl_audio_driver.cpp"]),
                     ("android-profile-lifetime", profile), ("android-data-mods", mods),
                     ("android-refinements", native), ("android-touch", touch),
                     ("android-context-draw", context_draw),
@@ -73,7 +74,7 @@ for name, files in (("android-audio", ["tools/test_android_audio.cpp","tools/and
     objects = [obj(p) for p in files]
     executable = OUT / name
     subprocess.run(["g++", *flags, *objects, "-Wl,--gc-sections", "-o", str(executable)], check=True)
-    data = "production-shaders" if name == "android-shader-compat" else "mobile-cache" if name=="android-mobile" else "touch-home"
+    data = "production-shaders" if name == "android-shader-compat" else "mobile-cache" if name=="android-mobile" else "config-fixtures" if name=="runtime-config" else "touch-home"
     subprocess.run([str(executable), str(OUT / data)], check=True,
                    env={**os.environ, "ASAN_OPTIONS": "detect_leaks=" + os.environ.get("XHYN_HOST_DETECT_LEAKS", "1" if name in ("android-profile-lifetime", "android-data-mods") else "0")})
 

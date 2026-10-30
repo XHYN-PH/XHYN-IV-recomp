@@ -177,8 +177,7 @@ bool ReXApp::SetupEnvironment() {
   resolved_defaults_ = std::move(path_config);
 
   // Load config FIRST so log cvars have final values
-  if (std::filesystem::exists(config_path_))
-    rex::cvar::LoadConfig(config_path_);
+  const auto config_load = rex::cvar::LoadConfigWithResult(config_path_);
 
   // Late-phase logging
   std::string log_file_cvar = REXCVAR_GET(log_file);
@@ -211,8 +210,14 @@ bool ReXApp::SetupEnvironment() {
 
   OnPostInitLogging();
 
-  if (std::filesystem::exists(config_path_))
+  if (config_load.status == rex::cvar::ConfigLoadStatus::kLoaded) {
     REXLOG_INFO("Loaded config: {}", config_path_.filename().string());
+  } else if (config_load.status == rex::cvar::ConfigLoadStatus::kError) {
+    // The original error occurred before InitLogging. Retain it in the final
+    // runtime report too, and never claim a malformed config loaded correctly.
+    REXLOG_ERROR("Config not loaded: {}:{}:{}: {} (file left unchanged; continuing with defaults and explicit launch settings)",
+                 config_path_.string(), config_load.line, config_load.column, config_load.error);
+  }
 
   REXLOG_INFO("{} starting", GetName());
   if (!game_data_root_.empty()) {
