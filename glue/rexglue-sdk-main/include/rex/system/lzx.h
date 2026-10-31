@@ -27,6 +27,11 @@ int lzx_decompress(const void* lzx_data, size_t lzx_len, void* dest, size_t dest
 int lzxdelta_apply_patch(rex::xex2_delta_patch* patch, size_t patch_len, uint32_t window_size,
                          void* dest);
 
+// Loader entry point with the real writable allocation extent. The four-argument
+// entry point above is retained for ABI compatibility and has no allocation bound.
+int lzxdelta_apply_patch(const void* patch, size_t patch_len, uint32_t window_size,
+                         void* dest, size_t dest_len);
+
 namespace rex::lzx {
 
 // libmspack's LZX state is deliberately hidden from SDK consumers. One

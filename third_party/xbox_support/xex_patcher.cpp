@@ -12,9 +12,11 @@
 #include "xex_patcher.h"
 #include "xex.h"
 
+#include <algorithm>
 #include <bit>
 #include <cassert>
 #include <climits>
+#include <cstddef>
 #include <fstream>
 
 #include <aes.hpp>
@@ -180,33 +182,54 @@ static int lzxDecompress(const void *lzxData, size_t lzxLength, void *dst, size_
     return resultCode;
 }
 
-static int lzxDeltaApplyPatch(const Xex2DeltaPatch *deltaPatch, uint32_t patchLength, uint32_t windowSize, uint8_t *dstData)
+static int lzxDeltaApplyPatch(const Xex2DeltaPatch *deltaPatch, uint32_t patchLength,
+                             uint32_t windowSize, uint8_t *dstData, size_t dstSize)
 {
-    const void *patchEnd = (const uint8_t *)(deltaPatch) + patchLength;
-    const Xex2DeltaPatch *curPatch = deltaPatch;
-    while (patchEnd > curPatch)
+    constexpr size_t headerSize = offsetof(Xex2DeltaPatch, patchData);
+    static_assert(headerSize == 12);
+    const auto *bytes = reinterpret_cast<const uint8_t *>(deltaPatch);
+    size_t position = 0;
+    while (position < patchLength)
     {
-        int patchSize = -4; 
-        if (curPatch->compressedLength == 0 && curPatch->uncompressedLength == 0 && curPatch->newAddress == 0 && curPatch->oldAddress == 0)
+        const size_t remaining = patchLength - position;
+        if (remaining < headerSize)
         {
-            // End of patch.
+            return std::all_of(bytes + position, bytes + patchLength,
+                               [](uint8_t b) { return b == 0; }) ? 0 : 1;
+        }
+        // Payload lengths need not align the next serialized record. Copy the
+        // fixed header into an aligned local object before accessing fields.
+        Xex2DeltaPatch record{};
+        std::memcpy(&record, bytes + position, headerSize);
+        const uint32_t source = record.oldAddress;
+        const uint32_t target = record.newAddress;
+        const uint16_t length = record.uncompressedLength;
+        const uint16_t compressed = record.compressedLength;
+        if (compressed == 0 && length == 0 && target == 0 && source == 0)
+        {
             break;
         }
-
-        switch (curPatch->compressedLength)
+        if (target > dstSize || length > dstSize - target ||
+            (compressed != 0 && (source > dstSize || length > dstSize - source)))
+        {
+            return 1;
+        }
+        const size_t payloadSize = compressed > 1 ? compressed : 0;
+        if (payloadSize > remaining - headerSize)
+        {
+            return 1;
+        }
+        switch (compressed)
         {
         case 0:
-            // Set the data to zeroes.
-            std::memset(&dstData[curPatch->newAddress], 0, curPatch->uncompressedLength);
+            if (length) std::memset(dstData + target, 0, length);
             break;
         case 1:
-            // Move the data.
-            std::memcpy(&dstData[curPatch->newAddress], &dstData[curPatch->oldAddress], curPatch->uncompressedLength);
+            if (length) std::memmove(dstData + target, dstData + source, length);
             break;
         default:
-            // Decompress the data into the destination.
-            patchSize = curPatch->compressedLength - 4;
-            int result = lzxDecompress(curPatch->patchData, curPatch->compressedLength, &dstData[curPatch->newAddress], curPatch->uncompressedLength, windowSize, &dstData[curPatch->oldAddress], curPatch->uncompressedLength);
+            int result = lzxDecompress(bytes + position + headerSize, compressed,
+                dstData + target, length, windowSize, dstData + source, length);
             if (result != 0)
             {
                 return result;
@@ -215,8 +238,7 @@ static int lzxDeltaApplyPatch(const Xex2DeltaPatch *deltaPatch, uint32_t patchLe
             break;
         }
 
-        curPatch++;
-        curPatch = (const Xex2DeltaPatch *)((const uint8_t *)(curPatch) + patchSize);
+        position += headerSize + payloadSize;
     }
 
     return 0;
@@ -293,7 +315,8 @@ XexPatcher::Result XexPatcher::apply(const uint8_t* xexBytes, size_t xexBytesSiz
     uint32_t newXexHeaderSize = std::max(headerTargetSize, xexHeader->headerSize.get());
     outBytes.resize(newXexHeaderSize);
     memset(outBytes.data(), 0, newXexHeaderSize);
-    memcpy(outBytes.data(), xexBytes, headerTargetSize);
+    // Newly expanded header bytes stay zero until the delta writes them.
+    memcpy(outBytes.data(), xexBytes, std::min(headerTargetSize, xexHeader->headerSize.get()));
 
     Xex2Header *newXexHeader = (Xex2Header *)(outBytes.data());
     if (patchDescriptor->deltaHeadersSourceOffset > 0)
@@ -301,7 +324,9 @@ XexPatcher::Result XexPatcher::apply(const uint8_t* xexBytes, size_t xexBytesSiz
         memcpy(&outBytes[patchDescriptor->deltaHeadersTargetOffset], &outBytes[patchDescriptor->deltaHeadersSourceOffset], patchDescriptor->deltaHeadersSourceSize);
     }
 
-    int resultCode = lzxDeltaApplyPatch(&patchDescriptor->info, patchDescriptor->size, ((const Xex2FileNormalCompressionInfo*)(patchFileFormatInfo + 1))->windowSize, outBytes.data());
+    int resultCode = lzxDeltaApplyPatch(&patchDescriptor->info, patchDescriptor->size,
+        ((const Xex2FileNormalCompressionInfo*)(patchFileFormatInfo + 1))->windowSize,
+        outBytes.data(), outBytes.size());
     if (resultCode != 0)
     {
         return Result::PatchFailed;
@@ -465,7 +490,9 @@ XexPatcher::Result XexPatcher::apply(const uint8_t* xexBytes, size_t xexBytesSiz
 
         // Apply the block's patch data.
         uint32_t blockDataSize = currentBlock->blockSize - 24;
-        if (lzxDeltaApplyPatch((const Xex2DeltaPatch *)(patchDataCursor), blockDataSize, ((const Xex2FileNormalCompressionInfo*)(patchFileFormatInfo + 1))->windowSize, outExe) != 0)
+        if (lzxDeltaApplyPatch((const Xex2DeltaPatch *)(patchDataCursor), blockDataSize,
+            ((const Xex2FileNormalCompressionInfo*)(patchFileFormatInfo + 1))->windowSize,
+            outExe, outBytes.size() - newXexHeader->headerSize) != 0)
         {
             return Result::PatchFailed;
         }

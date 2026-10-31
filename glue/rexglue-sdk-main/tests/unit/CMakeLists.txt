@@ -127,6 +127,7 @@ add_executable(unit_tests
     system/live_compatibility_test.cpp
     system/multiplayer_validation_test.cpp
     system/lzx_test.cpp
+    system/lzx_delta_patch_test.cpp
     system/online_services_test.cpp
     system/title_storage_test.cpp
     system/user_profile_test.cpp

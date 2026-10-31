@@ -25,6 +25,8 @@
 #include <rex/system/util/xex2_info.h>
 #include <rex/types.h>
 
+#include "lzx_delta_patch.h"
+
 #include <lzx.h>
 #include <mspack.h>
 
@@ -422,41 +424,18 @@ int lzx_decompress(const void* lzx_data, size_t lzx_len, void* dest, size_t dest
 
 int lzxdelta_apply_patch(rex::xex2_delta_patch* patch, size_t patch_len, uint32_t window_size,
                          void* dest) {
-  void* patch_end = (char*)patch + patch_len;
-  auto* cur_patch = patch;
+  return lzxdelta_apply_patch(static_cast<const void*>(patch), patch_len, window_size,
+                              dest, std::numeric_limits<size_t>::max());
+}
 
-  while (patch_end > cur_patch) {
-    int patch_sz = -4;  // 0 byte patches need us to remove 4 byte from next
-                        // patch addr because of patch_data field
-    if (cur_patch->compressed_len == 0 && cur_patch->uncompressed_len == 0 &&
-        cur_patch->new_addr == 0 && cur_patch->old_addr == 0)
-      break;
-    switch (cur_patch->compressed_len) {
-      case 0:  // fill with 0
-        std::memset((char*)dest + cur_patch->new_addr, 0, cur_patch->uncompressed_len);
-        break;
-      case 1:  // copy from old -> new
-        std::memcpy((char*)dest + cur_patch->new_addr, (char*)dest + cur_patch->old_addr,
-                    cur_patch->uncompressed_len);
-        break;
-      default:                                     // delta patch
-        patch_sz = cur_patch->compressed_len - 4;  // -4 because of patch_data field
-
-        int result = lzx_decompress(cur_patch->patch_data, cur_patch->compressed_len,
-                                    (char*)dest + cur_patch->new_addr, cur_patch->uncompressed_len,
-                                    window_size, (char*)dest + cur_patch->old_addr,
-                                    cur_patch->uncompressed_len);
-
-        if (result) {
-          return result;
-        }
-        break;
-    }
-
-    cur_patch++;
-    cur_patch = reinterpret_cast<rex::xex2_delta_patch*>(
-        reinterpret_cast<uint8_t*>(cur_patch) + patch_sz);
-  }
-
-  return 0;
+int lzxdelta_apply_patch(const void* patch, size_t patch_len, uint32_t window_size,
+                         void* dest, size_t dest_len) {
+  if (!patch && patch_len) return 1;
+  return rex::lzx::detail::ApplyDeltaPatch(
+      {static_cast<const uint8_t*>(patch), patch_len}, static_cast<uint8_t*>(dest), dest_len,
+      [window_size](std::span<const uint8_t> input, uint8_t* output, size_t output_size,
+                     uint8_t* reference, size_t reference_size) {
+        return lzx_decompress(input.data(), input.size(), output, output_size,
+                               window_size, reference, reference_size);
+      });
 }

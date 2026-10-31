@@ -254,7 +254,7 @@ int XexModule::ApplyPatch(XexModule* module) {
   // If headers_source_offset is set, copy [source_offset:source_size] to
   // target_offset
   if (patch_header->delta_headers_source_offset) {
-    memcpy(header_ptr + patch_header->delta_headers_target_offset,
+    memmove(header_ptr + patch_header->delta_headers_target_offset,
            header_ptr + patch_header->delta_headers_source_offset,
            patch_header->delta_headers_source_size);
   }
@@ -269,10 +269,18 @@ int XexModule::ApplyPatch(XexModule* module) {
 
   // Apply header patch...
   uint32_t headerpatch_size = patch_header->info.compressed_len + 0xC;
+  const auto headerpatch_offset = reinterpret_cast<const uint8_t*>(&patch_header->info) -
+                                  reinterpret_cast<const uint8_t*>(xex_header());
+  if (headerpatch_offset < 0 || size_t(headerpatch_offset) > xex_header_mem_.size() ||
+      headerpatch_size > xex_header_mem_.size() - size_t(headerpatch_offset)) {
+    REXLOG_ERROR("XEX header patch payload is outside the loaded patch header");
+    return 2;
+  }
 
   int result_code =
       lzxdelta_apply_patch(&patch_header->info, headerpatch_size,
-                           file_format_header->compression_info.normal.window_size, header_ptr);
+                           file_format_header->compression_info.normal.window_size, header_ptr,
+                           module->xex_header_mem_.size());
   if (result_code) {
     REXLOG_ERROR("XEX header patch application failed, error code {}", result_code);
     return result_code;
@@ -356,16 +364,25 @@ int XexModule::ApplyPatch(XexModule* module) {
       return 8;
   }
 
-  const xex2_compressed_block_info* cur_block =
-      &file_format_header->compression_info.normal.first_block;
+  auto cur_block = file_format_header->compression_info.normal.first_block;
 
   const uint8_t* p = input_buffer;
   uint8_t* base_exe = memory()->TranslateVirtual(module->base_address_);
+  const size_t image_capacity = std::max(original_image_size, new_image_size);
+  const uint32_t image_source = patch_header->delta_image_source_offset;
+  const uint32_t image_target = patch_header->delta_image_target_offset;
+  const uint32_t image_length = patch_header->delta_image_source_size;
+  if (image_source > image_capacity || image_length > image_capacity - image_source ||
+      image_target > image_capacity || image_length > image_capacity - image_target) {
+    if (free_input) free(const_cast<uint8_t*>(input_buffer));
+    REXLOG_ERROR("XEX image patch source or destination is outside the allocated image");
+    return 9;
+  }
 
   // If image_source_offset is set, copy [source_offset:source_size] to
   // target_offset
   if (patch_header->delta_image_source_offset) {
-    memcpy(base_exe + patch_header->delta_image_target_offset,
+    memmove(base_exe + patch_header->delta_image_target_offset,
            base_exe + patch_header->delta_image_source_offset,
            patch_header->delta_image_source_size);
   }
@@ -380,15 +397,23 @@ int XexModule::ApplyPatch(XexModule* module) {
   }
 
   // Now loop through each block and apply the delta patches inside
-  while (cur_block->block_size) {
-    const auto* next_block = (const xex2_compressed_block_info*)p;
+  size_t remaining_patch = patch_length;
+  while (cur_block.block_size) {
+    const uint32_t block_size = cur_block.block_size;
+    if (block_size < sizeof(xex2_compressed_block_info) || block_size > remaining_patch) {
+      REXLOG_ERROR("XEX patch block extends outside the decrypted payload");
+      result_code = 9;
+      break;
+    }
+    xex2_compressed_block_info next_block;
+    std::memcpy(&next_block, p, sizeof(next_block));
 
     // Compare block hash, if no match we probably used wrong decrypt key
     s.reset();
-    s.processBytes(p, cur_block->block_size);
+    s.processBytes(p, block_size);
     s.finalize(digest);
 
-    if (memcmp(digest, cur_block->block_hash, 0x14) != 0) {
+    if (memcmp(digest, cur_block.block_hash, 0x14) != 0) {
       result_code = 9;
       REXLOG_ERROR("XEX patch block hash doesn't match hash inside block info!");
       break;
@@ -398,18 +423,20 @@ int XexModule::ApplyPatch(XexModule* module) {
     p += 20;
     p += 4;
 
-    uint32_t block_data_size = cur_block->block_size - 20 - 4;
+    uint32_t block_data_size = block_size - 20 - 4;
 
     // Apply delta patch
     result_code =
-        lzxdelta_apply_patch((xex2_delta_patch*)p, block_data_size,
-                             file_format_header->compression_info.normal.window_size, base_exe);
+        lzxdelta_apply_patch(p, block_data_size,
+                             file_format_header->compression_info.normal.window_size, base_exe,
+                             image_capacity);
     if (result_code) {
       break;
     }
 
     p += block_data_size;
     cur_block = next_block;
+    remaining_patch -= block_size;
   }
 
   if (!result_code) {
