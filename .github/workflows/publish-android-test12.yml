@@ -1,0 +1,75 @@
+name: Upload verified Test12 Android APK
+
+on:
+  push:
+    branches: [xhyn/r2-test12]
+    paths: [.github/workflows/publish-android-test12.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upload-android-test12
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: 0.5.9.3-xhyn-r2-test12
+      APK_NAME: XHYN-IV-0.5.9.3-xhyn-r2-test12.apk
+      APK_SHA256: 94dbb87f28247c6fa5a58c79d9114a7053989e31aed0a066eab917d8050eb463
+    steps:
+      - name: Require the prepared draft release
+        run: |
+          gh release view "$RELEASE_TAG" --json isDraft,assets > release.json
+          python3 - <<'PY'
+          import json
+          with open('release.json') as source:
+              release = json.load(source)
+          assert release['isDraft'], 'This job only uploads to the reviewed draft'
+          assert not release['assets'], 'Refuse to replace existing release assets'
+          PY
+      - name: Retrieve and verify the signed candidate
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.parse import urljoin, urlparse
+          import hashlib, os, subprocess
+          page = 'https://tmpfiles.org/wfAvToHkpbfk/xhyn-iv-0.5.9.3-xhyn-r2-test12.apk'
+          body = subprocess.check_output(['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '60', page], text=True)
+          class Download(HTMLParser):
+              urls = []
+              def handle_starttag(self, tag, attributes):
+                  url = urljoin(page, dict(attributes).get('href', ''))
+                  parsed = urlparse(url)
+                  if tag == 'a' and parsed.scheme == 'https' and parsed.hostname == 'tmpfiles.org' and parsed.path.startswith('/dl/') and parsed.path.endswith('/' + os.environ['APK_NAME'].lower()):
+                      self.urls.append(url)
+          parser = Download()
+          parser.feed(body)
+          assert parser.urls, 'Official APK download button unavailable'
+          apk = Path(os.environ['APK_NAME'])
+          subprocess.run(['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '180', parser.urls[0], '-o', str(apk)], check=True)
+          digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert digest == os.environ['APK_SHA256'], 'Candidate hash mismatch'
+          assert apk.stat().st_size == 67030598
+          Path('SHA256SUMS.txt').write_text(digest + '  ' + apk.name + '\n')
+          print('Verified signed APK:', apk.name, digest)
+          PY
+      - name: Upload the verified APK and checksum
+        run: gh release upload "$RELEASE_TAG" "$APK_NAME" SHA256SUMS.txt
+      - name: Verify the GitHub asset download
+        run: |
+          gh release download "$RELEASE_TAG" --pattern "$APK_NAME" --dir verification
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, os
+          apk = Path('verification') / os.environ['APK_NAME']
+          assert hashlib.sha256(apk.read_bytes()).hexdigest() == os.environ['APK_SHA256']
+          print('GitHub APK download matches the signed candidate')
+          PY
