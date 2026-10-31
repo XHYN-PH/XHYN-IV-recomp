@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run production PPC bridge, stack and byte-order tests with ASan and UBSan.
+"""Run PPC bridge, stack, byte-order and XEXP record tests with ASan and UBSan.
 
 Uses the repository's pinned Catch2 submodule; never downloads dependencies.
 """

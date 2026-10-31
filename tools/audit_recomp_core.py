@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import struct
 
 ROOT = Path(__file__).resolve().parents[1]
 SDK_RELATIVE = Path("glue/rexglue-sdk-main")
@@ -21,6 +22,7 @@ MAPPING = re.compile(r"\{\s*(0x[\dA-Fa-f]+),\s*(\w+)\s*\}")
 DEFINITION = re.compile(r"^DEFINE_REX_FUNC\((\w+)\)", re.MULTILINE)
 DECLARATION = re.compile(r"^DECLARE_REX_FUNC\((\w+)\)", re.MULTILINE)
 CALL = re.compile(r"\b((?:sub_[\dA-F]+|__imp__\w+|rexcrt_\w+))\(ctx, base\)")
+CALL_SITE = re.compile(r"// bl (0x[\dA-Fa-f]+)\s*\n\s*ctx\.lr\s*=\s*(0x[\dA-Fa-f]+);")
 EXPORT = re.compile(r"^\s*(REX_EXPORT_STUB_RETURN|REX_EXPORT_STUB|REX_EXPORT|REX_HOOK_RAW)"
                     r"\(\s*(__imp__\w+)", re.MULTILINE)
 
@@ -29,7 +31,7 @@ def duplicate_values(values):
     return sorted(value for value, count in Counter(values).items() if count > 1)
 
 
-def audit(root: Path) -> dict:
+def audit(root: Path, xex: Path | None = None) -> dict:
     sdk = root / SDK_RELATIVE
     generated = sdk / "gta4-recomp/generated"
     errors = []
@@ -80,10 +82,17 @@ def audit(root: Path) -> dict:
     definitions = []
     calls = Counter()
     traps = Counter()
+    recorded_calls = {}
     for path in units:
         text = read(path)
         definitions.extend(DEFINITION.findall(text))
         calls.update(CALL.findall(text))
+        if xex is not None:
+            for target, return_pc in CALL_SITE.findall(text):
+                pc, target = int(return_pc, 16) - 4, int(target, 16)
+                if pc in recorded_calls and recorded_calls[pc] != target:
+                    errors.append(f"Conflicting generated BL annotations at {pc:08X}")
+                recorded_calls[pc] = target
         for line in text.splitlines():
             if "__builtin_trap()" in line:
                 reason = line.partition("//")[2].strip() or "unclassified"
@@ -108,6 +117,7 @@ def audit(root: Path) -> dict:
         errors.append("Unclassified registered symbols: " + str(sorted(unclassified)))
     exports = {}
     wide_imports = []
+    partial_diagnostics = []
     for path in sorted((sdk / "src/kernel").rglob("*.cpp")):
         text = read(path)
         for match in EXPORT.finditer(text):
@@ -126,6 +136,13 @@ def audit(root: Path) -> dict:
             signature = re.search(r"\b" + re.escape(target) + r"\s*\(([^{};]*)\)\s*\{", text)
             if signature and re.search(r"\b(?:u64|i64|uint64_t|int64_t)\s+\w+", signature[1]):
                 wide_imports.append({"symbol": name, "arguments": " ".join(signature[1].split())})
+            if signature:
+                end = text.find("\n}", signature.end())
+                body = text[signature.end():end] if end >= 0 else ""
+                marker = re.search(r'"[^"\n]*\b(?:STUB|stub|not implemented)\b[^"\n]*"', body)
+                if marker:
+                    partial_diagnostics.append({"symbol": name,
+                        "source": path.relative_to(root).as_posix(), "diagnostic": marker[0]})
     if imports - exports.keys():
         errors.append("Unclassified kernel import bindings: " + str(sorted(imports - exports.keys())))
     stubs = []
@@ -133,7 +150,7 @@ def audit(root: Path) -> dict:
         for entry in entries:
             if entry["kind"].startswith("REX_EXPORT_STUB"):
                 stubs.append({"symbol": name, "generated_direct_calls": calls[name], **entry})
-    return {
+    report = {
         "scope": "active Graine generated-source consistency and kernel export inventory",
         "source_sha256": source_digest.hexdigest(),
         "consistency_passed": not errors,
@@ -143,23 +160,36 @@ def audit(root: Path) -> dict:
                    "generic_stub_bindings": len(stubs)},
         "errors": errors,
         "generic_stubs": stubs,
+        "imports_with_stub_or_partial_diagnostics": sorted(partial_diagnostics,
+                                                            key=lambda entry: entry["symbol"]),
         "imports_with_64_bit_integer_parameters": sorted(wide_imports, key=lambda x: x["symbol"]),
         "generated_traps_by_reason": dict(sorted(traps.items())),
         "limitations": [
-            "Consistency does not establish binary-analysis coverage or full-game correctness.",
+            "Source consistency and optional binary checks do not establish full instruction semantics or game correctness.",
             "Native export wrappers may contain partial implementations; stub count is not remaining work.",
             "Stub reachability, missions, rendering, audio and device compatibility require separate validation.",
         ],
     }
+    if xex is not None:
+        from recomp_binary_audit import audit_binary
+        try:
+            binary = audit_binary(xex, {address for address, _ in registrations}, recorded_calls)
+        except (OSError, ValueError, struct.error) as error:
+            binary = {"consistency_passed": False, "errors": [str(error)]}
+        report["binary"] = binary
+        errors.extend("Binary: " + message for message in binary["errors"])
+        report["consistency_passed"] = not errors
+    return report
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--json", type=Path, help="Write the complete inventory to this file")
+    parser.add_argument("--xex", type=Path, help="Locally prepared decrypted/uncompressed TU8 XEX")
     args = parser.parse_args()
     try:
-        report = audit(args.root.resolve())
+        report = audit(args.root.resolve(), args.xex)
     except (OSError, UnicodeError) as error:
         parser.exit(1, f"Cannot audit generated source: {error}\n")
     if args.json:
@@ -170,6 +200,13 @@ def main():
           f"{counts['generated_function_bodies']:,} bodies, "
           f"{counts['registered_addresses']:,} bindings, {counts['kernel_imports']} imports")
     print(f"Generic stub bindings requiring triage: {counts['generic_stub_bindings']}")
+    print("Imported wrappers with explicit stub/partial diagnostics:",
+          len(report["imports_with_stub_or_partial_diagnostics"]))
+    if "binary" in report and report["binary"]["consistency_passed"]:
+        binary = report["binary"]
+        print(f"Binary wiring: {binary['pdata_entries']:,} exception entries; "
+              f"{binary['unique_in_code_bl_targets']:,} in-code BL targets; "
+              f"{binary['generated_bl_sites_checked']:,} generated BL sites checked")
     print("This source audit does not establish recompilation or gameplay completion.")
     for error in report["errors"]:
         print("ERROR:", error)

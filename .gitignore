@@ -815,3 +815,5 @@ CMakeUserPresets.json
 !/tools/audit_recomp_core.py
 !/tools/test_audit_recomp_core.py
 !/tools/run_recomp_core_tests.py
+!/tools/recomp_binary_audit.py
+!/tools/test_recomp_binary_audit.py

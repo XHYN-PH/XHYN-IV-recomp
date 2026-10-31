@@ -81,6 +81,20 @@ class RecompAuditTest(unittest.TestCase):
         path.write_text(path.read_text().replace("DECLARE_REX_FUNC(sub_82140004)", ""))
         self.check_failure("Declarations differ")
 
+    def test_ordinary_wrapper_stub_diagnostics_are_retained(self):
+        self.kernel.write_text('void Fake_entry() {\n  Warn("[STUB] missing");\n}\n'
+                               'REX_EXPORT(__imp__Fake, fake::Fake_entry)\n')
+        report = audit(self.root)
+        self.assertTrue(report["consistency_passed"], report["errors"])
+        self.assertEqual(report["generic_stubs"], [])
+        self.assertEqual(report["imports_with_stub_or_partial_diagnostics"][0]["symbol"],
+                         "__imp__Fake")
+
+    def test_comments_do_not_mark_a_wrapper_unimplemented(self):
+        self.kernel.write_text('void Fake_entry() {\n  // Previous STUB replaced.\n}\n'
+                               'REX_EXPORT(__imp__Fake, fake::Fake_entry)\n')
+        self.assertEqual(audit(self.root)["imports_with_stub_or_partial_diagnostics"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

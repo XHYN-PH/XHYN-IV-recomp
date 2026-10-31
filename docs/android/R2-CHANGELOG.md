@@ -8,6 +8,22 @@ Install it over your existing XHYN IV app. Back up saves first; uninstalling rem
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
 
+## Unreleased core recompilation work
+
+These source changes follow the signed Test11 candidate and are not included in
+that APK or the published Test10 download.
+
+- Preserve full 64-bit integer arguments when game code calls native services, including identifiers and size values. Keep narrow arguments and guest pointers compatible, and correct big-endian integer storage.
+- Fix unaligned title-update record reads in both decoding paths. Check record payloads and output ranges, use overlap-safe record copies, and pass actual allocation bounds from the runtime loader.
+- Add optional checks against a privately prepared TU8 executable. All 25,414 exception-table entries and 21,344 distinct direct-call targets have bindings; 141,135 generated direct-call annotations match the original instructions.
+- Record six additional call sites in exception-handler regions and the runtime's remaining exception-handling stubs in the [core completion tracker](../development/RECOMP-COMPLETION.md).
+
+The production core suite passes 39 cases under ASan/UBSan, the integrated
+LZX/delta suite passes 19 cases, and the full Android native build passes.
+The supplied update reproduces the same prepared image through both fixed
+decoders. Core completion, phone gameplay and rendering validation remain open;
+no FPS improvement or shadow-band fix is claimed.
+
 ## Unreleased Test11 — shared runtime fixes
 
 This candidate is being validated. The published download above remains Test10.

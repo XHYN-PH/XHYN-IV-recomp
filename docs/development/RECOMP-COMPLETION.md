@@ -15,9 +15,10 @@ functions.
 
 | Gate | Evidence and remaining work |
 | --- | --- |
-| Generated-code wiring | **Source consistency verified:** 89 translation units, 38,352 generated bodies, 38,607 unique bindings, 246 kernel imports and nine native CRT bindings. Registrations, image mappings, declarations, source list and direct-call targets agree. Original-binary analysis coverage remains unverified. |
+| Generated-code wiring | **Source and binary checks passed:** 89 translation units, 38,352 generated bodies, 38,607 bindings, 246 kernel imports and nine native CRT bindings. The supplied TU8 image has bindings for all 25,414 exception-table entries and 21,344 distinct in-code direct BL targets. All 141,135 generated BL annotations match the original instructions. Six additional BL sites in SEH handler regions remain under review. Indirect control flow and instruction semantics need separate validation. |
 | Guest/native calling convention | **First defect fixed:** signed/unsigned 64-bit integer arguments retain their width in registers and stack slots; narrow arguments and guest pointers retain their 32-bit behavior. Big-endian integer scalar wrappers now store the correct byte order. Broader callback, mixed floating-point and vector ABI coverage remains open. |
-| Kernel and host services | **Inventory established:** 12 imported generic stubs remain. Ordinary export wrappers also need behavioral review; their count does not establish complete implementations. Triage against actual game call paths is pending. |
+| Kernel and host services | **Inventory established:** 12 generic imported stubs and 10 ordinary wrappers with explicit stub/partial diagnostics. Some diagnostics apply only to unsupported requests. Context capture, unwind and the C exception handler are explicitly stubbed and need core work. The diagnostic inventory is not exhaustive. |
+| Title-update decoding | **Defect fixed:** byte-oriented records, explicit payload/image bounds, overlap-safe copies and bounded loader calls. The legacy four-argument SDK entry point remains available. Both decoder paths reproduce the supplied update's prepared image under strict ASan/UBSan. |
 | Engine/game behavior | Startup and free-roam work in supplied device reports. Mission progression, script branches, cutscenes, interiors, wanted levels, activities, save/reload and DLC need a recorded compatibility matrix. |
 | Rendering and shader behavior | Native Vulkan builds. The camera-linked shadow band remains open. Shadow projection, atlas edges, filtering, clear/resolve behavior and representative materials/effects require matching captures and reference comparisons. |
 | Timing, streaming and audio | Pipeline-variant preparation and severe-hitch retention are in Test11. Remaining stalls, asynchronous I/O/callback behavior, audio starvation and long-session resource lifetime need targeted investigation and validation. |
@@ -65,6 +66,55 @@ listed above is otherwise complete or that gameplay FPS increases.
 The ABI correction is a source change after the signed Test11 candidate; a future
 package is needed to test it on a device.
 
+## TU8 executable and decoder audit
+
+The supplied retail executable matches the installer's complete-file XXH3 pin
+`2823947441600373906`, and its signature digest matches the delta descriptor.
+The supplied/extracted patch's SHA-256 is the required
+`480aee5e2b42707791e7571bb8407c5bb3f6c7534f07f9beb426db4cfc648fd3`.
+Its source version is `0x00000005` and target version is `0x00000805`.
+
+Real decoding exposed four-byte-aligned struct accesses to records whose
+variable-length payloads leave later headers unaligned. A small synthetic
+case also reproduced the active SDK defect with UBSan stopping on the first
+invalid access. The fixed reader handles the 12-byte serialized header as bytes,
+checks payload/reference/output extents and uses `memmove` for overlapping copy
+records. The loader supplies actual allocation sizes and bounds decrypted
+blocks. The legacy patcher uses aligned local headers and bounded copies.
+
+Replaying the complete supplied pair through both fixed decoder paths produces
+the same 19,939,328-byte prepared image as before, with strict ASan/UBSan clean:
+`760ebac4e5f0351edb39015eba89e729b14eaf95afdabb529a447ff8f8e11cd1`.
+This decrypted/expanded representation differs from the embedded canonical XEX
+file hash; no canonical full-file hash match is claimed. Original inputs and
+prepared images remain outside the repository and release packages.
+
+The binary audit uses PE `VirtualAddress` offsets in this decoded image.
+`PointerToRawData` describes a different layout and would yield false call gaps.
+Synthetic fixtures deliberately give these fields different values to check
+the mapping. Runtime instruction semantics, indirect calls and mission coverage
+remain separate from these static checks.
+
+## Exception-handling work still open
+
+The six additional BL sites appear in four functions with original SEH scope
+tables. Their regions are omitted from the ordinary generated control flow.
+The audit retains the original scope metadata for review:
+
+| Parent function | Scope handler | Unannotated BL sites |
+| --- | --- | --- |
+| `0x827AD0F8` | `0x827AD180` | `0x827AD188`, `0x827AD19C` |
+| `0x82A009C0` | `0x82A00AEC` | `0x82A00B00`, `0x82A00B10` |
+| `0x82A04C90` | `0x82A04D00` | `0x82A04D00` |
+| `0x82A08E90` | `0x82A08EE8` | `0x82A08EFC` |
+
+Their scope handler thunk is the imported `__C_specific_handler`. That export,
+`RtlCaptureContext` and `RtlUnwind` currently log explicit stub diagnostics.
+Correct exception dispatch must restore guest register/stack state and invoke
+the matching filter/cleanup paths. This needs dedicated implementation and
+fault-path tests before a complete exception-handling claim. The presence of
+these regions does not establish that they caused a reported gameplay problem.
+
 ## Imported generic stubs requiring triage
 
 | Group | Symbols | Next evidence needed |
@@ -83,7 +133,10 @@ matching generic-stub warnings in its retained logs; it does not cover all paths
 
 ```sh
 python3 tools/test_audit_recomp_core.py
+python3 tools/test_recomp_binary_audit.py
 python3 tools/audit_recomp_core.py --json out/recomp-core-audit.json
+# Optional, using a privately prepared decrypted/uncompressed TU8 image:
+python3 tools/audit_recomp_core.py --xex /path/to/private/default_v8.xex --json out/recomp-binary-audit.json
 git submodule update --init glue/rexglue-sdk-main/thirdparty/catch2
 python3 tools/run_recomp_core_tests.py
 python3 tools/run_android_host_tests.py
@@ -91,25 +144,28 @@ cmake --build out/build/android-arm64-release --target LibertyRecomp liberty_ins
 ```
 
 Use the configured compiler/SDK environment from the Android build guide. The
-core runner uses pinned Catch2 and runs production bridge, stack and byte-order
-tests under AddressSanitizer and UndefinedBehaviorSanitizer. GitHub's Android
+core runner uses pinned Catch2 and runs production bridge, stack, byte-order and
+delta-record tests under ASan/UBSan, stopping on undefined behavior. GitHub's Android
 regression workflow now runs the same audit and core suite.
 
-The audit's `consistency_passed` field describes generated-source wiring only.
-Its JSON retains the stub inventory, wide-parameter imports, trap reasons,
-audited-source digest and explicit coverage limitations. Eight audit tests cover
-the unfinished inventory and reject missing bodies, exports, declarations,
-mappings, source-list entries, direct-call targets and duplicate registrations.
+The audit's `consistency_passed` field describes source wiring plus the optional
+binary checks. Its JSON retains generic stubs, explicit partial diagnostics,
+wide-parameter imports, trap reasons, audit digests and limitations. Ten source
+tests and ten synthetic binary tests cover missing bindings, source-list drift,
+wrong image layout, altered call targets, malformed metadata and SEH inventories.
 
 ## Validation for this checkpoint
 
 | Check | Result |
 | --- | --- |
-| Generated-source audit | Passed; remaining stubs retained in the report |
-| Audit regression suite | Eight cases passed |
-| Production PPC bridge, stack and byte-order suite | 30 cases / 94 assertions passed with ASan/UBSan |
-| Same suite against the isolated upstream patch | 30 cases / 94 assertions passed with ASan/UBSan |
-| Existing Android native host regressions | 12 groups passed with ASan/UBSan, plus four independently decoded PNG fixtures |
+| Source and supplied-executable audit | Passed within the stated scope; six SEH candidates retained |
+| Source/binary audit regression suites | 10 + 10 cases passed |
+| Production core suite including delta records | 39 cases / 172 assertions passed with strict ASan/UBSan |
+| Integrated SDK LZX and delta-record suites | 19 cases / 267 assertions passed with strict ASan/UBSan |
+| Isolated upstream calling-convention suite | 30 cases / 94 assertions passed with ASan/UBSan |
+| Isolated upstream LZX/delta suite | 19 cases / 267 assertions passed with strict ASan/UBSan |
+| Real TU8 replay through both decoder paths | Identical prepared image; strict ASan/UBSan clean |
+| Earlier Android native host checkpoint | 12 groups passed, plus four independently decoded PNG fixtures |
 | Full Android ARM64/API 29 native build | Game, runtime, renderer and installer targets passed with NDK r29 |
 | Phone gameplay and reference comparisons | Pending |
 
@@ -121,20 +177,22 @@ this fork's launcher, diagnostics and rendering changes.
 
 [Prepared upstream comparison](https://github.com/OZORDI/LibertyRecomp/compare/main...XHYN-PH:fix/ppc-integer-argument-widths)
 
+The separate [XEXP decoder patch](https://github.com/OZORDI/LibertyRecomp/compare/main...XHYN-PH:fix/xexp-unaligned-records)
+is commit `899e565c`, also starts from `1922957d` and changes only shared decoding, loader integration
+and tests. Its integrated LZX/delta suite passes in an isolated checkout.
+
 GitHub rejected upstream PR creation with `Resource not accessible by
-integration`. The branch is pushed and ready for review through the comparison
-page. The isolated patch passed the host core suite; a full upstream build and
+integration`. Both branches are pushed and ready for review through the comparison
+pages. The isolated patches passed their host suites; a full upstream build and
 gameplay validation remain pending.
 
 ## What blocks a completion claim
 
-The manifest's original input `assets/default_v8.xex` is absent from this
-workspace. Generated source builds without it, but checking undiscovered code
-and regenerating analysis require the matching TU8 executable. This workspace
-also has no phone test connection. Supplied reports are useful observations,
-and cannot substitute for full mission coverage or reference rendering checks.
-The installed game's `default.xex` and TU8 `default.xexp` provide the base
-executable and update needed to prepare that input.
+The original executable and TU8 update are now available privately and the
+binary-backed checks above are complete. Remaining core work includes exception
+handling, service behavior and rendering correctness. This workspace has no
+phone test connection, so full mission coverage and reference rendering checks
+remain pending.
 
 Before marking the core complete, record results for the supported game revision
 and hardware: installation/startup, existing and fresh saves, mission and script
