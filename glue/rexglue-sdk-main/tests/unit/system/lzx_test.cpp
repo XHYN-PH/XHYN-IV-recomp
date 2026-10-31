@@ -8,6 +8,27 @@
 
 #include <rex/system/lzx.h>
 
+TEST_CASE("XEXP public entry points accept unaligned serialized headers", "[system][lzx-delta]") {
+  std::array<uint8_t, 13> record = {0xA5, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0};
+  std::array<uint8_t, 4> image = {1, 2, 3, 4};
+  REQUIRE(lzxdelta_apply_patch(record.data() + 1, 12, 0x20000, image.data(), image.size()) == 0);
+  const std::array<uint8_t, 4> expected = {1, 0, 0, 4};
+  CHECK(image == expected);
+  image = {1, 2, 3, 4};
+  REQUIRE(lzxdelta_apply_patch(reinterpret_cast<rex::xex2_delta_patch*>(record.data() + 1),
+                               12, 0x20000, image.data()) == 0);
+  CHECK(image == expected);
+}
+
+TEST_CASE("Bounded XEXP public entry rejects missing input and short images", "[system][lzx-delta]") {
+  const std::array<uint8_t, 12> record = {0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0};
+  std::array<uint8_t, 4> image = {1, 2, 3, 4};
+  CHECK(lzxdelta_apply_patch(record.data(), record.size(), 0x20000, image.data(), 2) != 0);
+  CHECK(image[1] == 2);
+  CHECK(lzxdelta_apply_patch(nullptr, 1, 0x20000, image.data(), image.size()) != 0);
+  CHECK(lzxdelta_apply_patch(nullptr, 0, 0x20000, nullptr, 0) == 0);
+}
+
 namespace {
 
 constexpr uint32_t kRetailWindowSize = 0x20000;

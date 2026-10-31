@@ -34,7 +34,8 @@ def main():
                 "thirdparty/fmt/include", "thirdparty/spdlog/include", "thirdparty/catch2/src")]
     includes.append(catch_build / "generated-includes")
     sources = [SDK / "tests/unit" / path for path in (
-        "ppc/import_function_test.cpp", "ppc/stack_test.cpp", "core/byte_order_test.cpp")]
+        "ppc/import_function_test.cpp", "ppc/stack_test.cpp", "core/byte_order_test.cpp",
+        "system/lzx_delta_patch_test.cpp")]
     flags = ["-std=c++23", "-O0", "-g1", "-pthread", "-fsanitize=address,undefined",
              "-fno-omit-frame-pointer", "-ffunction-sections", "-fdata-sections",
              "-DFMT_HEADER_ONLY", "-DSPDLOG_FMT_EXTERNAL"]
@@ -47,7 +48,8 @@ def main():
                     str(catch_build / "src/libCatch2d.a"), "-Wl,--gc-sections",
                     "-o", str(executable)], check=True)
     subprocess.run([str(executable), "--reporter", "console"], check=True,
-                    env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
+                    env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1",
+                         "UBSAN_OPTIONS": "halt_on_error=1"})
 
 
 if __name__ == "__main__":
