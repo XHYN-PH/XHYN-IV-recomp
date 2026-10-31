@@ -812,3 +812,6 @@ CMakeUserPresets.json
 !/tools/verify_android_candidate.py
 
 !/tools/test_runtime_config.cpp
+!/tools/audit_recomp_core.py
+!/tools/test_audit_recomp_core.py
+!/tools/run_recomp_core_tests.py

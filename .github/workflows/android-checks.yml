@@ -34,6 +34,21 @@ jobs:
           glue/rexglue-sdk-main/thirdparty/utfcpp
           glue/rexglue-sdk-main/thirdparty/vulkan-headers
           glue/rexglue-sdk-main/thirdparty/volk
+          glue/rexglue-sdk-main/thirdparty/catch2
+      - name: Generated recompilation wiring and import inventory
+        run: |
+          python3 tools/test_audit_recomp_core.py
+          python3 tools/audit_recomp_core.py --json out/recomp-core-audit.json
+      - name: Retain generated-core audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recomp-core-audit
+          path: out/recomp-core-audit.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: PPC calling convention, stack and byte-order regressions
+        run: python3 tools/run_recomp_core_tests.py
       - name: Java data, layout and driver regressions
         run: python3 tools/run_android_java_tests.py
       - name: Android resources and UI compilation

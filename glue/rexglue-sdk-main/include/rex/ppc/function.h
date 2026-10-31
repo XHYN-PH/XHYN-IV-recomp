@@ -101,34 +101,48 @@ struct arg_count_t {
 //=============================================================================
 
 struct ArgTranslator {
-  // Get integer argument value from register or stack
+  // Native signatures determine the width; pointers and legacy callers use
+  // the low 32 bits. Xenon's GPRs and parameter slots are eight bytes wide.
+  template <typename T = uint32_t>
   static constexpr uint64_t GetIntegerArgumentValue(const PPCContext& ctx, uint8_t* base,
                                                     size_t arg) noexcept {
+    using integer_t = std::conditional_t<(sizeof(T) > 4), uint64_t, uint32_t>;
+    const auto read_register = [](const PPCRegister& value) -> integer_t {
+      if constexpr (sizeof(integer_t) == 8) {
+        return value.u64;
+      } else {
+        return value.u32;
+      }
+    };
     if (arg <= 7) {
       switch (arg) {
         case 0:
-          return ctx.r3.u32;
+          return read_register(ctx.r3);
         case 1:
-          return ctx.r4.u32;
+          return read_register(ctx.r4);
         case 2:
-          return ctx.r5.u32;
+          return read_register(ctx.r5);
         case 3:
-          return ctx.r6.u32;
+          return read_register(ctx.r6);
         case 4:
-          return ctx.r7.u32;
+          return read_register(ctx.r7);
         case 5:
-          return ctx.r8.u32;
+          return read_register(ctx.r8);
         case 6:
-          return ctx.r9.u32;
+          return read_register(ctx.r9);
         case 7:
-          return ctx.r10.u32;
+          return read_register(ctx.r10);
         default:
           break;
       }
     }
-    // Stack arguments at r1 + 0x54 + ((arg - 8) * 8)
-    return __builtin_bswap32(
-        *rex::memory::GuestPtr<uint32_t*>(base, ctx.r1.u32 + 0x54 + ((arg - 8) * 8)));
+    // Argument 9 starts at r1 + 0x50; its low word starts at +0x54 in
+    // big-endian guest memory. Copying also avoids host aliasing assumptions.
+    constexpr uint32_t offset = sizeof(integer_t) == 8 ? 0x50 : 0x54;
+    integer_t value;
+    std::memcpy(&value, rex::memory::GuestPtr<uint8_t*>(
+                            base, ctx.r1.u32 + offset + ((arg - 8) * 8)), sizeof(value));
+    return rex::byte_swap(value);
   }
 
   // Get float/double argument value from FPR
@@ -168,6 +182,7 @@ struct ArgTranslator {
   }
 
   // Set integer argument value
+  template <typename T = uint32_t>
   static constexpr void SetIntegerArgumentValue(PPCContext& ctx, uint8_t* base, size_t arg,
                                                 uint64_t value) noexcept {
     if (arg <= 7) {
@@ -200,9 +215,12 @@ struct ArgTranslator {
           break;
       }
     }
-    // Stack-passed arguments (mirrors GetIntegerArgumentValue layout)
-    *rex::memory::GuestPtr<uint32_t*>(base, ctx.r1.u32 + 0x54 + ((arg - 8) * 8)) =
-        __builtin_bswap32(static_cast<uint32_t>(value));
+    // Mirror the signature's width and right-align narrow stack arguments.
+    using integer_t = std::conditional_t<(sizeof(T) > 4), uint64_t, uint32_t>;
+    constexpr uint32_t offset = sizeof(integer_t) == 8 ? 0x50 : 0x54;
+    const auto swapped = rex::byte_swap(static_cast<integer_t>(value));
+    std::memcpy(rex::memory::GuestPtr<uint8_t*>(
+                    base, ctx.r1.u32 + offset + ((arg - 8) * 8)), &swapped, sizeof(swapped));
   }
 
   // Set float/double argument value
@@ -256,9 +274,8 @@ struct ArgTranslator {
   // Get typed value (be<T> types)
   template <BigEndianType T>
   static constexpr T GetValue(PPCContext& ctx, uint8_t* base, size_t idx) noexcept {
-    T result;
-    result.value = static_cast<decltype(result.value)>(GetIntegerArgumentValue(ctx, base, idx));
-    return result;
+    using value_t = typename T::value_type;
+    return T(static_cast<value_t>(GetIntegerArgumentValue<value_t>(ctx, base, idx)));
   }
 
   // Get typed value (MappedPtr<T>)
@@ -280,7 +297,7 @@ struct ArgTranslator {
     if constexpr (is_precise_v<T>) {
       return static_cast<T>(GetPrecisionArgumentValue(ctx, base, idx));
     } else {
-      return static_cast<T>(GetIntegerArgumentValue(ctx, base, idx));
+      return static_cast<T>(GetIntegerArgumentValue<T>(ctx, base, idx));
     }
   }
 
@@ -307,8 +324,11 @@ struct ArgTranslator {
       SetIntegerArgumentValue(ctx, base, idx,
                               static_cast<uint32_t>(reinterpret_cast<uintptr_t>(value) -
                                                     reinterpret_cast<uintptr_t>(base)));
+    } else if constexpr (BigEndianType<T>) {
+      using value_t = typename T::value_type;
+      SetIntegerArgumentValue<value_t>(ctx, base, idx, static_cast<value_t>(value));
     } else {
-      SetIntegerArgumentValue(ctx, base, idx, value);
+      SetIntegerArgumentValue<T>(ctx, base, idx, value);
     }
   }
 };
