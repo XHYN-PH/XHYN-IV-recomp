@@ -61,6 +61,22 @@ public class AndroidLogFilesTest {
             }
         }
         assert retained&&names.contains("README.txt")&&names.size()==3;
+        File crashReports=new File(root,"crash_reports");assert crashReports.mkdirs();
+        Files.writeString(new File(crashReports,"crash-20990101-000001.txt").toPath(),
+                "crash report\ncapture session: "+chosen+"\ncurrent native fault\n");
+        byte[] tombstone=new byte[3*1024*1024+11];new Random(14).nextBytes(tombstone);
+        Files.write(new File(crashReports,"crash-20990101-000001.tombstone.pb").toPath(),tombstone);
+        Files.writeString(new File(crashReports,"crash-20980101-000001.txt").toPath(),
+                "crash report\ncapture session: debug-20980101-000000-000.log\nold unrelated crash\n");
+        output.reset();DebugLogArchive.write(output,root,fallback,chosen);boolean crashFound=false,traceFound=false;
+        try(ZipInputStream zip=new ZipInputStream(new ByteArrayInputStream(output.toByteArray()))){
+            ZipEntry entry;while((entry=zip.getNextEntry())!=null){
+                assert !entry.getName().contains("20980101"):"Other sessions' crashes must not be attached";
+                if(entry.getName().endsWith("crash-20990101-000001.txt")){assert new String(zip.readAllBytes(),StandardCharsets.UTF_8).contains("current native fault");crashFound=true;}
+                if(entry.getName().endsWith(".tombstone.pb")){assert Arrays.equals(tombstone,zip.readAllBytes()):"Raw tombstones must stay complete";traceFound=true;}
+            }
+        }
+        assert crashFound&&traceFound:"Matching crash report and system trace must be exported";
         File capture=new File(logs,chosen+".runtime.log.shadow/request-1-frame-12");assert capture.mkdirs();
         Files.writeString(new File(capture.getParentFile(),"capture-complete.txt").toPath(),"Completed images only");
         byte[] image=new byte[3*1024*1024+53];new Random(13).nextBytes(image);

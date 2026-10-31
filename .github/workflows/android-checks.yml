@@ -52,6 +52,10 @@ jobs:
           retention-days: 14
       - name: PPC calling convention, stack, byte-order and XEXP regressions
         run: python3 tools/run_recomp_core_tests.py
+      - name: Native fatal capture preserves SIGSEGV termination
+        run: |
+          g++ -std=c++23 -O2 -Iglue/rexglue-sdk-main/include tools/test_native_crash_capture.cpp glue/rexglue-sdk-main/src/core/crash_capture_posix.cpp -o out/native-fatal-capture
+          out/native-fatal-capture out/native-fatal-probe.txt
       - name: Java data, layout and driver regressions
         run: python3 tools/run_android_java_tests.py
       - name: Android resources and UI compilation

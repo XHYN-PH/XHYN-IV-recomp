@@ -15,6 +15,7 @@
 
 #include <rex/assert.h>
 #include <rex/cvar.h>
+#include <rex/crash_capture.h>
 #include <rex/ui/flags.h>
 #include <rex/kernel/crt/heap.h>
 #include <rex/filesystem.h>
@@ -203,6 +204,13 @@ bool ReXApp::SetupEnvironment() {
   }
 
   rex::InitLogging(log_config);
+#if defined(__ANDROID__)
+  if (log_level_str != "off" && !log_file_cvar.empty() && log_file_cvar != "/dev/null") {
+    if (!rex::arch::EnableCrashCapture((log_file_cvar + ".fatal.txt").c_str())) {
+      REXLOG_WARN("Native fatal capture could not be opened for this debug session");
+    }
+  }
+#endif
   rex::RegisterLogLevelCallback();
 
   log_sink_ = std::make_shared<rex::LogCaptureSink>();

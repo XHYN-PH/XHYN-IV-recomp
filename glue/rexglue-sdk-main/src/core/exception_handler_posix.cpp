@@ -19,6 +19,7 @@
 #include <cstring>
 
 #include <rex/assert.h>
+#include <rex/crash_capture.h>
 #include <rex/logging.h>
 #include <rex/math.h>
 #include <rex/platform.h>
@@ -205,6 +206,12 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
       return;
     }
   }
+
+#if defined(__ANDROID__) && REX_ARCH_ARM64
+  RecordFatalSignal(signal_number, signal_info->si_code,
+                     reinterpret_cast<uintptr_t>(signal_info->si_addr),
+                     mcontext.pc, mcontext.sp, mcontext.regs[30]);
+#endif
 
   // Not a guest-memory fault. Returning would re-execute the faulting
   // instruction forever (a silent 100% CPU hang); hand it to whoever was

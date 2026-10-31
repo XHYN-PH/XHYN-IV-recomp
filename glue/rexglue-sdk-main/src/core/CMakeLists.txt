@@ -84,6 +84,7 @@ elseif(UNIX)
         clock_posix.cpp
         dbg_posix.cpp
         dynlib_posix.cpp
+        crash_capture_posix.cpp
         exception_handler_posix.cpp
         filesystem_posix.cpp
         ${REXCORE_POSIX_FIBER}

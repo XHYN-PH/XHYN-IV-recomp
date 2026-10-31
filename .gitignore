@@ -818,3 +818,4 @@ CMakeUserPresets.json
 !/tools/run_recomp_core_tests.py
 !/tools/recomp_binary_audit.py
 !/tools/test_recomp_binary_audit.py
+!/tools/test_native_crash_capture.cpp

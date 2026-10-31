@@ -7,7 +7,12 @@ import android.os.Looper;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.robolectric.*;
 import org.robolectric.android.controller.ActivityController;
@@ -18,6 +23,61 @@ import org.robolectric.util.ReflectionHelpers;
 @Config(sdk=35,qualifiers="w900dp-h400dp-land-xhdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 public class RefinementRegressionTest {
+    @Rule public TemporaryFolder temporary = new TemporaryFolder();
+    private File capture(File root,String path,String text,long modified) throws IOException {
+        File file=new File(root,path);Files.createDirectories(file.getParentFile().toPath());
+        Files.write(file.toPath(),text.getBytes(StandardCharsets.UTF_8));assertTrue(file.setLastModified(modified));return file;
+    }
+    @Test public void crashReportUsesTheMatchingCaptureInsteadOfLegacyRuntimeLogs() throws Exception {
+        File root=temporary.newFolder(),fallback=temporary.newFolder();long exit=1_700_000_000_000L;
+        capture(root,"Liberty Recompiled/logs/old.log","unrelated October 18 log",exit);
+        File session=capture(root,"debug_logs/debug-20261031-093000-000.log","session\npid=11430\n",exit-1000);
+        capture(root,"debug_logs/"+session.getName()+".runtime.log","current native fault\n",exit);
+        assertEquals(session,CrashReports.matchingSession(root,fallback,11430,exit));
+        String tail=CrashReports.sessionRuntimeTail(session,exit);
+        assertTrue(tail.contains("current native fault"));assertFalse(tail.contains("October 18"));
+    }
+    @Test public void crashReportRejectsOtherPidsStaleCapturesAndLaterSessions() throws Exception {
+        File root=temporary.newFolder(),fallback=temporary.newFolder();long exit=1_700_000_000_000L;
+        capture(root,"debug_logs/debug-1.log","session\npid=11430\n",exit-13L*24*3600*1000);
+        capture(root,"debug_logs/debug-2.log","session\npid=11431\n",exit);
+        capture(root,"debug_logs/debug-3.log","session\npid=11430\n",exit+10000);
+        assertNull(CrashReports.matchingSession(root,fallback,11430,exit));
+        assertEquals("",CrashReports.sessionRuntimeTail(null,exit));
+    }
+    @Test public void crashReportFindsInternalFallbackAndUsesLogcatBeforeNativeStartup() throws Exception {
+        File root=temporary.newFolder(),fallback=temporary.newFolder();long exit=1_700_000_000_000L;
+        capture(root,"debug_logs/debug-2.log","session\npid=222\n",exit);
+        File session=capture(fallback,"debug_logs/debug-1.log","session\npid=11430\nFatal signal 11\n",exit);
+        assertEquals(session,CrashReports.matchingSession(root,fallback,11430,exit));
+        assertTrue(CrashReports.sessionRuntimeTail(session,exit).contains("Fatal signal 11"));
+    }
+    @Test public void crashReportReadsTheActualEndOfALargeNativeLog() throws Exception {
+        File root=temporary.newFolder();long exit=1_700_000_000_000L;
+        File session=capture(root,"debug_logs/debug-1.log","session\npid=11430\n",exit);
+        File nativeLog=new File(session.getPath()+".runtime.log");
+        try(RandomAccessFile file=new RandomAccessFile(nativeLog,"rw")) {
+            file.setLength(5*1024*1024);file.seek(file.length());file.writeBytes("\nfinal native fault at end\n");
+        }
+        assertTrue(nativeLog.setLastModified(exit));
+        String tail=CrashReports.sessionRuntimeTail(session,exit);
+        assertTrue(tail.contains("final native fault at end"));assertTrue(tail.length()<66000);
+    }
+    @Test public void crashReportMatchesRotatedCaptureOwnershipAndBoundsTheTail() throws Exception {
+        File root=temporary.newFolder(),fallback=temporary.newFolder();long exit=1_700_000_000_000L;
+        File session=capture(root,"debug_logs/debug-1.log","output after rotation\n",exit);
+        capture(root,"debug_logs/"+session.getName()+".1","session\npid=11430\n",exit-1000);
+        assertEquals(session,CrashReports.matchingSession(root,fallback,11430,exit));
+        Files.delete(new File(session.getPath()+".1").toPath());
+        capture(root,"debug_logs/"+session.getName()+".launch.txt","device: test\npid: 11430\n",exit-600000);
+        assertEquals(session,CrashReports.matchingSession(root,fallback,11430,exit));
+        StringBuilder text=new StringBuilder();for(int i=0;i<100;i++)text.append("native line ").append(i).append('\n');
+        capture(root,"debug_logs/"+session.getName()+".runtime.log",text.toString(),exit);
+        capture(root,"debug_logs/"+session.getName()+".runtime_1.log","later unrelated capture",exit+10000);
+        String tail=CrashReports.sessionRuntimeTail(session,exit);
+        assertTrue(tail.contains("native line 99"));assertFalse(tail.contains("native line 19\n"));
+        assertFalse(tail.contains("later unrelated capture"));
+    }
     @Test public void thermalSummaryDistinguishesRequestsProtectionAndStaleSamples(){
         String status="{\"sampled\":true,\"sample_ns\":100,\"severity\":3,\"guard_enabled\":false,\"turbo_requested\":true,\"draw_scale\":0.9}";
         assertTrue(ThermalStatus.summary(status,200,false).contains("Guard Off"));

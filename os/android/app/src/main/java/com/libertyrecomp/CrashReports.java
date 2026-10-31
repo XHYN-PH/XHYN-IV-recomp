@@ -13,6 +13,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -63,7 +64,7 @@ final class CrashReports {
      * last check. Returns the newest report that has not been dismissed, or
      * null.
      */
-    static Report collect(Context context, File dataRoot) {
+    static synchronized Report collect(Context context, File dataRoot) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (Build.VERSION.SDK_INT >= 30) {
             try {
@@ -164,8 +165,10 @@ final class CrashReports {
         StringBuilder text = new StringBuilder();
         String summary = reasonName(exit.getReason());
         Tombstone tombstone = null;
-        if (trace != null && exit.getReason() == ApplicationExitInfo.REASON_CRASH_NATIVE
-                && !looksLikeText(trace)) {
+        boolean binaryTrace = trace != null && !looksLikeText(trace)
+                && (exit.getReason() == ApplicationExitInfo.REASON_CRASH_NATIVE
+                    || exit.getReason() == ApplicationExitInfo.REASON_SIGNALED);
+        if (binaryTrace) {
             try {
                 tombstone = Tombstone.parse(trace);
             } catch (RuntimeException e) {
@@ -180,6 +183,15 @@ final class CrashReports {
         }
 
         text.append("Liberty Recompiled for Android - crash report\n");
+        try {
+            android.content.pm.PackageInfo info = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0);
+            text.append("installed app: ").append(info.versionName).append(" (")
+                    .append(info.getLongVersionCode()).append(")\n");
+        } catch (Exception ignored) {}
+        text.append("device: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
+                .append("; Android ").append(Build.VERSION.RELEASE).append(" (API ")
+                .append(Build.VERSION.SDK_INT).append(")\n");
         text.append("summary: ").append(summary).append('\n');
         text.append("time: ").append(new Date(exit.getTimestamp())).append('\n');
         text.append("process: ").append(exit.getProcessName()).append(" pid ").append(exit.getPid())
@@ -190,11 +202,27 @@ final class CrashReports {
         if (exit.getDescription() != null) {
             text.append("description: ").append(exit.getDescription()).append('\n');
         }
-        text.append("memory at exit: pss ").append(exit.getPss() / 1024).append(" MB, rss ")
-                .append(exit.getRss() / 1024).append(" MB\n");
+        if (exit.getPss() == 0 && exit.getRss() == 0) {
+            text.append("memory at exit: unavailable (Android supplied no PSS/RSS samples)\n");
+        } else {
+            text.append("memory at exit: pss ").append(exit.getPss() / 1024).append(" MB, rss ")
+                    .append(exit.getRss() / 1024).append(" MB\n");
+        }
         text.append('\n');
 
-        String launch = read(new File(dataRoot, "last_launch.txt"));
+        File session = matchingSession(dataRoot, context.getFilesDir(), exit.getPid(),
+                exit.getTimestamp());
+        if (session != null) text.append("capture session: ").append(session.getName()).append('\n');
+        if (session != null) {
+            String fatal = read(new File(session.getPath() + ".runtime.log.fatal.txt"));
+            if (!fatal.isEmpty()) {
+                int maps = fatal.indexOf("--- mappings ---");
+                text.append("---- native fault capture\n")
+                        .append(maps < 0 ? fatal : fatal.substring(0, maps))
+                        .append("Full module mappings are in the shared session ZIP.\n");
+            }
+        }
+        String launch = session == null ? "" : read(new File(session.getPath() + ".launch.txt"));
         if (!launch.isEmpty()) {
             text.append("---- last launch (device, GPU, driver)\n").append(launch).append('\n');
         }
@@ -205,23 +233,79 @@ final class CrashReports {
             if (trace_text.length() > 60000) trace_text = trace_text.substring(0, 60000) + "\n...";
             text.append("---- trace\n").append(trace_text).append('\n');
         }
-        String runtimeLog = newestRuntimeLog(dataRoot);
-        if (!runtimeLog.isEmpty()) text.append("---- runtime log (end)\n").append(runtimeLog).append('\n');
+        String runtimeLog = sessionRuntimeTail(session, exit.getTimestamp());
+        if (!runtimeLog.isEmpty()) text.append("---- captured log (end)\n").append(runtimeLog).append('\n');
+        else text.append("No captured log matching this process and exit time. Use Logs > Play with logs, then Share report after the crash.\n");
 
         File report = new File(dir, "crash-" + stamp + ".txt");
         writeFile(report, text.toString().getBytes(StandardCharsets.UTF_8));
-        if (trace != null && tombstone != null) {
+        // Keep the original protobuf even if this Android version adds fields
+        // our small decoder cannot interpret.
+        if (binaryTrace) {
             writeFile(new File(dir, "crash-" + stamp + ".tombstone.pb"), trace);
         }
         Log.i(TAG, "saved " + report + ": " + summary);
     }
 
-    private static String newestRuntimeLog(File dataRoot) {
-        File[] logs = new File(dataRoot, "Liberty Recompiled/logs").listFiles(File::isFile);
-        if (logs == null || logs.length == 0) return "";
-        File newest = logs[0];
-        for (File log : logs) if (log.lastModified() > newest.lastModified()) newest = log;
-        String text = read(newest);
+    // Native capture files are sidecars of debug_logs/debug-DATE.log. Match
+    // the owning session's PID and recent write time before reading any sidecar;
+    // the old legacy-folder lookup attached unrelated logs from previous builds.
+    static File matchingSession(File primary, File fallback, int pid, long exitTime) {
+        if (pid <= 0 || exitTime <= 0) return null;
+        File newest = null;
+        for (File root : new File[]{primary, fallback}) {
+            File[] files = DebugLog.directory(root).listFiles((dir, name) ->
+                    name.matches("debug-[0-9-]+\\.log"));
+            if (files == null) continue;
+            for (File file : files) {
+                if (!file.isFile() || !nearExit(file, exitTime)) continue;
+                if (!hasPid(file, "pid=" + pid)
+                        && !hasPid(new File(file.getPath() + ".1"), "pid=" + pid)
+                        && !hasPid(new File(file.getPath() + ".launch.txt"), "pid: " + pid)) continue;
+                if (newest == null || file.lastModified() > newest.lastModified()) newest = file;
+            }
+        }
+        return newest;
+    }
+
+    private static boolean hasPid(File file, String pid) {
+        try (InputStream in = new java.io.FileInputStream(file)) {
+            byte[] header = new byte[4096];
+            int count = in.read(header);
+            return count > 0 && ("\n" + new String(header, 0, count, StandardCharsets.UTF_8))
+                    .contains("\n" + pid + "\n");
+        } catch (IOException ignored) { return false; }
+    }
+
+    private static boolean nearExit(File file, long exitTime) {
+        long modified = file.lastModified();
+        return modified >= exitTime - 120000 && modified <= exitTime + 5000;
+    }
+
+    static String sessionRuntimeTail(File session, long exitTime) {
+        if (session == null) return "";
+        File newest = null;
+        File[] logs = session.getParentFile().listFiles((dir, name) ->
+                name.startsWith(session.getName() + ".runtime") && name.endsWith(".log"));
+        if (logs != null) for (File log : logs) {
+            if (log.isFile() && nearExit(log, exitTime)
+                    && (newest == null || log.lastModified() > newest.lastModified())) newest = log;
+        }
+        if (newest == null) newest = session;
+        String text;
+        // Read the actual end, including for logs larger than the general
+        // four-MiB reader's limit. Never load the entire runtime log into RAM.
+        try (RandomAccessFile input = new RandomAccessFile(newest, "r")) {
+            long start = Math.max(0, input.length() - 65536);
+            input.seek(start);
+            byte[] bytes = new byte[(int)(input.length() - start)];
+            input.readFully(bytes);
+            text = new String(bytes, StandardCharsets.UTF_8);
+            if (start > 0) {
+                int newline = text.indexOf('\n');
+                text = newline < 0 ? "" : text.substring(newline + 1);
+            }
+        } catch (IOException e) { return ""; }
         String[] lines = text.split("\n");
         int from = Math.max(0, lines.length - 80);
         StringBuilder out = new StringBuilder(newest.getName()).append('\n');

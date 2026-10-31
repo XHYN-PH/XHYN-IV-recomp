@@ -70,9 +70,27 @@ final class DebugLogArchive {
             }
             File diagnostics=SessionHistory.directory(primary);
             for(String name:new String[]{"last-session.properties","previous-exit.properties","previous-launcher-exit.properties","launcher-crash.txt"}){File f=new File(diagnostics,name);if(f.isFile()&&!java.nio.file.Files.isSymbolicLink(f.toPath())&&f.length()<=65536)add(zip,f,"context/"+name);}
+            matchingCrashes(zip,primary,selected);
             zip.putNextEntry(new ZipEntry("README.txt"));
-            zip.write(("XHYN IV diagnostics. Selected session: "+session+"\nOnly the selected session logs are included. The context folder contains timestamped last-session and historical Android exit summaries, which may describe a different session. Large text logs retain startup and the latest entries with an omission marker. Publisher frame rate is not a measurement of displayed frames; publisher wall time includes waits. CSV benchmark data is kept complete.\n").getBytes(StandardCharsets.UTF_8));
+            zip.write(("XHYN IV diagnostics. Selected session: "+session+"\nOnly the selected session logs and matching saved crash reports are included. Raw system tombstones are included when Android provides them. The context folder contains timestamped last-session and historical Android exit summaries, which may describe a different session. Large text logs retain startup and the latest entries with an omission marker. Publisher frame rate is not a measurement of displayed frames; publisher wall time includes waits. CSV benchmark data is kept complete.\n").getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
+        }
+    }
+    private static void matchingCrashes(ZipOutputStream zip,File root,String session) throws IOException {
+        File[] reports=new File(root,"crash_reports").listFiles((d,n)->n.matches("crash-[0-9-]+\\.txt"));
+        if(reports==null)return;
+        for(File report:reports) {
+            if(!report.isFile()||java.nio.file.Files.isSymbolicLink(report.toPath()))continue;
+            byte[] header;
+            try(java.io.InputStream input=new java.io.FileInputStream(report)) {
+                header=new byte[8192];int count=input.read(header);if(count<=0)continue;
+                String text=new String(header,0,count,StandardCharsets.UTF_8);
+                if(!text.contains("\ncapture session: "+session+"\n"))continue;
+            }
+            add(zip,report,"crash/"+report.getName());
+            File raw=new File(report.getPath().replace(".txt",".tombstone.pb"));
+            if(raw.isFile()&&!java.nio.file.Files.isSymbolicLink(raw.toPath())&&raw.length()<=16L*1024*1024)
+                add(zip,raw,"crash/"+raw.getName());
         }
     }
     private static void profile(ZipOutputStream zip,File folder,String prefix,int depth)throws IOException {
@@ -88,7 +106,7 @@ final class DebugLogArchive {
         try(RandomAccessFile input=new RandomAccessFile(file,"r")) {
             long length=input.length();
             zip.putNextEntry(new ZipEntry(name));
-            boolean structured=name.endsWith(".csv")||name.endsWith(".json")||name.endsWith(".png")||name.endsWith(".ppm")||name.endsWith(".pgm")||name.endsWith(".bin.zst");
+            boolean structured=name.endsWith(".csv")||name.endsWith(".json")||name.endsWith(".png")||name.endsWith(".ppm")||name.endsWith(".pgm")||name.endsWith(".bin.zst")||name.endsWith(".pb");
             // A 64 MiB image needs extra bytes for PNG framing / zstd headers.
             if(structured&&length>96L*1024*1024)throw new IOException("Profile file exceeds export limit.");
             if(length>LIMIT&&!structured) {

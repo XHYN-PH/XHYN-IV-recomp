@@ -12,6 +12,8 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 SDK = ROOT / 'glue/rexglue-sdk-main'
 SOURCES = (
+    'src/core/crash_capture_posix.cpp',
+    'src/core/exception_handler_posix.cpp',
     'src/system/xam/user_profile.cpp',
     'src/system/runtime.cpp',
     'src/filesystem/devices/host_path_device.cpp',

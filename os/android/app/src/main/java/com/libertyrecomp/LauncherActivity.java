@@ -116,7 +116,6 @@ public class LauncherActivity extends Activity {
         File external = getExternalFilesDir(null);
         mDataRoot = external != null ? external : getFilesDir();
         LauncherCrashCapture.install(mDataRoot);
-        PreviousExitCapture.capture(this,mDataRoot);
         if(!gameRunning()){
             migrateTouchPreferences();migratePerformanceGraphics();try{MobileConfig.ensureDefaults(MobileConfig.file(mDataRoot));}catch(IOException e){Log.w(TAG,"Default settings deferred",e);}
             android.content.SharedPreferences ui=getSharedPreferences("interface",Context.MODE_PRIVATE);
@@ -506,6 +505,7 @@ public class LauncherActivity extends Activity {
 
     private void refreshCrash() {
         new Thread(() -> {
+            PreviousExitCapture.captureNow(this,mDataRoot);
             CrashReports.Report report = CrashReports.collect(this, mDataRoot);
             mMain.post(() -> {
                 mCrash = report;
@@ -515,7 +515,7 @@ public class LauncherActivity extends Activity {
                 }
                 mCrashText.setText(report.headline + "\n\nSaved to Android/data/" + getPackageName()
                         + "/files/crash_reports/" + report.file.getName()
-                        + "\nPlease attach it to an issue on GitHub (vaduur/LibertyRecompAndroid), "
+                        + "\nPlease attach it to an issue on GitHub (XHYN-PH/XHYN-IV-recomp), "
                         + "or press Share report to send it from here.");
                 mCrashCard.setVisibility(View.VISIBLE);
             });
@@ -1018,6 +1018,8 @@ public class LauncherActivity extends Activity {
                     String result;
                     try(java.io.OutputStream output=getContentResolver().openOutputStream(uri)) {
                         if(output==null)throw new IOException("Cannot open the selected file");
+                        PreviousExitCapture.captureNow(this,mDataRoot);
+                        CrashReports.collect(this,mDataRoot);
                         DebugLogArchive.write(output,mDataRoot,getFilesDir(),mLogSession);result="Debug logs exported.";
                     }catch(IOException|RuntimeException error){result="Log export failed: "+error.getMessage();}
                     final String message=result;mMain.post(()->{setBusy(false,null);toast(message);});

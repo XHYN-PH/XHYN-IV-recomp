@@ -7,7 +7,13 @@ import java.util.*;
 final class PreviousExitCapture {
  static void capture(Activity a,File data){
   if(Build.VERSION.SDK_INT<30)return;
-  new Thread(()->{try{
+  new Thread(()->captureNow(a,data),"PreviousAppExit").start();
+ }
+ // Call from a background task before building a report, so a launcher that
+ // remained alive during gameplay does not export its startup exit snapshot.
+ static synchronized void captureNow(Activity a,File data){
+  if(Build.VERSION.SDK_INT<30)return;
+  try{
    ActivityManager manager=(ActivityManager)a.getSystemService(Activity.ACTIVITY_SERVICE);if(manager==null)return;
    Set<String> captured=new HashSet<>();
    for(ApplicationExitInfo exit:manager.getHistoricalProcessExitReasons(a.getPackageName(),0,16)){
@@ -18,7 +24,7 @@ final class PreviousExitCapture {
     p.setProperty("pss.kb",Long.toString(exit.getPss()));p.setProperty("importance",Integer.toString(exit.getImportance()));p.setProperty("process",process);
     SessionHistory.save(data,id,p);if(captured.size()==2)break;
    }
-  }catch(Exception ignored){}},"PreviousAppExit").start();
+  }catch(Exception ignored){}
  }
  static String label(int reason){String[] names={"Unknown","Self exit","Signal","Low memory","Java crash","Native crash","ANR","Initialization failure","Permission change","Excessive resource use","User requested","User stopped","Dependency died","Other","Frozen process","Package state change","Package updated"};return reason>=0&&reason<names.length?names[reason]:"Unknown";}
  private PreviousExitCapture(){}

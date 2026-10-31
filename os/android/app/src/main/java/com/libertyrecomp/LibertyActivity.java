@@ -420,6 +420,7 @@ public class LibertyActivity extends SDLActivity {
         }
         report.append("Liberty Recompiled for Android ").append(version).append('\n');
         report.append("time: ").append(new java.util.Date()).append('\n');
+        report.append("pid: ").append(android.os.Process.myPid()).append('\n');
         report.append("device: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
                 .append(" (").append(Build.DEVICE).append(", board ").append(Build.BOARD)
                 .append(", hardware ").append(Build.HARDWARE).append(")\n");

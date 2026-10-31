@@ -8,6 +8,16 @@ Install it over your existing XHYN IV app. Back up saves first; uninstalling rem
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
 
+## Unreleased Test13 diagnostic candidate
+
+- Add an opt-in native fatal-signal capture for instruction/fault addresses, thread IDs and current module mappings. Preserve the existing signal termination path.
+- Match crash excerpts to the current capture and read the actual tail of large logs. Include app/device metadata and distinguish unavailable memory samples.
+- Refresh exit summaries after gameplay and before export. Include matching crash reports and available raw system tombstones in the session ZIP.
+
+This candidate investigates the reported gameplay crash. A fix for the underlying
+fault has not been identified. The published download above remains Test12.
+See [diagnostic validation and capture steps](TEST13-DIAGNOSTICS.md).
+
 ## Test12 — core compatibility and title-update decoding
 
 This release includes the previously unreleased Test11 changes below and all
