@@ -25,6 +25,15 @@ The supplied update reproduces the same prepared image through both fixed
 decoders. Core completion, phone gameplay and rendering validation remain open;
 no FPS improvement or shadow-band fix is claimed.
 
+## Test12 validation and known issues
+
+- Passed 39 production core cases / 172 assertions and 19 integrated LZX/delta cases / 267 assertions with strict ASan/UBSan. Passed 20 source/binary audit regressions, 12 Android native host groups, four independently decoded PNG fixtures, 11 Java regression groups and 19 Android UI tests.
+- Full Android ARM64/API 29 native game, runtime, renderer and installer builds passed with NDK r29. The package uses version code 40 and the existing release signing identity; all 11 native libraries, 16 KiB alignment, 44 touch icons and six driver archives / 24 member hashes passed verification.
+- Updated Android CI setup to request the supported `platform-tools` package instead of the removed legacy `tools` package.
+- **The recompilation is not complete.** Exception handling, wider service behavior, mission coverage and device validation remain open. The camera-linked straight-line shadow band remains unresolved.
+- Sustained FPS, audio endurance, thermal behavior and physical-controller use still need phone testing. Host and package checks do not establish a performance gain.
+- SHA-256 (`XHYN-IV-0.5.9.3-xhyn-r2-test12.apk`): `94dbb87f28247c6fa5a58c79d9114a7053989e31aed0a066eab917d8050eb463`.
+
 ## Previously unreleased Test11 — included in Test12
 
 Test11 was shared for device testing and was not published separately on GitHub.
