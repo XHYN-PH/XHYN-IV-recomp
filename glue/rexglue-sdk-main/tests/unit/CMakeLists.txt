@@ -11,6 +11,7 @@ endif()
 add_executable(unit_tests
     memory/heap_allocation_test.cpp
     kernel/object_table_test.cpp
+    kernel/crt_size_test.cpp
     core/cvar_test.cpp
     core/diagnostics_policy_test.cpp
     core/fiber_test.cpp

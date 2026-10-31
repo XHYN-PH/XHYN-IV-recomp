@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run PPC bridge, stack, byte-order and XEXP record tests with ASan and UBSan.
+"""Run PPC bridge, guest CRT, stack, byte-order and XEXP tests with ASan/UBSan.
 
 Uses the repository's pinned Catch2 submodule; never downloads dependencies.
 """
@@ -36,6 +36,8 @@ def main():
     sources = [SDK / "tests/unit" / path for path in (
         "ppc/import_function_test.cpp", "ppc/stack_test.cpp", "core/byte_order_test.cpp",
         "system/lzx_delta_patch_test.cpp")]
+    sources += [SDK / "tests/unit/kernel/crt_size_test.cpp",
+                SDK / "src/kernel/crt/memory.cpp", SDK / "src/kernel/crt/string.cpp"]
     flags = ["-std=c++23", "-O0", "-g1", "-pthread", "-fsanitize=address,undefined",
              "-fno-omit-frame-pointer", "-ffunction-sections", "-fdata-sections",
              "-DFMT_HEADER_ONLY", "-DSPDLOG_FMT_EXTERNAL"]

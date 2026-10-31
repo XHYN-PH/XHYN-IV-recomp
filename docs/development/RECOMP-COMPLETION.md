@@ -68,6 +68,23 @@ candidate. Its device validation is still pending.
 
 ## TU8 executable and decoder audit
 
+### CRT guest-size correction after the first bridge fix
+
+The first width-aware bridge change exposed a regression in native CRT hooks:
+their `size_t` parameters described 64-bit host sizes even though the guest CRT
+uses 32-bit sizes. The Test13 phone capture locates `native_memset` immediately
+before a write into a protected guest mapping. Test14 makes all 14 affected CRT
+memory/string hook signatures explicitly 32-bit, without narrowing genuine
+64-bit kernel parameters. Guarded child-process checks reproduce all 20 affected
+behaviors before the fix and pass afterward. The expanded core suite passes 45
+cases / 192 assertions; source/binary audit tests now total 22 cases, including a
+gate against host-sized CRT parameters. Device confirmation remains pending.
+
+The earlier isolated upstream bridge-only comparison also needs this CRT
+boundary correction before integration.
+
+### Supplied executable and update
+
 The supplied retail executable matches the installer's complete-file XXH3 pin
 `2823947441600373906`, and its signature digest matches the delta descriptor.
 The supplied/extracted patch's SHA-256 is the required

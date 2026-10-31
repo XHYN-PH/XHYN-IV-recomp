@@ -7,6 +7,7 @@
  * @copyright   Copyright (c) 2026 Tom Clay <tomc@tctechstuff.com>
  * @license     BSD 3-Clause License
  */
+#include <cstdint>
 #include <cstring>
 
 #include <rex/platform.h>
@@ -21,14 +22,16 @@
 namespace rex::kernel::crt {
 
 // ---------------------------------------------------------------------------
+// Hooked capacities/counts use the Xbox 32-bit size_t ABI, independently of
+// the host C library size_t. Local host string lengths may still use size_t.
 // C string operations
 // ---------------------------------------------------------------------------
 
-static int native_strncmp(const char* s1, const char* s2, size_t n) {
+static int native_strncmp(const char* s1, const char* s2, uint32_t n) {
   return std::strncmp(s1, s2, n);
 }
 
-static char* native_strncpy(char* dst, const char* src, size_t n) {
+static char* native_strncpy(char* dst, const char* src, uint32_t n) {
 #if REX_PLATFORM_WIN32
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
@@ -65,7 +68,7 @@ static int native_stricmp(const char* s1, const char* s2) {
 #endif
 }
 
-static int native_strcpy_s(char* dst, size_t dstsz, const char* src) {
+static int native_strcpy_s(char* dst, uint32_t dstsz, const char* src) {
 #if REX_PLATFORM_WIN32
   return strcpy_s(dst, dstsz, src);
 #else
@@ -196,7 +199,7 @@ static int16_t* native_wcsncpy(int16_t* dest, const int16_t* src, int count) {
   return dest;
 }
 
-static uint32_t native_wcsncpy_s(int16_t* dst, size_t dstsz, const int16_t* src, size_t count) {
+static uint32_t native_wcsncpy_s(int16_t* dst, uint32_t dstsz, const int16_t* src, uint32_t count) {
   if (!dst || !src || dstsz == 0)
     return 22;  // EINVAL
 

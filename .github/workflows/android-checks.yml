@@ -50,7 +50,7 @@ jobs:
           path: out/recomp-core-audit.json
           if-no-files-found: ignore
           retention-days: 14
-      - name: PPC calling convention, stack, byte-order and XEXP regressions
+      - name: PPC calling convention, guest CRT, stack, byte-order and XEXP regressions
         run: python3 tools/run_recomp_core_tests.py
       - name: Native fatal capture preserves SIGSEGV termination
         run: |

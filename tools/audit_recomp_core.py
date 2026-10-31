@@ -118,8 +118,16 @@ def audit(root: Path, xex: Path | None = None) -> dict:
     exports = {}
     wide_imports = []
     partial_diagnostics = []
+    host_sized_crt = []
     for path in sorted((sdk / "src/kernel").rglob("*.cpp")):
         text = read(path)
+        for name, target in re.findall(r"REX_HOOK\(\s*(rexcrt_\w+),\s*([\w:]+)\s*\)", text):
+            target = target.rsplit("::", 1)[-1]
+            signature = re.search(r"\b" + re.escape(target) + r"\s*\(([^{};]*)\)\s*\{", text)
+            if signature and re.search(r"\b(?:size_t|ssize_t|ptrdiff_t|uintptr_t|intptr_t|long)\b", signature[1]):
+                host_sized_crt.append({"symbol": name,
+                    "source": path.relative_to(root).as_posix(),
+                    "arguments": " ".join(signature[1].split())})
         for match in EXPORT.finditer(text):
             macro, name = match.groups()
             if name not in imports:
@@ -145,6 +153,9 @@ def audit(root: Path, xex: Path | None = None) -> dict:
                         "source": path.relative_to(root).as_posix(), "diagnostic": marker[0]})
     if imports - exports.keys():
         errors.append("Unclassified kernel import bindings: " + str(sorted(imports - exports.keys())))
+    if host_sized_crt:
+        errors.append("Native CRT hooks use host-sized parameters instead of explicit guest widths: " +
+                      str([entry["symbol"] for entry in host_sized_crt]))
     stubs = []
     for name, entries in sorted(exports.items()):
         for entry in entries:
@@ -160,6 +171,7 @@ def audit(root: Path, xex: Path | None = None) -> dict:
                    "generic_stub_bindings": len(stubs)},
         "errors": errors,
         "generic_stubs": stubs,
+        "native_crt_hooks_with_host_sized_parameters": host_sized_crt,
         "imports_with_stub_or_partial_diagnostics": sorted(partial_diagnostics,
                                                             key=lambda entry: entry["symbol"]),
         "imports_with_64_bit_integer_parameters": sorted(wide_imports, key=lambda x: x["symbol"]),

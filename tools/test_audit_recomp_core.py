@@ -95,6 +95,22 @@ class RecompAuditTest(unittest.TestCase):
                                'REX_EXPORT(__imp__Fake, fake::Fake_entry)\n')
         self.assertEqual(audit(self.root)["imports_with_stub_or_partial_diagnostics"], [])
 
+    def test_host_size_t_in_native_crt_hook_fails(self):
+        with self.kernel.open("a") as stream:
+            stream.write('void* native_memset(void* p, int value, size_t length) { return p; }\n'
+                         'REX_HOOK(rexcrt_memset, fake::native_memset)\n')
+        self.check_failure("Native CRT hooks use host-sized parameters")
+
+    def test_fixed_guest_crt_width_and_real_64_bit_import_are_allowed(self):
+        self.kernel.write_text('u32 Fake_entry(u64 identifier) { return 0; }\n'
+                               'REX_EXPORT(__imp__Fake, fake::Fake_entry)\n'
+                               'void* native_memset(void* p, int value, uint32_t length) { return p; }\n'
+                               'REX_HOOK(rexcrt_memset, fake::native_memset)\n')
+        report = audit(self.root)
+        self.assertTrue(report["consistency_passed"], report["errors"])
+        self.assertEqual(report["native_crt_hooks_with_host_sized_parameters"], [])
+        self.assertEqual(report["imports_with_64_bit_integer_parameters"][0]["symbol"], "__imp__Fake")
+
 
 if __name__ == "__main__":
     unittest.main()
