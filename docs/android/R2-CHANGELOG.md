@@ -1,17 +1,18 @@
-# XHYN IV r2 — through Test10
+# XHYN IV r2 — through Test12
 
-**Android testing release · r2 Test10**
+**Android testing release · r2 Test12**
 
-[**Download the Android APK**](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test10/XHYN-IV-0.5.9.3-xhyn-r2-test10.apk)
+[**Download the Android APK**](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/download/0.5.9.3-xhyn-r2-test12/XHYN-IV-0.5.9.3-xhyn-r2-test12.apk)
 
 Install it over your existing XHYN IV app. Back up saves first; uninstalling removes app data. This release includes all r2 changes since r1.
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
 
-## Unreleased core recompilation work
+## Test12 — core compatibility and title-update decoding
 
-These source changes follow the signed Test11 candidate and are not included in
-that APK or the published Test10 download.
+This release includes the previously unreleased Test11 changes below and all
+earlier r2 changes. The earlier signed Test11 candidate did not contain these
+core calling-convention and title-update decoding fixes.
 
 - Preserve full 64-bit integer arguments when game code calls native services, including identifiers and size values. Keep narrow arguments and guest pointers compatible, and correct big-endian integer storage.
 - Fix unaligned title-update record reads in both decoding paths. Check record payloads and output ranges, use overlap-safe record copies, and pass actual allocation bounds from the runtime loader.
@@ -24,9 +25,10 @@ The supplied update reproduces the same prepared image through both fixed
 decoders. Core completion, phone gameplay and rendering validation remain open;
 no FPS improvement or shadow-band fix is claimed.
 
-## Unreleased Test11 — shared runtime fixes
+## Previously unreleased Test11 — included in Test12
 
-This candidate is being validated. The published download above remains Test10.
+Test11 was shared for device testing and was not published separately on GitHub.
+Its shared-runtime fixes ship together in Test12.
 
 - Escape quotes, backslashes and control characters when saving native settings, including JSON status values and Windows paths. Both full and category-only config exports use the same serializer.
 - Report malformed configuration with its line/column in the final runtime log. Startup only reports a successful load after parsing succeeds; invalid files remain untouched.

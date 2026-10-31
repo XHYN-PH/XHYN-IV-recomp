@@ -1,7 +1,8 @@
 # Test11 shared-runtime candidate
 
-Version `0.5.9.3-xhyn-r2-test11`, Android version code 39. Test10 remains the
-published release. This is the first batch of shared-runtime work; it does not
+Version `0.5.9.3-xhyn-r2-test11`, Android version code 39. Test10 was the
+published release at this checkpoint; these changes are included in Test12.
+This is the first batch of shared-runtime work; it does not
 claim the upstream recompilation is complete or that phone FPS has improved.
 
 ## Changes

@@ -6,7 +6,7 @@ The original projects provide the game recompilation, Android platform support, 
 
 ## What changes in XHYN IV?
 
-This comparison describes **XHYN IV r2 Test10**. Both projects continue to change.
+This comparison describes **XHYN IV r2 Test12**. Both projects continue to change.
 
 | Area | Original Android port | XHYN IV |
 | --- | --- | --- |

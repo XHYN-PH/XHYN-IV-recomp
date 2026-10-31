@@ -63,8 +63,8 @@ five of the initial nine cases failed, including the high-bit identifier.
 This establishes the bridge correction. It does not establish that every service
 listed above is otherwise complete or that gameplay FPS increases.
 
-The ABI correction is a source change after the signed Test11 candidate; a future
-package is needed to test it on a device.
+The ABI correction is included in Test12 and follows the earlier signed Test11
+candidate. Its device validation is still pending.
 
 ## TU8 executable and decoder audit
 
