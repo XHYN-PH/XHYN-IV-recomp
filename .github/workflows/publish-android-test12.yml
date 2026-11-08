@@ -1,16 +1,13 @@
-name: Upload verified Test12 Android APK
+name: Upload verified v442 Android layer Test 1
 
 on:
-  push:
-    branches: [xhyn/r2-test12]
-    paths: [.github/workflows/publish-android-test12.yml]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: upload-android-test12
+  group: upload-v442-layer-test1
   cancel-in-progress: false
 
 jobs:
@@ -20,56 +17,102 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: 0.5.9.3-xhyn-r2-test12
-      APK_NAME: XHYN-IV-0.5.9.3-xhyn-r2-test12.apk
-      APK_SHA256: 94dbb87f28247c6fa5a58c79d9114a7053989e31aed0a066eab917d8050eb463
+      RELEASE_TAG: 0.9.24-xhyn-layer-test1
+      APK_NAME: XHYN-IV-0.9.24-xhyn-layer-test1.apk
+      APK_SHA256: d06d84a31837894db7a885e89d3df5ae11af1e7c710f421bc84510dadce3b7f5
     steps:
-      - name: Require the prepared draft release
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Require the prepared empty draft release
         run: |
           gh release view "$RELEASE_TAG" --json isDraft,assets > release.json
           python3 - <<'PY'
           import json
-          with open('release.json') as source:
-              release = json.load(source)
-          assert release['isDraft'], 'This job only uploads to the reviewed draft'
+          release = json.load(open('release.json'))
+          assert release['isDraft'], 'Only the prepared draft may receive these assets'
           assert not release['assets'], 'Refuse to replace existing release assets'
           PY
-      - name: Retrieve and verify the signed candidate
+      - name: Retrieve and reconstruct the signed candidate
         run: |
           python3 - <<'PY'
           from html.parser import HTMLParser
           from pathlib import Path
           from urllib.parse import urljoin, urlparse
-          import hashlib, os, subprocess
-          page = 'https://tmpfiles.org/wfAvToHkpbfk/xhyn-iv-0.5.9.3-xhyn-r2-test12.apk'
-          body = subprocess.check_output(['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '60', page], text=True)
+          import hashlib, os, subprocess, zipfile
+          parts = [
+              ('https://tmpfiles.org/wwAU5a2rTW8X/xhyn-v442-layer-test1-part01.zip', 'part-01.bin', 52428800, '67da4701885d52e4ff04e852ddee67a25b247de10e8c59991a5e1d9a941170af', '71cc80d4cb2ff132eabc5df6ccf553a93ca1d265f570fc5cca87177f8d95d5d0'),
+              ('https://tmpfiles.org/wPAo5Z2JdxAl/xhyn-v442-layer-test1-part02.zip', 'part-02.bin', 52428800, '228c54175986db8d1520347fca80ac19e875c452fb1c4570c95112d3b9679197', 'cacc3449767ffca067574c9c1f8a8ce7a13d7958e2eac5238bf02bbfc0e0cb37'),
+              ('https://tmpfiles.org/woAJ5U2ud9fW/xhyn-v442-layer-test1-part03.zip', 'part-03.bin', 7078287, '952cd429341356fe2d63cefba0d01dc23dfc4dee0768384e25a4b7be88360756', 'c945d622e2517a91d60000abc7e2d42939568142ea6bd94ac97e70c2f647a476'),
+          ]
           class Download(HTMLParser):
-              urls = []
+              def __init__(self, page):
+                  super().__init__(); self.page = page; self.urls = []
               def handle_starttag(self, tag, attributes):
-                  url = urljoin(page, dict(attributes).get('href', ''))
+                  url = urljoin(self.page, dict(attributes).get('href', ''))
                   parsed = urlparse(url)
-                  if tag == 'a' and parsed.scheme == 'https' and parsed.hostname == 'tmpfiles.org' and parsed.path.startswith('/dl/') and parsed.path.endswith('/' + os.environ['APK_NAME'].lower()):
+                  if tag == 'a' and parsed.scheme == 'https' and parsed.hostname == 'tmpfiles.org' and parsed.path.startswith('/dl/') and parsed.path.endswith('/' + self.page.rsplit('/', 1)[1]):
                       self.urls.append(url)
-          parser = Download()
-          parser.feed(body)
-          assert parser.urls, 'Official APK download button unavailable'
           apk = Path(os.environ['APK_NAME'])
-          subprocess.run(['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '180', parser.urls[0], '-o', str(apk)], check=True)
-          digest = hashlib.sha256(apk.read_bytes()).hexdigest()
-          assert digest == os.environ['APK_SHA256'], 'Candidate hash mismatch'
-          assert apk.stat().st_size == 67030598
-          Path('SHA256SUMS.txt').write_text(digest + '  ' + apk.name + '\n')
-          print('Verified signed APK:', apk.name, digest)
+          with apk.open('wb') as output:
+              for page, entry, size, zip_hash, part_hash in parts:
+                  body = subprocess.check_output(['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '60', page], text=True)
+                  parser = Download(page); parser.feed(body)
+                  assert parser.urls, 'Official temporary download link unavailable'
+                  archive = Path(page.rsplit('/', 1)[1])
+                  subprocess.run(['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '180', parser.urls[0], '-o', str(archive)], check=True)
+                  assert hashlib.sha256(archive.read_bytes()).hexdigest() == zip_hash, 'Relay archive hash mismatch'
+                  with zipfile.ZipFile(archive) as source:
+                      assert source.namelist() == [entry]
+                      data = source.read(entry)
+                  assert len(data) == size and hashlib.sha256(data).hexdigest() == part_hash, 'APK segment mismatch'
+                  output.write(data); archive.unlink()
+          assert apk.stat().st_size == 111935887
+          with apk.open('rb') as stream:
+              assert hashlib.file_digest(stream, 'sha256').hexdigest() == os.environ['APK_SHA256'], 'Signed APK hash mismatch'
+          print('Reconstructed APK exactly matches the signed candidate')
           PY
-      - name: Upload the verified APK and checksum
-        run: gh release upload "$RELEASE_TAG" "$APK_NAME" SHA256SUMS.txt
+      - name: Verify payload, release identity and alignment
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os, re, shutil, subprocess, zipfile
+          apk = Path(os.environ['APK_NAME'])
+          report = json.loads(Path('docs/android/V442-LAYER-TEST1-VALIDATION.json').read_text())
+          assert report['candidate_sha256'] == os.environ['APK_SHA256']
+          with zipfile.ZipFile(apk) as archive:
+              assert archive.testzip() is None
+              libraries = {name: hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.startswith('lib/') and name.endswith('.so')}
+              assert len(libraries) == 12 and libraries == report['native_libraries']
+              assert hashlib.sha256(archive.read('classes.dex')).hexdigest() == report['stock_dex']
+          sdk = Path(os.environ.get('ANDROID_HOME', '/usr/local/lib/android/sdk'))
+          candidates = sorted((sdk / 'build-tools').glob('*/apksigner'))
+          assert candidates, 'Android signature verifier is unavailable'
+          tool = candidates[-1]
+          verification = subprocess.check_output([str(tool), 'verify', '--min-sdk-version', '24', '--verbose', '--print-certs', str(apk)], text=True)
+          certificate = re.search(r'Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]+)', verification)
+          assert certificate and certificate.group(1).lower() == report['signing']['certificate_sha256']
+          assert 'Verified using v2 scheme (APK Signature Scheme v2): true' in verification
+          assert 'Verified using v3 scheme (APK Signature Scheme v3): true' in verification
+          subprocess.run([str(tool.with_name('zipalign')), '-c', '-P', '16', '4', str(apk)], check=True)
+          metadata = Path('XHYN-IV-0.9.24-xhyn-layer-test1.verification.json')
+          shutil.copyfile('docs/android/V442-LAYER-TEST1-VALIDATION.json', metadata)
+          sums = []
+          for file in (apk, metadata):
+              with file.open('rb') as stream:
+                  sums.append(hashlib.file_digest(stream, 'sha256').hexdigest() + '  ' + file.name)
+          Path('SHA256SUMS.txt').write_text('\n'.join(sums) + '\n')
+          print('Stock payload, existing XHYN certificate and alignment verified')
+          PY
+      - name: Upload the signed APK, checksums and validation report
+        run: gh release upload "$RELEASE_TAG" "$APK_NAME" SHA256SUMS.txt XHYN-IV-0.9.24-xhyn-layer-test1.verification.json
       - name: Verify the GitHub asset download
         run: |
           gh release download "$RELEASE_TAG" --pattern "$APK_NAME" --dir verification
           python3 - <<'PY'
           from pathlib import Path
           import hashlib, os
-          apk = Path('verification') / os.environ['APK_NAME']
-          assert hashlib.sha256(apk.read_bytes()).hexdigest() == os.environ['APK_SHA256']
+          with (Path('verification') / os.environ['APK_NAME']).open('rb') as source:
+              assert hashlib.file_digest(source, 'sha256').hexdigest() == os.environ['APK_SHA256']
           print('GitHub APK download matches the signed candidate')
           PY
