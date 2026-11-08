@@ -1,5 +1,8 @@
 # 0.9.24-xhyn-layer-test1 (code 443)
 
+Signed testing release · 9 November 2026 (Asia/Manila).
+[Download](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.9.24-xhyn-layer-test1).
+
 Android UI layer on the supplied stock `0.9.24-renderer-v442` APK. All 12
 native libraries, original DEX, resources and title assets retain their exact
 bytes. Earlier source-port C++ changes are not part of this APK.

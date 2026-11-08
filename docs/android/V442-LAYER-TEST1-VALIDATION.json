@@ -17,8 +17,8 @@
   },
   "stock_dex": "f163bc046d8e6c62b49d996e98e735261c7ddd8f044ccc5c1e247b61a2293898",
   "adapter_contract": "passed",
-  "candidate_sha256": "5f8e01019e2ae3c41067c3a1456c23b1862031e96f5dbe978eedd1ec3b554b77",
-  "candidate_bytes": 111928737,
+  "candidate_sha256": "d06d84a31837894db7a885e89d3df5ae11af1e7c710f421bc84510dadce3b7f5",
+  "candidate_bytes": 111935887,
   "preserved_entries": 586,
   "native_and_stock_payload": "byte-for-byte unchanged",
   "provenance": {
@@ -42,7 +42,7 @@
     "session_process": ":game",
     "panel_launch_mode": "standard"
   },
-  "alignment": "Android zipalign -c -P 16 4 passed",
+  "alignment": "zipalign -c -P 16 4 passed after signing",
   "host_checks": {
     "android_tests": 44,
     "packaging_tests": 8,
@@ -51,8 +51,21 @@
     "lint_localization_warnings": 20
   },
   "signing": {
-    "status": "blocked: prior signing-backup attachment cannot be resolved; no saved release key exists locally",
-    "expected_certificate_sha256": "106de5f3a0f6bdf1cad369e87b8c509b8e34693b2c8eeac3a1c4627ac2a23d49"
+    "certificate_sha256": "106de5f3a0f6bdf1cad369e87b8c509b8e34693b2c8eeac3a1c4627ac2a23d49",
+    "v2": true,
+    "v3": true,
+    "payload_matches_unsigned": true,
+    "status": "verified with the existing XHYN release identity",
+    "verification_min_sdk_override": 24
   },
-  "source_commit": "83ffa0e1b262bf6a28896eddadc42f802131b4a8"
+  "source_commit": "83ffa0e1b262bf6a28896eddadc42f802131b4a8",
+  "unsigned_candidate_sha256": "5f8e01019e2ae3c41067c3a1456c23b1862031e96f5dbe978eedd1ec3b554b77",
+  "unsigned_candidate_bytes": 111928737,
+  "release": {
+    "tag": "0.9.24-xhyn-layer-test1",
+    "local_date": "2026-11-09",
+    "timezone": "Asia/Manila",
+    "type": "prerelease",
+    "url": "https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.9.24-xhyn-layer-test1"
+  }
 }

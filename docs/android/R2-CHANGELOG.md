@@ -8,7 +8,9 @@ Install it over your existing XHYN IV app. Back up saves first; uninstalling rem
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
 
-## Unreleased v442 Android layer — Test 1
+## v442 Android layer — Test 1 · 9 November 2026
+
+[Download the signed testing release](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.9.24-xhyn-layer-test1).
 
 A separate Android UI candidate uses the supplied stock v442 engine. It adds
 compact menus, controller navigation, stock settings with a next-launch queue,

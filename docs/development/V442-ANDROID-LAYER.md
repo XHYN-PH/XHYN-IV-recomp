@@ -94,9 +94,9 @@ recovery, current/runtime log export, and preservation-boundary rejection tests.
 
 ## Packaged candidate
 
-The unsigned, aligned candidate is `0.9.24-xhyn-layer-test1`, version code 443,
-application ID `com.xhyn.ivrecomp`, min/target API 29/35. It is 111,928,737 bytes
-with SHA-256 `5f8e01019e2ae3c41067c3a1456c23b1862031e96f5dbe978eedd1ec3b554b77`.
+The signed candidate is `0.9.24-xhyn-layer-test1`, version code 443,
+application ID `com.xhyn.ivrecomp`, min/target API 29/35. It is 111,935,887 bytes
+with SHA-256 `d06d84a31837894db7a885e89d3df5ae11af1e7c710f421bc84510dadce3b7f5`.
 
 All 586 unchanged stock entries, including the original DEX, all assets,
 resources and all 12 native libraries, passed byte-for-byte checks. The five
@@ -106,10 +106,15 @@ Activity launch behavior, and only the session Activity uses `singleTop` in
 `:game`.
 
 See [machine-readable validation](../android/V442-LAYER-TEST1-VALIDATION.json).
-Signing and installation are pending: the previous signing-backup attachment
-cannot be resolved by the file tool, and no release key is saved locally. The
-expected existing certificate SHA-256 is
+Signing passed with the existing XHYN release identity. The certificate SHA-256 is
 `106de5f3a0f6bdf1cad369e87b8c509b8e34693b2c8eeac3a1c4627ac2a23d49`.
-Do not substitute a new key or distribute the unsigned APK as an installable
-update. The candidate also exceeds tmpfiles' 104,857,600-byte upload limit;
-GitHub release hosting is available once signing completes.
+Both v2 and v3 signatures passed verification (the verifier minimum was set to
+API 24 to exercise both schemes; the application still requires API 29).
+Signing preserved every unsigned ZIP entry and its content. Temporary signing
+material was removed after use. Phone installation/gameplay validation remains
+pending.
+
+[Download the testing release](https://github.com/XHYN-PH/XHYN-IV-recomp/releases/tag/0.9.24-xhyn-layer-test1).
+Install over the existing XHYN app; retain app data and back up saves first.
+The candidate exceeds tmpfiles' 104,857,600-byte upload limit and is hosted on
+GitHub instead. Release date: 9 November 2026 (Asia/Manila).
