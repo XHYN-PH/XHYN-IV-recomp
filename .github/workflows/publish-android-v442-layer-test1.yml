@@ -27,6 +27,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Use the same Android verifier as the candidate build
+        run: |
+          if [ ! -x "$ANDROID_HOME/build-tools/35.0.0/apksigner" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'build-tools;35.0.0'
+          fi
       - name: Require the prepared empty draft release
         run: |
           gh release view "$RELEASE_TAG" --json isDraft,assets > release.json
@@ -89,10 +98,10 @@ jobs:
               assert len(libraries) == 12 and libraries == report['native_libraries']
               assert hashlib.sha256(archive.read('classes.dex')).hexdigest() == report['stock_dex']
           sdk = Path(os.environ.get('ANDROID_HOME', '/usr/local/lib/android/sdk'))
-          candidates = sorted((sdk / 'build-tools').glob('*/apksigner'))
-          assert candidates, 'Android signature verifier is unavailable'
-          tool = candidates[-1]
+          tool = sdk / 'build-tools/35.0.0/apksigner'
+          assert tool.is_file(), 'Pinned Android signature verifier is unavailable'
           verification = subprocess.check_output([str(tool), 'verify', '--min-sdk-version', '24', '--verbose', '--print-certs', str(apk)], text=True)
+          print(verification)
           certificate = re.search(r'Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]+)', verification)
           assert certificate and certificate.group(1).lower() == report['signing']['certificate_sha256']
           assert 'Verified using v2 scheme (APK Signature Scheme v2): true' in verification
