@@ -1,0 +1,10 @@
+.gradle/
+build/
+**/build/
+local.properties
+__pycache__/
+*.apk
+*.p12
+*.jks
+!*.py
+!tests/*.py

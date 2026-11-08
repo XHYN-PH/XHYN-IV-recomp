@@ -8,6 +8,22 @@ Install it over your existing XHYN IV app. Back up saves first; uninstalling rem
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
 
+## Unreleased v442 Android layer — Test 1
+
+A separate Android UI candidate uses the supplied stock v442 engine. It adds
+compact menus, controller navigation, stock settings with a next-launch queue,
+fullscreen touch/HUD editors, diagnostics, driver and save tools, reversible
+loose-data mods and a conditional local achievement browser.
+
+All 12 native libraries, the original DEX, resources and title assets remain
+byte-for-byte unchanged. The source-port native fixes listed below are **not**
+included in this stock-binary candidate. Game FPS and automatic achievement
+catalog generation are unavailable through its Java interfaces; GPU counters
+depend on the phone. Native gameplay/device validation remains pending.
+
+See the [complete layer changelog](../../os/android-stock/CHANGELOG.md) and
+[interface/validation notes](../development/V442-ANDROID-LAYER.md).
+
 ## Unreleased Test14 — CRT memory and string lengths
 
 - Fix the reproduced CRT argument-width regression that could send an oversized length to native `memset` during gameplay. All 14 affected memory/string hooks now decode Xbox lengths and capacities as 32-bit values before calling the host C library.

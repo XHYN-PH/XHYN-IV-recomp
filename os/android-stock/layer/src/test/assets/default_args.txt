@@ -1,0 +1,4 @@
+# Host fixture only; build_layer.py retains the real stock assets from the pinned APK.
+--resolution=720p
+--gta4_cas_sharpness=0.95
+--gta4_traffic_density_scale=0.4

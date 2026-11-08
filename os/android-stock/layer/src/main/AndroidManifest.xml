@@ -1,0 +1,8 @@
+<!-- Host test harness only. Packaging uses the pinned stock manifest. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:theme="@android:style/Theme.Material.NoActionBar" android:icon="@android:drawable/sym_def_app_icon">
+        <activity android:name="com.xhyn.stock.PanelActivity" android:exported="false" />
+        <activity android:name="com.xhyn.stock.SessionActivity" android:exported="false" />
+        <provider android:name="com.xhyn.stock.LayerFileProvider" android:authorities="com.xhyn.ivrecomp.layer.files" android:exported="false" android:grantUriPermissions="true" />
+    </application>
+</manifest>

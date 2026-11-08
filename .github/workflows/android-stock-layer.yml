@@ -1,0 +1,35 @@
+name: Stock v442 Android UI layer checks
+on:
+  pull_request:
+    paths:
+      - 'os/android-stock/**'
+      - '.github/workflows/android-stock-layer.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-layer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Android UI and data regressions (no native APK needed)
+        run: gradle -p os/android-stock :layer:testDebugUnitTest
+      - name: Packaging boundary regressions
+        run: python3 -m unittest discover -s os/android-stock/tests -v
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stock-layer-host-checks
+          path: os/android-stock/layer/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
