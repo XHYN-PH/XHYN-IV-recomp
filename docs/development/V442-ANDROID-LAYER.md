@@ -91,3 +91,25 @@ Android lint reports **0 errors**, with 20 English-label/localization warnings.
 Checks include tap/hold controller Start routing, tool-to-editor back-stack
 configuration, keyboard/system insets, fullscreen placement, save process-death
 recovery, current/runtime log export, and preservation-boundary rejection tests.
+
+## Packaged candidate
+
+The unsigned, aligned candidate is `0.9.24-xhyn-layer-test1`, version code 443,
+application ID `com.xhyn.ivrecomp`, min/target API 29/35. It is 111,928,737 bytes
+with SHA-256 `5f8e01019e2ae3c41067c3a1456c23b1862031e96f5dbe978eedd1ec3b554b77`.
+
+All 586 unchanged stock entries, including the original DEX, all assets,
+resources and all 12 native libraries, passed byte-for-byte checks. The five
+manifest references to app resources resolve in the original resource table.
+Android `zipalign -c -P 16 4` passed. Debuggable is false; tools use standard
+Activity launch behavior, and only the session Activity uses `singleTop` in
+`:game`.
+
+See [machine-readable validation](../android/V442-LAYER-TEST1-VALIDATION.json).
+Signing and installation are pending: the previous signing-backup attachment
+cannot be resolved by the file tool, and no release key is saved locally. The
+expected existing certificate SHA-256 is
+`106de5f3a0f6bdf1cad369e87b8c509b8e34693b2c8eeac3a1c4627ac2a23d49`.
+Do not substitute a new key or distribute the unsigned APK as an installable
+update. The candidate also exceeds tmpfiles' 104,857,600-byte upload limit;
+GitHub release hosting is available once signing completes.
