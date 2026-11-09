@@ -763,6 +763,7 @@ CMakeUserPresets.json
 !/.github/workflows/android-checks.yml
 !/.github/workflows/android-stock-layer.yml
 !/.github/workflows/publish-android-v442-layer-test1.yml
+!/.github/workflows/publish-android-base-english-test2.yml
 !/.github/workflows/build-macos.yml
 !/.github/workflows/publish-android-test10.yml
 !/.github/workflows/publish-android-test12.yml

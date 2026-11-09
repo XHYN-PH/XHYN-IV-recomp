@@ -1,4 +1,14 @@
-# Android UI layer for stock v442
+# Android changes for stock v442
+
+The current focused build is **Base English Test 2 (code 444)**. It edits the
+original launcher and touch-settings UI in place, restores the ISO/TU8 controls
+inside Game data, and starts with English. See
+[the build and verification instructions](base-ui/README.md).
+
+The replacement UI described below is the earlier Test 1 and is **not included
+in Test 2**. Further feature migration is paused for the user's phone test.
+
+## Earlier Test 1 layer
 
 This is a separate Android project. It does not build or replace the native
 libraries in the source port. The supplied base APK is required locally and is

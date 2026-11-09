@@ -1,0 +1,79 @@
+{
+  "base_sha256": "ae71035bbbed76c7bab9e55faca629e7524cd9fe22457c8fce15c04284a0b049",
+  "base_entries": 587,
+  "native_libraries": {
+    "lib/arm64-v8a/libSDL3.so": "d127836c96829ccc53cb0ce9dae041aa71afc805d49ce9f052e7368391ec7036",
+    "lib/arm64-v8a/libc++_shared.so": "c4c2fe5cbcb1fba0003a31fc7ab29a9bb12df6cc187ec45a806462540e83d93b",
+    "lib/arm64-v8a/libhook_impl.so": "92387b188096ce5706f3f9968aece35c2b723eec507684301b2e6f8eeb13f33f",
+    "lib/arm64-v8a/libliberty_install.so": "5c0ab5cbbc74a5e20794a948b2611c3a693fef9429de83a4f15871e5fac17955",
+    "lib/arm64-v8a/libmain.so": "b40ed43caead584b8f06d2c75db4f9aa6be827e7555f0ec3428c213d127ff945",
+    "lib/arm64-v8a/libmain_hook.so": "2d4fed8354a1eeab4fe38c77269cb883a47a8f6655d237c3f89070bed1f3f817",
+    "lib/arm64-v8a/librexgpu-gta4-adreno.so": "0106ebb95737795afcb2cedf50f4abafd3629759728db78ba6ad7189bdeb7507",
+    "lib/arm64-v8a/librexgpu-gta4-mobile.so": "b944176f583ff6778bd83700e52effcae9496b39f3b73ba9cb2ff0eee57c9a46",
+    "lib/arm64-v8a/librexgpu-gta4-native.so": "9c72a56b2be356e08cadfdfb6ee06458e004d626b34af11f9af1f85afd525217",
+    "lib/arm64-v8a/librexgpu-xenos.so": "3d11475c8a62d6752e26eb0f717bea05a672b135d4acdc8a85f1f6de5e51ef5a",
+    "lib/arm64-v8a/librexruntime.so": "6d90e907bf53bcf2864c7de69741107d1153502b0d2c7762956688b14d6058ef",
+    "lib/arm64-v8a/libvulkan.so": "c16562f9492875cf98fd9f1ba4ebcae8230f0b050d71b22c03a6cf967f052b6e"
+  },
+  "stock_dex": "f163bc046d8e6c62b49d996e98e735261c7ddd8f044ccc5c1e247b61a2293898",
+  "adapter_contract": "passed",
+  "candidate_sha256": "90800705cb195325a7f87980b09c84b62929cca5cae392fb621916ece6cd9377",
+  "candidate_bytes": 111706455,
+  "preserved_entries": 581,
+  "native_libraries_unchanged": 11,
+  "native_executable_sections": "all byte-for-byte unchanged",
+  "native_hint_strings_translated": 2,
+  "replacement_ui": "absent",
+  "translated_dex_sha256": "837942e8378cc104b8e3a18014733934396b185431cb77675c89c28dfec5ccd9",
+  "candidate_native_libraries": {
+    "lib/arm64-v8a/libSDL3.so": "d127836c96829ccc53cb0ce9dae041aa71afc805d49ce9f052e7368391ec7036",
+    "lib/arm64-v8a/libc++_shared.so": "c4c2fe5cbcb1fba0003a31fc7ab29a9bb12df6cc187ec45a806462540e83d93b",
+    "lib/arm64-v8a/libhook_impl.so": "92387b188096ce5706f3f9968aece35c2b723eec507684301b2e6f8eeb13f33f",
+    "lib/arm64-v8a/libliberty_install.so": "5c0ab5cbbc74a5e20794a948b2611c3a693fef9429de83a4f15871e5fac17955",
+    "lib/arm64-v8a/libmain.so": "ab2cc7a00613de55ed1c308d2a95f6cdbbb788d7c75bee55c01aca7d30a908b2",
+    "lib/arm64-v8a/libmain_hook.so": "2d4fed8354a1eeab4fe38c77269cb883a47a8f6655d237c3f89070bed1f3f817",
+    "lib/arm64-v8a/librexgpu-gta4-adreno.so": "0106ebb95737795afcb2cedf50f4abafd3629759728db78ba6ad7189bdeb7507",
+    "lib/arm64-v8a/librexgpu-gta4-mobile.so": "b944176f583ff6778bd83700e52effcae9496b39f3b73ba9cb2ff0eee57c9a46",
+    "lib/arm64-v8a/librexgpu-gta4-native.so": "9c72a56b2be356e08cadfdfb6ee06458e004d626b34af11f9af1f85afd525217",
+    "lib/arm64-v8a/librexgpu-xenos.so": "3d11475c8a62d6752e26eb0f717bea05a672b135d4acdc8a85f1f6de5e51ef5a",
+    "lib/arm64-v8a/librexruntime.so": "6d90e907bf53bcf2864c7de69741107d1153502b0d2c7762956688b14d6058ef",
+    "lib/arm64-v8a/libvulkan.so": "c16562f9492875cf98fd9f1ba4ebcae8230f0b050d71b22c03a6cf967f052b6e"
+  },
+  "compiled_manifest": "original components, permissions, process and launch configuration preserved",
+  "android_ui_language": "no Russian strings in final DEX string table",
+  "version_code": 444,
+  "version_name": "0.9.24-xhyn-base-english-test2",
+  "signing": {
+    "certificate_sha256": "106de5f3a0f6bdf1cad369e87b8c509b8e34693b2c8eeac3a1c4627ac2a23d49",
+    "v2": true,
+    "v3": true,
+    "payload_matches_unsigned": true
+  },
+  "alignment": "zipalign -c -P 16 4 passed after signing",
+  "host_verification": {
+    "actual_base_ui_tests": 6,
+    "actual_base_ui_failures": 0,
+    "android_api_levels": [
+      29,
+      35
+    ],
+    "python_translation_and_packaging_tests": 13,
+    "python_failures": 0,
+    "scroll_to_iso_tu_and_install": "passed",
+    "stock_classes_used": "assembled translated DEX converted only for host tests",
+    "device_gameplay": "pending user test"
+  },
+  "translation": {
+    "unique_strings": 299,
+    "literal_occurrences": 345,
+    "native_hints": 2
+  },
+  "release_scope": "original UI in English; ISO/TU8 import visible; initial English language; other feature migration paused",
+  "base_source_commit": "be534e38",
+  "verification_tools": {
+    "apktool": "3.0.3",
+    "build_tools": "35.0.0",
+    "dex2jar_host_only": "2.4",
+    "robolectric": "4.14.1"
+  }
+}

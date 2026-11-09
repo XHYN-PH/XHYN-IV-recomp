@@ -1,3 +1,24 @@
+# 0.9.24-xhyn-base-english-test2 (code 444)
+
+Focused test · 9 November 2026 (Asia/Manila).
+
+- Restore the original v442 launcher and artwork, with changes embedded in its
+  existing UI. The replacement Test 1 dashboard/session tools are excluded.
+- Translate all 299 distinct Russian Android UI strings to English, including
+  settings, dialogs, file/driver errors, accessibility and the touch editor.
+- Restore Game ISO and Title Update 8 selection inside Game data. Attach the
+  existing installer to the page and keep the controls available after game
+  detection. Retain folder selection, optional episodes, native validation,
+  permissions, progress and cancellation.
+- Start with English game language while retaining other settings, save paths
+  and game files. Later language choices remain available and persist.
+- Translate the native Skip and map-gesture hints by changing only two checked
+  read-only text spans. Native executable code and the other eleven libraries
+  remain byte-identical to v442.
+
+Host UI and package checks are recorded in the Test 2 validation report. Real
+ISO/TU installation and gameplay require phone testing before further changes.
+
 # 0.9.24-xhyn-layer-test1 (code 443)
 
 Signed testing release · 9 November 2026 (Asia/Manila).
