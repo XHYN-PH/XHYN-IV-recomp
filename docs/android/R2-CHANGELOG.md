@@ -8,6 +8,18 @@ Install it over your existing XHYN IV app. Back up saves first; uninstalling rem
 
 **Performance still needs work. Improvements will continue through future updates. No logs = no improvements.**
 
+## Test15 — gameplay stability candidate on the LibertyRecomp source base
+
+- Carry forward the Test14 correction for Xbox memory and string lengths, along
+  with the Test13 native crash capture. The November 5 and 6 Test12 logs from
+  Motorola and Xiaomi reach the same `rexcrt_memset` call as both S24 FE RADV runs.
+- Check the crash caller's padding length at a guest page boundary. Its upper
+  register bits can be set while the Xbox length is a small 32-bit value.
+- Set Android version code 445 so the existing XHYN package and signing key can
+  update installations through v442 Test2 without uninstalling.
+
+See [crash evidence and validation](TEST14-VALIDATION.md#test15-follow-up).
+
 ## Unreleased Test14 — CRT memory and string lengths
 
 - Fix the reproduced CRT argument-width regression that could send an oversized length to native `memset` during gameplay. All 14 affected memory/string hooks now decode Xbox lengths and capacities as 32-bit values before calling the host C library.

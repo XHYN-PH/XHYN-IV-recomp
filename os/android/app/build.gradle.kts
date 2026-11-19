@@ -27,8 +27,9 @@ android {
         // 28: ASharedMemory (26) for guest memory and AAudio (27) for audio.
         minSdk        = 29
         targetSdk     = 35
-        versionCode = 42
-        versionName   = "0.5.9.3-xhyn-r2-test14"
+        // The source build must be an update for XHYN installs through code 444.
+        versionCode = 445
+        versionName   = "0.5.9.3-xhyn-r2-test15"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

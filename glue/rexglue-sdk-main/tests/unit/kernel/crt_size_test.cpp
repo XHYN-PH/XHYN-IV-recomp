@@ -59,6 +59,23 @@ TEST_CASE("CRT memset variants use the guest low length word", "[kernel][crt][ab
     }
   }
 }
+TEST_CASE("CRT memset pads a string after guest negation without crossing a page", "[kernel][crt][abi]") {
+  CHECK(Child([](PPCContext& ctx, uint8_t* base) {
+    // The Test12 caller negates a zero-extended negative field width.
+    // The low word is 16, but the full register is 0xFFFFFFFF00000010.
+    constexpr uint32_t padding = 16;
+    constexpr uint32_t destination = 0x10000 - padding;
+    ctx.r3.u64 = destination;
+    ctx.r4.u64 = '0';
+    ctx.r5.u64 = uint64_t{0} - static_cast<uint32_t>(-16);
+    rexcrt_memset(ctx, base);
+    if (ctx.r3.u32 != destination || base[destination - 1] != 0xCC) return false;
+    for (uint32_t i = 0; i < padding; ++i) {
+      if (base[destination + i] != '0') return false;
+    }
+    return true;
+  }));
+}
 TEST_CASE("CRT copy variants bound the native transfer to the guest count", "[kernel][crt][abi]") {
   for (Hook hook : {rexcrt_memcpy, rexcrt_memmove, rexcrt_XMemCpy}) {
     CHECK(Child([=](PPCContext& ctx, uint8_t* base) {
